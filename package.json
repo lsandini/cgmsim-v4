@@ -13,5 +13,8 @@
   },
   "devDependencies": {
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@lsandini/cgmsim-lib": "^0.10.2"
   }
 }
