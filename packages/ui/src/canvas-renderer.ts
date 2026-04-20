@@ -15,6 +15,7 @@
  */
 
 import type { TickSnapshot, DisplayUnit } from '@cgmsim/shared';
+import type { SimEvent } from './inline-simulator.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ export interface RendererOptions {
   showIOB: boolean;
   showCOB: boolean;
   showTrueGlucose: boolean;
+  showEvents: boolean;
   displayUnit: DisplayUnit;
 }
 
@@ -95,14 +97,14 @@ class RingBuffer {
     for (let i = 0; i < this._size; i++) {
       const idx = (start + i) % cap;
       const e = this.buf[idx];
-      if (e !== null) cb(e, i);
+      if (e != null) cb(e, i);
     }
   }
 
   latest(): RingEntry | null {
     if (this._size === 0) return null;
     const idx = (this.head - 1 + this.buf.length) % this.buf.length;
-    return this.buf[idx];
+    return this.buf[idx] ?? null;
   }
 
   clear(): void {
@@ -118,12 +120,14 @@ export class CGMRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private ring = new RingBuffer(MAX_BUFFER);
+  private events: SimEvent[] = [];
   private rafId = 0;
   private dirty = false;
   public options: RendererOptions = {
     showIOB: true,
     showCOB: true,
     showTrueGlucose: false,
+    showEvents: true,
     displayUnit: 'mgdl',
   };
 
@@ -172,9 +176,16 @@ export class CGMRenderer {
     this.dirty = true;
   }
 
+  /** Add simulation events for canvas markers. */
+  pushEvents(evs: SimEvent[]): void {
+    for (const ev of evs) this.events.push(ev);
+    this.dirty = true;
+  }
+
   /** Clear all historical data (e.g. on RESET). */
   clearHistory(): void {
     this.ring.clear();
+    this.events = [];
     this.dirty = true;
   }
 
@@ -287,7 +298,54 @@ export class CGMRenderer {
     this.drawTrace(winStartMin);
 
     // ── Layer 8: event markers ───────────────────────────────────────────
-    // (Phase 2: bolus/meal markers)
+    if (this.options.showEvents) this.drawEventMarkers(winStartMin);
+  }
+
+  private drawEventMarkers(winStartMin: number): void {
+    const ctx = this.ctx;
+    const latest = this.ring.latest();
+    if (!latest) return;
+
+    for (const ev of this.events) {
+      const offsetMin = ev.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) continue;
+
+      const x = this.timeX(offsetMin);
+
+      if (ev.kind === 'bolus') {
+        // Blue downward triangle at bottom of plot area
+        const y = this.PAD_TOP + this.plotH;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 2);
+        ctx.lineTo(x - 5, y - 12);
+        ctx.lineTo(x + 5, y - 12);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.bolusMarker;
+        ctx.fill();
+        // Label: units
+        ctx.fillStyle = COLORS.bolusMarker;
+        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.units}U`, x, y - 15);
+
+      } else if (ev.kind === 'meal') {
+        // Amber upward triangle at top of plot area
+        const y = this.PAD_TOP;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 2);
+        ctx.lineTo(x - 5, y + 12);
+        ctx.lineTo(x + 5, y + 12);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.mealMarker;
+        ctx.fill();
+        // Label: grams
+        ctx.fillStyle = COLORS.mealMarker;
+        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.carbsG}g`, x, y + 24);
+      }
+    }
+    ctx.textAlign = 'left'; // reset
   }
 
   private drawBands(winStartMin: number): void {

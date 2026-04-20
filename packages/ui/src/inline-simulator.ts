@@ -1,11 +1,12 @@
 /**
- * InlineSimulator — runs the entire simulation on the main thread.
+ * InlineSimulator — simulation engine running on the main thread.
  *
- * Replaces the WebWorker architecture for the standalone HTML build.
- * Uses setTimeout for the tick loop so the UI stays responsive.
- * Exposes the same API as WorkerBridge so main.ts is unchanged.
- *
- * This eliminates all blob-Worker/CSP issues for the standalone file.
+ * Phase 2 additions over Phase 1:
+ *   - activeLongActing properly typed and populated (MDI depot)
+ *   - MDI: long-acting dose auto-injected at configured time each simulated day
+ *   - Temp basal: timed override with automatic expiry
+ *   - Proper IOB accounting for all therapy modes
+ *   - Event log for canvas markers (bolus/meal events)
  */
 
 import type {
@@ -14,118 +15,166 @@ import type {
   RapidAnalogueType,
   VirtualPatient,
   TherapyProfile,
+  ActiveBolus,
+  ActiveMeal,
+  ActiveLongActing,
 } from '@cgmsim/shared';
 import { DEFAULT_PATIENT, DEFAULT_THERAPY_PROFILE } from '@cgmsim/shared';
 
 import { DexcomG6Noise, createG6NoiseGenerator } from '../../simulator/src/g6Noise.js';
 import { computeDeltaBG } from '../../simulator/src/deltaBG.js';
-import { calculateBolusIOB, calculateLongActingIOB, calculatePumpBasalIOB } from '../../simulator/src/iob.js';
+import {
+  calculateBolusIOB,
+  calculateLongActingIOB,
+  calculatePumpBasalIOB,
+} from '../../simulator/src/iob.js';
+import type { PumpBasalBolus } from '../../simulator/src/iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from '../../simulator/src/carbs.js';
 import type { ResolvedMeal } from '../../simulator/src/carbs.js';
 import { runPID, rateToMicroBolus } from '../../simulator/src/pid.js';
 import { RAPID_PROFILES, LONG_ACTING_PROFILES } from '../../simulator/src/insulinProfiles.js';
-import type { PumpBasalBolus } from '../../simulator/src/iob.js';
-import type { ActiveBolus, ActiveMeal } from '@cgmsim/shared';
 
-// ── Constants ────────────────────────────────────────────────────────────────
+const TICK_SIM_MS  = 5 * 60_000;
+const DEFAULT_SEED = 42;
+const INITIAL_BG   = 100;
 
-const TICK_SIM_MS   = 5 * 60_000;
-const DEFAULT_SEED  = 42;
-const INITIAL_BG    = 100;
+export type SimEvent =
+  | { kind: 'bolus';      simTimeMs: number; units: number }
+  | { kind: 'meal';       simTimeMs: number; carbsG: number }
+  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: string };
 
-// ── LCG for reproducible meal splits ─────────────────────────────────────────
+interface TempBasal {
+  rateUPerHour: number;
+  expiresAt: number;
+}
+
+interface SimState {
+  simTimeMs:         number;
+  trueGlucose:       number;
+  lastCGM:           number;
+  patient:           VirtualPatient;
+  therapy:           TherapyProfile;
+  activeBoluses:     ActiveBolus[];
+  activeMeals:       ActiveMeal[];
+  activeLongActing:  ActiveLongActing[];
+  resolvedMeals:     ResolvedMeal[];
+  pumpMicroBoluses:  PumpBasalBolus[];
+  pidIntegral:       number;
+  pidPrevCGM:        number;
+  throttle:          number;
+  running:           boolean;
+  g6:                DexcomG6Noise;
+  rngState:          number;
+  lastLongActingDay: number;
+  tempBasal:         TempBasal | null;
+  events:            SimEvent[];
+}
+
+function createInitialState(): SimState {
+  return {
+    simTimeMs:         0,
+    trueGlucose:       INITIAL_BG,
+    lastCGM:           INITIAL_BG,
+    patient:           { ...DEFAULT_PATIENT },
+    therapy:           { ...DEFAULT_THERAPY_PROFILE, basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }] },
+    activeBoluses:     [],
+    activeMeals:       [],
+    activeLongActing:  [],
+    resolvedMeals:     [],
+    pumpMicroBoluses:  [],
+    pidIntegral:       0,
+    pidPrevCGM:        INITIAL_BG,
+    throttle:          10,
+    running:           false,
+    g6:                createG6NoiseGenerator(DEFAULT_SEED, null),
+    rngState:          DEFAULT_SEED,
+    lastLongActingDay: -1,
+    tempBasal:         null,
+    events:            [],
+  };
+}
 
 function lcgNext(s: number): { value: number; nextState: number } {
   const n = (1664525 * s + 1013904223) & 0xffffffff;
   return { value: (n >>> 0) / 0xffffffff, nextState: n };
 }
 
-// ── Simulator state ───────────────────────────────────────────────────────────
-
-interface SimState {
-  simTimeMs: number;
-  trueGlucose: number;
-  lastCGM: number;
-  patient: VirtualPatient;
-  therapy: TherapyProfile;
-  activeBoluses: ActiveBolus[];
-  activeMeals: ActiveMeal[];
-  resolvedMeals: ResolvedMeal[];
-  pumpMicroBoluses: PumpBasalBolus[];
-  pidIntegral: number;
-  pidPrevCGM: number;
-  throttle: number;
-  running: boolean;
-  g6: DexcomG6Noise;
-  rngState: number;
-}
-
-function createInitialState(): SimState {
-  return {
-    simTimeMs:       0,
-    trueGlucose:     INITIAL_BG,
-    lastCGM:         INITIAL_BG,
-    patient:         { ...DEFAULT_PATIENT },
-    therapy:         { ...DEFAULT_THERAPY_PROFILE, basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }] },
-    activeBoluses:   [],
-    activeMeals:     [],
-    resolvedMeals:   [],
-    pumpMicroBoluses: [],
-    pidIntegral:     0,
-    pidPrevCGM:      INITIAL_BG,
-    throttle:        10,
-    running:         false,
-    g6:              createG6NoiseGenerator(DEFAULT_SEED, null),
-    rngState:        DEFAULT_SEED,
-  };
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 type TickHandler  = (snap: TickSnapshot) => void;
 type SavedHandler = (state: WorkerState) => void;
-
-// ── InlineSimulator ───────────────────────────────────────────────────────────
+type EventHandler = (events: SimEvent[]) => void;
 
 export class InlineSimulator {
-  private state: SimState = createInitialState();
+  private s: SimState = createInitialState();
   private timerId: ReturnType<typeof setTimeout> | null = null;
   private tickHandlers:  TickHandler[]  = [];
   private savedHandlers: SavedHandler[] = [];
+  private eventHandlers: EventHandler[] = [];
 
-  onTick(h: TickHandler):  void { this.tickHandlers.push(h); }
+  onTick(h: TickHandler):    void { this.tickHandlers.push(h); }
   onStateSaved(h: SavedHandler): void { this.savedHandlers.push(h); }
+  onEvent(h: EventHandler):  void { this.eventHandlers.push(h); }
 
-  // ── Tick ──────────────────────────────────────────────────────────────────
+  private getBasalRate(simTimeMs: number): number {
+    const s = this.s;
+    if (s.tempBasal !== null) {
+      if (simTimeMs < s.tempBasal.expiresAt) return s.tempBasal.rateUPerHour;
+      s.tempBasal = null;
+    }
+    const minuteOfDay = (simTimeMs / 60_000) % (24 * 60);
+    const profile = s.therapy.basalProfile;
+    let rate = profile[0]?.rateUPerHour ?? 0.8;
+    for (const e of profile) if (e.timeMinutes <= minuteOfDay) rate = e.rateUPerHour;
+    return rate;
+  }
+
+  private checkLongActingDose(): void {
+    const s = this.s;
+    if (s.therapy.mode !== 'MDI') return;
+    const minuteOfDay     = (s.simTimeMs / 60_000) % (24 * 60);
+    const simDay          = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
+    const injectionMinute = s.therapy.longActingInjectionTime;
+    if (minuteOfDay >= injectionMinute && simDay !== s.lastLongActingDay) {
+      s.lastLongActingDay = simDay;
+      s.activeLongActing.push({
+        id: `la-${s.simTimeMs}`, simTimeMs: s.simTimeMs,
+        units: s.therapy.longActingDose, type: s.therapy.longActingType,
+      });
+      const ev: SimEvent = {
+        kind: 'longActing', simTimeMs: s.simTimeMs,
+        units: s.therapy.longActingDose, insulinType: s.therapy.longActingType,
+      };
+      s.events.push(ev);
+      for (const h of this.eventHandlers) h([ev]);
+    }
+  }
 
   private tick(): void {
-    const s = this.state;
+    const s = this.s;
     const nowMs  = s.simTimeMs;
     const isPump = s.therapy.mode === 'PUMP' || s.therapy.mode === 'AID';
+
+    this.checkLongActingDose();
 
     // Purge expired
     const diaMin = s.patient.dia * 60;
     s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= diaMin);
-    s.activeLongActing = (s as any).activeLongActing?.filter((d: any) => {
-      const p = LONG_ACTING_PROFILES[d.type as keyof typeof LONG_ACTING_PROFILES];
-      return p ? (nowMs - d.simTimeMs) / 60_000 <= p.dia * 60 : false;
-    }) ?? [];
+    s.activeLongActing = s.activeLongActing.filter(d => {
+      const p = LONG_ACTING_PROFILES[d.type];
+      return p !== undefined && (nowMs - d.simTimeMs) / 60_000 <= p.dia * 60;
+    });
     s.resolvedMeals    = purgeAbsorbedMeals(s.resolvedMeals, s.patient.carbsAbsTime, nowMs);
     s.pumpMicroBoluses = s.pumpMicroBoluses.filter(mb => (nowMs - mb.simTimeMs) / 60_000 <= mb.dia * 60);
 
-    // AID controller
     let basalRate = this.getBasalRate(nowMs);
+
     if (s.therapy.mode === 'AID') {
       const pid = runPID(
-        s.lastCGM,
-        calculateBolusIOB(s.activeBoluses, nowMs),
-        s.therapy,
-        { integral: s.pidIntegral, prevCGM: s.pidPrevCGM },
-        basalRate,
+        s.lastCGM, calculateBolusIOB(s.activeBoluses, nowMs),
+        s.therapy, { integral: s.pidIntegral, prevCGM: s.pidPrevCGM }, basalRate,
       );
-      basalRate      = pid.rateUPerHour;
-      s.pidIntegral  = pid.nextState.integral;
-      s.pidPrevCGM   = pid.nextState.prevCGM;
+      basalRate     = pid.rateUPerHour;
+      s.pidIntegral = pid.nextState.integral;
+      s.pidPrevCGM  = pid.nextState.prevCGM;
       if (pid.microbolusUnits > 0) {
         s.activeBoluses.push({
           id: `mb-${nowMs}`, simTimeMs: nowMs,
@@ -134,7 +183,6 @@ export class InlineSimulator {
       }
     }
 
-    // Pump micro-bolus
     if (isPump) {
       const rp = RAPID_PROFILES[s.therapy.rapidAnalogue];
       if (rp) {
@@ -143,32 +191,26 @@ export class InlineSimulator {
       }
     }
 
-    // deltaBG
     const delta = computeDeltaBG({
       patient: s.patient, isf: s.patient.trueISF, cr: s.patient.trueCR,
-      boluses: s.activeBoluses, longActing: (s as any).activeLongActing ?? [],
+      boluses: s.activeBoluses, longActing: s.activeLongActing,
       pumpMicroBoluses: s.pumpMicroBoluses, meals: s.resolvedMeals,
       nowSimTimeMs: nowMs, isPump,
     });
 
-    // Apply
     const newTrue = Math.max(20, Math.min(600, s.trueGlucose + delta.deltaBG));
     const noisy   = s.g6.applySensorModel(newTrue, nowMs);
     const cgm     = Math.max(40, Math.min(400, Math.round(noisy)));
 
-    // IOB / COB
     const iob = calculateBolusIOB(s.activeBoluses, nowMs) +
-      (isPump
-        ? calculatePumpBasalIOB(s.pumpMicroBoluses, nowMs)
-        : calculateLongActingIOB((s as any).activeLongActing ?? [], nowMs));
+      (isPump ? calculatePumpBasalIOB(s.pumpMicroBoluses, nowMs)
+               : calculateLongActingIOB(s.activeLongActing, nowMs));
     const cob = calculateCOB(s.resolvedMeals, s.patient.carbsAbsTime, nowMs);
 
-    // Advance
     s.trueGlucose = newTrue;
     s.lastCGM     = cgm;
     s.simTimeMs   = nowMs + TICK_SIM_MS;
 
-    // Post snapshot
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
@@ -177,118 +219,92 @@ export class InlineSimulator {
     for (const h of this.tickHandlers) h(snap);
   }
 
-  private getBasalRate(simTimeMs: number): number {
-    const minuteOfDay = (simTimeMs / 60_000) % (24 * 60);
-    const profile = this.state.therapy.basalProfile;
-    let rate = profile[0]?.rateUPerHour ?? 0.8;
-    for (const e of profile) if (e.timeMinutes <= minuteOfDay) rate = e.rateUPerHour;
-    return rate;
-  }
-
-  // ── Timer management ──────────────────────────────────────────────────────
-
   private scheduleNext(): void {
-    if (!this.state.running) return;
-    const interval = 300_000 / this.state.throttle;
-    this.timerId = setTimeout(() => {
-      this.tick();
-      this.scheduleNext();
-    }, interval);
+    if (!this.s.running) return;
+    this.timerId = setTimeout(() => { this.tick(); this.scheduleNext(); }, 300_000 / this.s.throttle);
   }
 
   private clearTimer(): void {
     if (this.timerId !== null) { clearTimeout(this.timerId); this.timerId = null; }
   }
 
-  // ── Public API (mirrors WorkerBridge) ─────────────────────────────────────
-
-  resume(): void {
-    this.state.running = true;
-    this.tick();          // fire immediately
-    this.scheduleNext();
-  }
-
-  pause(): void {
-    this.state.running = false;
-    this.clearTimer();
-  }
+  resume(): void { this.s.running = true; this.tick(); this.scheduleNext(); }
+  pause():  void { this.s.running = false; this.clearTimer(); }
 
   setThrottle(throttle: number): void {
-    this.state.throttle = throttle;
-    if (this.state.running) { this.clearTimer(); this.scheduleNext(); }
+    this.s.throttle = throttle;
+    if (this.s.running) { this.clearTimer(); this.scheduleNext(); }
   }
 
   bolus(units: number, analogue?: RapidAnalogueType): void {
-    this.state.activeBoluses.push({
-      id: `bolus-${this.state.simTimeMs}-${Math.random().toString(36).slice(2)}`,
-      simTimeMs: this.state.simTimeMs, units,
-      analogue: analogue ?? this.state.therapy.rapidAnalogue,
+    this.s.activeBoluses.push({
+      id: `bolus-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: this.s.simTimeMs, units,
+      analogue: analogue ?? this.s.therapy.rapidAnalogue,
     });
+    const ev: SimEvent = { kind: 'bolus', simTimeMs: this.s.simTimeMs, units };
+    this.s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
   }
 
   meal(carbsG: number, gastricEmptyingRate?: number): void {
     const meal: ActiveMeal = {
-      id: `meal-${this.state.simTimeMs}-${Math.random().toString(36).slice(2)}`,
-      simTimeMs: this.state.simTimeMs, carbsG,
-      gastricEmptyingRate: gastricEmptyingRate ?? this.state.patient.gastricEmptyingRate,
+      id: `meal-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: this.s.simTimeMs, carbsG,
+      gastricEmptyingRate: gastricEmptyingRate ?? this.s.patient.gastricEmptyingRate,
     };
-    const { value, nextState } = lcgNext(this.state.rngState);
-    this.state.rngState = nextState;
-    this.state.resolvedMeals.push(resolveMealSplit(meal, value));
-    this.state.activeMeals.push(meal);
+    const { value, nextState } = lcgNext(this.s.rngState);
+    this.s.rngState = nextState;
+    this.s.resolvedMeals.push(resolveMealSplit(meal, value));
+    this.s.activeMeals.push(meal);
+    const ev: SimEvent = { kind: 'meal', simTimeMs: this.s.simTimeMs, carbsG };
+    this.s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
   }
 
-  setTarget(targetMgdL: number): void {
-    this.state.therapy.glucoseTarget = targetMgdL;
+  setTempBasal(rateUPerHour: number, durationMinutes?: number): void {
+    this.s.tempBasal = {
+      rateUPerHour,
+      expiresAt: durationMinutes !== undefined
+        ? this.s.simTimeMs + durationMinutes * 60_000
+        : Infinity,
+    };
   }
 
-  setPatientParam(patch: Partial<VirtualPatient>): void {
-    Object.assign(this.state.patient, patch);
-  }
+  cancelTempBasal(): void { this.s.tempBasal = null; }
 
-  setTherapyParam(patch: Partial<TherapyProfile>): void {
-    Object.assign(this.state.therapy, patch);
-    if (patch.basalProfile) {
-      this.state.therapy.basalProfile = patch.basalProfile;
-    }
-  }
+  setTarget(targetMgdL: number): void { this.s.therapy.glucoseTarget = targetMgdL; }
+  setPatientParam(patch: Partial<VirtualPatient>): void { Object.assign(this.s.patient, patch); }
+  setTherapyParam(patch: Partial<TherapyProfile>): void { Object.assign(this.s.therapy, patch); }
+
+  getEvents(): SimEvent[] { return [...this.s.events]; }
 
   requestSave(): void {
     const state: WorkerState = {
-      simTimeMs:      this.state.simTimeMs,
-      trueGlucose:    this.state.trueGlucose,
-      lastCGM:        this.state.lastCGM,
-      patient:        { ...this.state.patient },
-      therapy:        { ...this.state.therapy },
-      g6State:        this.state.g6.getState(),
-      activeBoluses:  [...this.state.activeBoluses],
-      activeMeals:    [...this.state.activeMeals],
-      activeLongActing: [],
-      pidIntegral:    this.state.pidIntegral,
-      pidPrevCGM:     this.state.pidPrevCGM,
-      throttle:       this.state.throttle,
-      running:        this.state.running,
+      simTimeMs: this.s.simTimeMs, trueGlucose: this.s.trueGlucose, lastCGM: this.s.lastCGM,
+      patient: { ...this.s.patient }, therapy: { ...this.s.therapy },
+      g6State: this.s.g6.getState(),
+      activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
+      activeLongActing: [...this.s.activeLongActing],
+      pidIntegral: this.s.pidIntegral, pidPrevCGM: this.s.pidPrevCGM,
+      throttle: this.s.throttle, running: this.s.running,
     };
     for (const h of this.savedHandlers) h(state);
   }
 
   reset(state: WorkerState): void {
     this.clearTimer();
-    this.state.simTimeMs      = state.simTimeMs;
-    this.state.trueGlucose    = state.trueGlucose;
-    this.state.lastCGM        = state.lastCGM;
-    this.state.patient        = { ...state.patient };
-    this.state.therapy        = { ...state.therapy };
-    this.state.activeBoluses  = [...state.activeBoluses];
-    this.state.activeMeals    = [...state.activeMeals];
-    this.state.resolvedMeals  = [];
-    this.state.pumpMicroBoluses = [];
-    this.state.pidIntegral    = state.pidIntegral;
-    this.state.pidPrevCGM     = state.pidPrevCGM;
-    this.state.throttle       = state.throttle;
-    this.state.running        = false;
-    this.state.g6             = createG6NoiseGenerator(DEFAULT_SEED, state.g6State);
-    this.state.rngState       = DEFAULT_SEED;
+    Object.assign(this.s, {
+      simTimeMs: state.simTimeMs, trueGlucose: state.trueGlucose, lastCGM: state.lastCGM,
+      patient: { ...state.patient }, therapy: { ...state.therapy },
+      activeBoluses: [...state.activeBoluses], activeMeals: [...state.activeMeals],
+      activeLongActing: [...state.activeLongActing],
+      resolvedMeals: [], pumpMicroBoluses: [],
+      pidIntegral: state.pidIntegral, pidPrevCGM: state.pidPrevCGM,
+      throttle: state.throttle, running: false,
+      g6: createG6NoiseGenerator(DEFAULT_SEED, state.g6State),
+      rngState: DEFAULT_SEED, lastLongActingDay: -1, tempBasal: null, events: [],
+    });
   }
 
   terminate(): void { this.clearTimer(); }

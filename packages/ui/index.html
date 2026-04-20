@@ -339,6 +339,52 @@
       color: var(--text-muted);
       pointer-events: none;
     }
+
+    /* Panel tabs */
+    #panel-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px 4px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Session buttons */
+    .session-btn {
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      margin-bottom: 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .session-btn:hover { border-color: var(--accent); }
+    .session-btn.danger { border-color: var(--red); color: var(--red); }
+    .session-btn.danger:hover { background: rgba(218,54,51,0.1); }
   </style>
 </head>
 <body>
@@ -357,81 +403,181 @@
 
       <!-- Collapsible side panel -->
       <div id="side-panel">
-        <div class="panel-section">
-          <h3>Events</h3>
-          <div class="bolus-row">
-            <input type="number" id="bolus-amount" min="0.5" max="20" step="0.5" value="4" />
-            <button id="btn-bolus">💉 Bolus</button>
+
+        <!-- Tab bar -->
+        <div id="panel-tabs">
+          <button class="tab-btn active" data-tab="events">Events</button>
+          <button class="tab-btn" data-tab="therapy">Therapy</button>
+          <button class="tab-btn" data-tab="patient">Patient</button>
+          <button class="tab-btn" data-tab="session">Session</button>
+        </div>
+
+        <!-- Events tab -->
+        <div class="tab-content active" id="tab-events">
+          <div class="panel-section">
+            <h3>Inject</h3>
+            <div class="bolus-row">
+              <input type="number" id="bolus-amount" min="0.5" max="20" step="0.5" value="4" />
+              <button id="btn-bolus">💉 Bolus</button>
+            </div>
+            <div class="bolus-row" style="margin-top: 8px;">
+              <input type="number" id="meal-carbs" min="5" max="150" step="5" value="60" />
+              <button id="btn-meal" style="border-color: var(--amber); color: var(--amber);">🍽 Meal</button>
+            </div>
           </div>
-          <div class="bolus-row" style="margin-top: 8px;">
-            <input type="number" id="meal-carbs" min="5" max="150" step="5" value="60" />
-            <button id="btn-meal" style="border-color: var(--amber); color: var(--amber);">🍽 Meal</button>
+          <div class="panel-section">
+            <h3>Overlays</h3>
+            <div class="panel-row">
+              <label>IOB curve</label>
+              <input type="checkbox" id="overlay-iob" checked />
+            </div>
+            <div class="panel-row">
+              <label>COB curve</label>
+              <input type="checkbox" id="overlay-cob" checked />
+            </div>
+            <div class="panel-row">
+              <label>Event markers</label>
+              <input type="checkbox" id="overlay-events" checked />
+            </div>
+            <div class="panel-row">
+              <label>True glucose</label>
+              <input type="checkbox" id="overlay-true" />
+            </div>
           </div>
         </div>
 
-        <div class="panel-section">
-          <h3>Therapy</h3>
-          <div class="panel-row">
-            <label>Mode</label>
-            <select id="therapy-mode">
-              <option value="AID">AID (PID)</option>
-              <option value="PUMP">Pump (open loop)</option>
-              <option value="MDI">MDI</option>
-            </select>
+        <!-- Therapy tab -->
+        <div class="tab-content" id="tab-therapy">
+          <div class="panel-section">
+            <h3>Therapy mode</h3>
+            <div class="panel-row">
+              <label>Mode</label>
+              <select id="therapy-mode">
+                <option value="AID">AID (PID)</option>
+                <option value="PUMP">Pump (open loop)</option>
+                <option value="MDI">MDI</option>
+              </select>
+            </div>
+            <div class="panel-row" id="row-target">
+              <label>Glucose target</label>
+              <input type="number" id="glucose-target" min="70" max="180" step="5" value="100" />
+            </div>
           </div>
-          <div class="panel-row">
-            <label>Target glucose</label>
-            <input type="number" id="glucose-target" min="70" max="180" step="5" value="100" />
+          <div class="panel-section">
+            <h3>Insulin</h3>
+            <div class="panel-row">
+              <label>Rapid analogue</label>
+              <select id="rapid-analogue">
+                <option value="Fiasp">Fiasp</option>
+                <option value="Lispro">Lispro</option>
+                <option value="Aspart">Aspart</option>
+              </select>
+            </div>
+            <div class="panel-row">
+              <label>Programmed ISF</label>
+              <input type="number" id="prog-isf" min="10" max="200" step="5" value="40" />
+            </div>
+            <div class="panel-row">
+              <label>Programmed ICR</label>
+              <input type="number" id="prog-cr" min="3" max="30" step="1" value="12" />
+            </div>
           </div>
-          <div class="panel-row">
-            <label>Programmed ISF</label>
-            <input type="number" id="prog-isf" min="10" max="200" step="5" value="40" />
+          <div class="panel-section" id="section-mdi">
+            <h3>Long-acting (MDI)</h3>
+            <div class="panel-row">
+              <label>Insulin type</label>
+              <select id="long-acting-type">
+                <option value="Glargine">Glargine</option>
+                <option value="Degludec">Degludec</option>
+                <option value="Detemir">Detemir</option>
+              </select>
+            </div>
+            <div class="panel-row">
+              <label>Dose (U)</label>
+              <input type="number" id="long-acting-dose" min="1" max="80" step="1" value="20" />
+            </div>
+            <div class="panel-row">
+              <label>Injection time</label>
+              <input type="time" id="long-acting-time" value="22:00" />
+            </div>
           </div>
-          <div class="panel-row">
-            <label>Programmed ICR</label>
-            <input type="number" id="prog-cr" min="3" max="30" step="1" value="12" />
+          <div class="panel-section" id="section-basal">
+            <h3>Basal profile</h3>
+            <div id="basal-profile-rows"></div>
+            <button id="btn-add-basal" style="margin-top:8px;width:100%;padding:6px;background:var(--bg-surface);border:1px dashed var(--border);color:var(--text-muted);border-radius:6px;cursor:pointer;font-size:12px;">+ Add segment</button>
           </div>
-          <div class="panel-row">
-            <label>Basal rate (U/hr)</label>
-            <input type="number" id="basal-rate" min="0" max="5" step="0.05" value="0.80" />
+          <div class="panel-section" id="section-temp-basal">
+            <h3>Temp basal</h3>
+            <div class="bolus-row">
+              <input type="number" id="temp-basal-rate" min="0" max="5" step="0.05" value="0" placeholder="U/hr" />
+              <input type="number" id="temp-basal-duration" min="15" max="480" step="15" value="60" placeholder="min" style="width:60px;" />
+              <button id="btn-set-temp">Set</button>
+            </div>
+            <button id="btn-cancel-temp" style="margin-top:6px;width:100%;padding:5px;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;cursor:pointer;font-size:12px;">Cancel temp basal</button>
           </div>
         </div>
 
-        <div class="panel-section">
-          <h3>Patient</h3>
-          <div class="panel-row">
-            <label>True ISF</label>
-            <input type="number" id="true-isf" min="10" max="200" step="5" value="40" />
+        <!-- Patient tab -->
+        <div class="tab-content" id="tab-patient">
+          <div class="panel-section">
+            <h3>True physiology</h3>
+            <div class="panel-row">
+              <label>True ISF</label>
+              <input type="number" id="true-isf" min="10" max="200" step="5" value="40" />
+            </div>
+            <div class="panel-row">
+              <label>True ICR</label>
+              <input type="number" id="true-cr" min="3" max="30" step="1" value="12" />
+            </div>
+            <div class="panel-row">
+              <label>Weight (kg)</label>
+              <input type="number" id="patient-weight" min="30" max="180" step="1" value="75" />
+            </div>
           </div>
-          <div class="panel-row">
-            <label>True ICR</label>
-            <input type="number" id="true-cr" min="3" max="30" step="1" value="12" />
+          <div class="panel-section">
+            <h3>Dawn phenomenon (EGP)</h3>
+            <div class="panel-row">
+              <label>Amplitude</label>
+              <input type="number" id="egp-amp" min="0" max="3" step="0.1" value="1.0" />
+            </div>
+            <div class="panel-row">
+              <label>Peak hour</label>
+              <input type="number" id="egp-peak" min="0" max="23" step="1" value="5" />
+            </div>
+            <div class="panel-row">
+              <label>Basal level</label>
+              <input type="number" id="egp-basal" min="0.01" max="0.15" step="0.005" value="0.04" />
+            </div>
           </div>
-          <div class="panel-row">
-            <label>EGP amplitude</label>
-            <input type="number" id="egp-amp" min="0" max="3" step="0.1" value="1.0" />
-          </div>
-          <div class="panel-row">
-            <label>EGP peak hour</label>
-            <input type="number" id="egp-peak" min="0" max="23" step="1" value="5" />
+          <div class="panel-section">
+            <h3>Absorption</h3>
+            <div class="panel-row">
+              <label>Carb abs time (min)</label>
+              <input type="number" id="carbs-abs-time" min="120" max="600" step="30" value="360" />
+            </div>
+            <div class="panel-row">
+              <label>Gastric emptying</label>
+              <input type="number" id="gastric-rate" min="0.5" max="3" step="0.1" value="1.0" />
+            </div>
           </div>
         </div>
 
-        <div class="panel-section">
-          <h3>Overlays</h3>
-          <div class="panel-row">
-            <label>Show IOB curve</label>
-            <input type="checkbox" id="overlay-iob" checked />
+        <!-- Session tab -->
+        <div class="tab-content" id="tab-session">
+          <div class="panel-section">
+            <h3>Session</h3>
+            <button id="btn-save" class="session-btn">💾 Save to browser</button>
+            <button id="btn-load" class="session-btn">📂 Load from browser</button>
+            <button id="btn-export" class="session-btn">⬇ Export JSON</button>
+            <button id="btn-import" class="session-btn">⬆ Import JSON</button>
+            <button id="btn-reset" class="session-btn danger">↺ Reset simulation</button>
           </div>
-          <div class="panel-row">
-            <label>Show COB curve</label>
-            <input type="checkbox" id="overlay-cob" checked />
-          </div>
-          <div class="panel-row">
-            <label>Show true glucose</label>
-            <input type="checkbox" id="overlay-true" />
+          <div class="panel-section">
+            <h3>Status</h3>
+            <div id="session-status" style="font-size:12px;color:var(--text-muted);line-height:1.6;"></div>
           </div>
         </div>
+
       </div>
     </div>
 

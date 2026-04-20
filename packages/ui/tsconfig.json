@@ -7,13 +7,12 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "sourceMap": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true
   },
   "references": [
     { "path": "../shared" }
   ],
-  "include": ["src"]
+  "include": ["src", "../simulator/src"],
+  "exclude": ["src/worker-bridge.ts", "src/worker-bridge.ts.bak", "src/worker-entry.ts", "src/worker-entry.ts.bak"]
 }
