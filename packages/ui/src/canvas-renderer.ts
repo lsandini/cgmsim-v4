@@ -54,12 +54,24 @@ const COLORS = {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+// Comparison trace colours (orange/coral — distinct from primary blue)
+const COMPARE_COLORS = {
+  trace:     '#ff7b54',
+  traceGlow: 'rgba(255, 123, 84, 0.30)',
+  hypoL1:    '#ff9f43',
+  hypoL2:    '#ee5a24',
+};
+
 export interface RendererOptions {
   showIOB: boolean;
   showCOB: boolean;
   showTrueGlucose: boolean;
   showEvents: boolean;
   displayUnit: DisplayUnit;
+  /** Label for primary trace legend (shown when comparison active) */
+  primaryLabel: string;
+  /** Label for comparison trace */
+  compareLabel: string;
 }
 
 interface RingEntry {
@@ -120,6 +132,7 @@ export class CGMRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private ring = new RingBuffer(MAX_BUFFER);
+  private comparisonRing = new RingBuffer(MAX_BUFFER);
   private events: SimEvent[] = [];
   private rafId = 0;
   private dirty = false;
@@ -129,6 +142,8 @@ export class CGMRenderer {
     showTrueGlucose: false,
     showEvents: true,
     displayUnit: 'mgdl',
+    primaryLabel: 'Run A',
+    compareLabel: 'Run B',
   };
 
   // Padding
@@ -166,15 +181,23 @@ export class CGMRenderer {
   /** Called on every tick from the worker bridge. */
   pushTick(snap: TickSnapshot): void {
     this.ring.push({
-      simTimeMs: snap.simTimeMs,
-      cgm: snap.cgm,
-      trueGlucose: snap.trueGlucose,
-      iob: snap.iob,
-      cob: snap.cob,
-      trend: snap.trend,
+      simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
+      iob: snap.iob, cob: snap.cob, trend: snap.trend,
     });
     this.dirty = true;
   }
+
+  /** Push a tick from the comparison simulator. */
+  pushComparisonTick(snap: TickSnapshot): void {
+    this.comparisonRing.push({
+      simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
+      iob: snap.iob, cob: snap.cob, trend: snap.trend,
+    });
+    this.dirty = true;
+  }
+
+  /** True if a comparison trace has any data. */
+  get hasComparison(): boolean { return this.comparisonRing.size > 0; }
 
   /** Add simulation events for canvas markers. */
   pushEvents(evs: SimEvent[]): void {
@@ -185,7 +208,14 @@ export class CGMRenderer {
   /** Clear all historical data (e.g. on RESET). */
   clearHistory(): void {
     this.ring.clear();
+    this.comparisonRing.clear();
     this.events = [];
+    this.dirty = true;
+  }
+
+  /** Clear only comparison trace. */
+  clearComparison(): void {
+    this.comparisonRing.clear();
     this.dirty = true;
   }
 
@@ -297,7 +327,13 @@ export class CGMRenderer {
     // ── Layer 7: CGM trace ───────────────────────────────────────────────
     this.drawTrace(winStartMin);
 
-    // ── Layer 8: event markers ───────────────────────────────────────────
+    // ── Layer 8: comparison trace (if active) ────────────────────────────
+    if (this.hasComparison) {
+      this.drawComparisonTrace(winStartMin);
+      this.drawLegend();
+    }
+
+    // ── Layer 9: event markers ───────────────────────────────────────────
     if (this.options.showEvents) this.drawEventMarkers(winStartMin);
   }
 
@@ -433,13 +469,45 @@ export class CGMRenderer {
     const ctx = this.ctx;
     if (this.ring.size === 0) return;
 
-    // Draw glow pass first (wider, transparent)
-    this.drawTracePath(winStartMin, 6, COLORS.traceGlow, false);
-    // Draw sharp line on top
-    this.drawTracePath(winStartMin, 2, COLORS.trace, true);
+    // Glow pass (wider, transparent) then sharp line
+    this.drawTracePath(this.ring, winStartMin, 6, COLORS.traceGlow, false);
+    this.drawTracePath(this.ring, winStartMin, 2, COLORS.trace, true);
+  }
+
+  private drawComparisonTrace(winStartMin: number): void {
+    if (this.comparisonRing.size === 0) return;
+    this.drawTracePath(this.comparisonRing, winStartMin, 6,  COMPARE_COLORS.traceGlow, false);
+    this.drawTracePath(this.comparisonRing, winStartMin, 2,  COMPARE_COLORS.trace, false);
+  }
+
+  private drawLegend(): void {
+    const ctx   = this.ctx;
+    const x     = this.PAD_LEFT + 8;
+    const y     = this.PAD_TOP + 10;
+    const swatch = 14;
+    const gap    = 6;
+
+    ctx.font = 'bold 11px -apple-system, sans-serif';
+    ctx.textBaseline = 'middle';
+
+    // Primary
+    ctx.fillStyle = COLORS.trace;
+    ctx.fillRect(x, y - swatch / 2, swatch, swatch);
+    ctx.fillStyle = '#e6edf3';
+    ctx.fillText(this.options.primaryLabel, x + swatch + gap, y);
+
+    // Comparison
+    const x2 = x + swatch + gap + ctx.measureText(this.options.primaryLabel).width + 16;
+    ctx.fillStyle = COMPARE_COLORS.trace;
+    ctx.fillRect(x2, y - swatch / 2, swatch, swatch);
+    ctx.fillStyle = '#e6edf3';
+    ctx.fillText(this.options.compareLabel, x2 + swatch + gap, y);
+
+    ctx.textBaseline = 'alphabetic';
   }
 
   private drawTracePath(
+    ring: RingBuffer,
     winStartMin: number,
     lineWidth: number,
     color: string,
@@ -453,14 +521,10 @@ export class CGMRenderer {
     let inPath = false;
     let prevZone = 0;
 
-    const strokeCurrent = () => {
-      ctx.stroke();
-    };
-
     ctx.beginPath();
     ctx.strokeStyle = color;
 
-    this.ring.forEach((entry) => {
+    ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
 
@@ -470,7 +534,7 @@ export class CGMRenderer {
       if (colorByZone) {
         const zone = entry.cgm < HYPO_L1 ? 2 : entry.cgm < TIR_LOW ? 1 : 0;
         if (zone !== prevZone && inPath) {
-          strokeCurrent();
+          ctx.stroke();
           ctx.beginPath();
           ctx.strokeStyle = zone === 2 ? COLORS.traceHypoL2
             : zone === 1 ? COLORS.traceHypoL1 : COLORS.trace;
@@ -479,15 +543,11 @@ export class CGMRenderer {
         }
       }
 
-      if (!inPath) {
-        ctx.moveTo(x, y);
-        inPath = true;
-      } else {
-        ctx.lineTo(x, y);
-      }
+      if (!inPath) { ctx.moveTo(x, y); inPath = true; }
+      else           ctx.lineTo(x, y);
     });
 
-    if (inPath) strokeCurrent();
+    if (inPath) ctx.stroke();
   }
 
   private drawTrueLine(winStartMin: number): void {

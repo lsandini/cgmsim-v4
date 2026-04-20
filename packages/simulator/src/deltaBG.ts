@@ -24,16 +24,16 @@ const TICK_MINUTES = 5;
 
 export interface DeltaBGInputs {
   patient: VirtualPatient;
-  isf: number;          // True ISF (mg/dL/U)
-  cr: number;           // True carbohydrate ratio (g/U)
-
+  isf: number;
+  cr: number;
   boluses: ActiveBolus[];
   longActing: ActiveLongActing[];
   pumpMicroBoluses: PumpBasalBolus[];
   meals: ResolvedMeal[];
-
   nowSimTimeMs: number;
   isPump: boolean;
+  /** Current true BG for counter-regulatory EGP calculation */
+  currentGlucose?: number;
 }
 
 export interface DeltaBGResult {
@@ -66,7 +66,7 @@ export function computeDeltaBG(inputs: DeltaBGInputs): DeltaBGResult {
   );
 
   // ── Endogenous glucose production ───────────────────────────────────────
-  const egpEffect = calculateEGP(patient, nowSimTimeMs, isf);
+  const egpEffect = calculateEGP(patient, nowSimTimeMs, isf, inputs.currentGlucose);
 
   const deltaBG = insulinEffect + carbEffect + egpEffect;
 

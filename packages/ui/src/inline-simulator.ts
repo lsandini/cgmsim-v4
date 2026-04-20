@@ -196,6 +196,7 @@ export class InlineSimulator {
       boluses: s.activeBoluses, longActing: s.activeLongActing,
       pumpMicroBoluses: s.pumpMicroBoluses, meals: s.resolvedMeals,
       nowSimTimeMs: nowMs, isPump,
+      currentGlucose: s.trueGlucose,
     });
 
     const newTrue = Math.max(20, Math.min(600, s.trueGlucose + delta.deltaBG));
