@@ -1,0 +1,17 @@
+{
+  "name": "cgmsim-v4",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w packages/ui",
+    "build": "npm run build -w packages/shared && npm run build -w packages/simulator && npm run build -w packages/ui",
+    "test": "npm run test -w packages/simulator",
+    "typecheck": "tsc --build"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
