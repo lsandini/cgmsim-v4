@@ -34,7 +34,7 @@ import type { ResolvedMeal } from '../../simulator/src/carbs.js';
 import { runPID, rateToMicroBolus } from '../../simulator/src/pid.js';
 import { RAPID_PROFILES, LONG_ACTING_PROFILES } from '../../simulator/src/insulinProfiles.js';
 
-const TICK_SIM_MS  = 5 * 60_000;
+const TICK_SIM_MS  = 1 * 60_000;
 const DEFAULT_SEED = 42;
 const INITIAL_BG   = 100;
 
@@ -216,16 +216,16 @@ export class InlineSimulator {
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
-      deltaMinutes: 5, trend: delta.deltaBG / 5, basalRate,
+      deltaMinutes: 1, trend: delta.deltaBG, basalRate,
     };
     for (const h of this.tickHandlers) h(snap);
   }
 
   private rafLoop(wallNow: number): void {
     if (!this.s.running) return;
-    const intervalMs = 300_000 / this.s.throttle;
+    const intervalMs = TICK_SIM_MS / this.s.throttle;
     const ticksDue = Math.floor((wallNow - this.lastTickWallMs) / intervalMs);
-    const ticksToRun = Math.min(ticksDue, 10); // cap catch-up after tab was hidden
+    const ticksToRun = Math.min(ticksDue, 50); // cap catch-up after tab was hidden
     for (let i = 0; i < ticksToRun; i++) this.tick();
     if (ticksToRun > 0) this.lastTickWallMs += ticksToRun * intervalMs;
     this.rafId = requestAnimationFrame((t) => this.rafLoop(t));

@@ -21,7 +21,7 @@ import type { SimEvent } from './inline-simulator.js';
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_WINDOW_MINUTES = 24 * 60;
-const TICK_MINUTES = 5;
+const TICK_MINUTES = 1;
 const MAX_BUFFER = 7 * 24 * 60 / TICK_MINUTES + 1; // 7 days of 5-min ticks
 
 // ATTD glucose thresholds (mg/dL)
@@ -193,7 +193,7 @@ export class CGMRenderer {
   }
 
   setZoom(minutes: number): void {
-    this.viewWindowMinutes = Math.max(360, Math.min(1440, minutes));
+    this.viewWindowMinutes = Math.max(180, Math.min(1440, minutes));
     this.dirty = true;
     this.notifyViewChange();
   }
@@ -343,7 +343,7 @@ export class CGMRenderer {
           touches[0]!.clientY - touches[1]!.clientY,
         );
         const raw = this.pinchStartWindow * (this.pinchStartDist / dist);
-        this.viewWindowMinutes = Math.max(360, Math.min(1440, raw));
+        this.viewWindowMinutes = Math.max(180, Math.min(1440, raw));
         this.dirty = true;
         this.notifyViewChange();
       }
@@ -353,9 +353,9 @@ export class CGMRenderer {
     // Wheel: cycle through zoom levels
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const levels = [360, 720, 1440];
+      const levels = [180, 360, 720, 1440];
       const idx = levels.indexOf(this.viewWindowMinutes);
-      const current = idx === -1 ? 1440 : idx;
+      const current = idx === -1 ? levels.length - 1 : idx;
       const next = e.deltaY > 0
         ? Math.min(current + 1, levels.length - 1)  // scroll down → zoom out
         : Math.max(current - 1, 0);                  // scroll up  → zoom in
@@ -369,7 +369,7 @@ export class CGMRenderer {
     canvas.addEventListener('touchend', () => {
       this.isDragging = false;
       // Snap to nearest discrete zoom level after pinch
-      const levels = [360, 720, 1440];
+      const levels = [180, 360, 720, 1440];
       this.viewWindowMinutes = levels.reduce((best, lvl) =>
         Math.abs(lvl - this.viewWindowMinutes) < Math.abs(best - this.viewWindowMinutes) ? lvl : best
       );
@@ -490,7 +490,8 @@ export class CGMRenderer {
     ctx.setLineDash([]);
 
     // Vertical time lines — adaptive density based on zoom level
-    const stepMin = this.viewWindowMinutes <= 360 ? 60
+    const stepMin = this.viewWindowMinutes <= 180 ? 30
+      : this.viewWindowMinutes <= 360 ? 60
       : this.viewWindowMinutes <= 720 ? 120 : 180;
 
     ctx.textAlign = 'center';
@@ -523,14 +524,12 @@ export class CGMRenderer {
 
   private drawTrace(winStartMin: number): void {
     if (this.ring.size === 0) return;
-    this.drawTracePath(this.ring, winStartMin, 6, COLORS.traceGlow, false);
-    this.drawTracePath(this.ring, winStartMin, 2, COLORS.trace, true);
+    this.drawDots(this.ring, winStartMin, true);
   }
 
   private drawComparisonTrace(winStartMin: number): void {
     if (this.comparisonRing.size === 0) return;
-    this.drawTracePath(this.comparisonRing, winStartMin, 6, COMPARE_COLORS.traceGlow, false);
-    this.drawTracePath(this.comparisonRing, winStartMin, 2, COMPARE_COLORS.trace, false);
+    this.drawDots(this.comparisonRing, winStartMin, false);
   }
 
   private drawLegend(): void {
@@ -550,6 +549,25 @@ export class CGMRenderer {
     ctx.fillStyle = '#e6edf3';
     ctx.fillText(this.options.compareLabel, x2 + swatch + gap, y);
     ctx.textBaseline = 'alphabetic';
+  }
+
+  private drawDots(ring: RingBuffer, winStartMin: number, colorByZone: boolean): void {
+    const ctx = this.ctx;
+    // Dot radius scales with zoom: smaller when many points are visible
+    const r = this.viewWindowMinutes <= 180 ? 3.5 : this.viewWindowMinutes <= 360 ? 2.5 : 2;
+    ring.forEach((entry) => {
+      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      const x = this.timeX(offsetMin);
+      const y = this.glucoseY(entry.cgm);
+      const color = colorByZone
+        ? (entry.cgm < HYPO_L1 ? COLORS.traceHypoL2 : entry.cgm < TIR_LOW ? COLORS.traceHypoL1 : COLORS.trace)
+        : COMPARE_COLORS.trace;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    });
   }
 
   private drawTracePath(

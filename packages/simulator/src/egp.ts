@@ -15,7 +15,7 @@ import type { VirtualPatient } from '@cgmsim/shared';
 
 const TWO_PI          = 2 * Math.PI;
 const MINUTES_PER_DAY = 24 * 60;
-const TICK_MINUTES    = 5;
+const TICK_MINUTES    = 1;
 
 // Counter-regulation thresholds (mg/dL)
 const CR_ONSET_BG  = 80;   // response begins here

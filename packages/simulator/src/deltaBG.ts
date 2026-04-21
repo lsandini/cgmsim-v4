@@ -20,7 +20,7 @@ import { calculateCarbEffect } from './carbs.js';
 import type { ResolvedMeal } from './carbs.js';
 import { calculateEGP } from './egp.js';
 
-const TICK_MINUTES = 5;
+const TICK_MINUTES = 1;
 
 export interface DeltaBGInputs {
   patient: VirtualPatient;

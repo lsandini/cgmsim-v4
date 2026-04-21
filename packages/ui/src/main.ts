@@ -31,7 +31,7 @@ function showError(msg: string): void {
 
 // ── Throttle ──────────────────────────────────────────────────────────────────
 
-const THROTTLE_STOPS = [0.25, 0.5, 1, 5, 10, 50, 100] as const;
+const THROTTLE_STOPS = [0.25, 0.5, 1, 5, 10, 50, 100, 600, 3600] as const;
 type ThrottleStop = typeof THROTTLE_STOPS[number];
 
 function sliderToThrottle(v: number): ThrottleStop {
@@ -138,6 +138,7 @@ const btnLoad          = getEl<HTMLButtonElement>('btn-load');
 const btnExport        = getEl<HTMLButtonElement>('btn-export');
 const btnImport        = getEl<HTMLButtonElement>('btn-import');
 const btnReset         = getEl<HTMLButtonElement>('btn-reset');
+const btnZoom3h        = getEl<HTMLButtonElement>('btn-zoom-3h');
 const btnZoom6h        = getEl<HTMLButtonElement>('btn-zoom-6h');
 const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
 const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
@@ -235,11 +236,13 @@ throttleVal.textContent = `×${sliderToThrottle(parseInt(throttleSlider.value))}
 // ── Zoom and pan controls ─────────────────────────────────────────────────────
 
 function updateZoomButtons(activeMinutes: number): void {
+  btnZoom3h.classList.toggle('active',  activeMinutes === 180);
   btnZoom6h.classList.toggle('active',  activeMinutes === 360);
   btnZoom12h.classList.toggle('active', activeMinutes === 720);
   btnZoom24h.classList.toggle('active', activeMinutes === 1440);
 }
 
+btnZoom3h.addEventListener('click',  () => { renderer.setZoom(180);  updateZoomButtons(180); });
 btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360); });
 btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720); });
 btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); });

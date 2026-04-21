@@ -26,7 +26,7 @@ export interface PIDOutput {
   microbolusUnits: number;
 }
 
-const TICK_MINUTES = 5;
+const TICK_MINUTES = 1;
 const TICK_HOURS = TICK_MINUTES / 60;
 
 // PID tuning constants — matching v3 values
