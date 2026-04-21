@@ -284,6 +284,11 @@
       min-width: 0;
     }
 
+    .param-unit {
+      font-size: 10px;
+      opacity: 0.7;
+    }
+
     .panel-row input[type="number"],
     .panel-row select {
       background: var(--bg-surface);
@@ -340,6 +345,32 @@
       pointer-events: none;
     }
 
+    /* View controls — zoom and live button */
+    #view-controls {
+      position: absolute;
+      top: 48px;
+      right: 12px;
+      display: flex;
+      gap: 4px;
+      z-index: 5;
+    }
+
+    .view-btn {
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      opacity: 0.75;
+      transition: opacity 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .view-btn:hover { opacity: 1; color: var(--text); }
+    .view-btn.active { border-color: var(--accent); color: var(--accent); opacity: 1; }
+    .view-btn.live-btn { border-color: var(--green); color: var(--green); opacity: 1; }
+
     /* Panel tabs */
     #panel-tabs {
       display: flex;
@@ -393,6 +424,13 @@
       <canvas id="cgm-canvas"></canvas>
 
       <button id="unit-toggle" title="Toggle display units">mg/dL</button>
+
+      <div id="view-controls">
+        <button class="view-btn" id="btn-zoom-6h">6h</button>
+        <button class="view-btn" id="btn-zoom-12h">12h</button>
+        <button class="view-btn active" id="btn-zoom-24h">24h</button>
+        <button class="view-btn live-btn" id="btn-live" hidden>↩ Live</button>
+      </div>
 
       <div id="iob-cob">
         IOB <span id="iob-val">0.00</span> U &nbsp;
@@ -459,7 +497,7 @@
               </select>
             </div>
             <div class="panel-row" id="row-target">
-              <label>Glucose target</label>
+              <label>Glucose target <span class="param-unit" id="unit-glucose-target">mg/dL</span></label>
               <input type="number" id="glucose-target" min="70" max="180" step="5" value="100" />
             </div>
           </div>
@@ -474,7 +512,7 @@
               </select>
             </div>
             <div class="panel-row">
-              <label>Programmed ISF</label>
+              <label>Programmed ISF <span class="param-unit" id="unit-prog-isf">mg/dL/U</span></label>
               <input type="number" id="prog-isf" min="10" max="200" step="5" value="40" />
             </div>
             <div class="panel-row">
@@ -522,7 +560,7 @@
           <div class="panel-section">
             <h3>True physiology</h3>
             <div class="panel-row">
-              <label>True ISF</label>
+              <label>True ISF <span class="param-unit" id="unit-true-isf">mg/dL/U</span></label>
               <input type="number" id="true-isf" min="10" max="200" step="5" value="40" />
             </div>
             <div class="panel-row">

@@ -6,12 +6,13 @@
  * Reads from a shared ring buffer updated on each tick message.
  *
  * Spec §7.3 and §8.2:
- *   - 24-hour display window: 18h filled + 6h empty space
+ *   - 24-hour default display window (6h / 12h / 24h zoom levels)
  *   - Fixed midnight-at-left for first 18h; scrolling thereafter
  *   - ATTD colour bands: green (70–180), amber (54–70), red (<54)
  *   - Glow effect on trace line
  *   - IOB and COB activity overlays (toggleable)
  *   - mg/dL ↔ mmol/L display at presentation layer only
+ *   - Pan (drag) and zoom (buttons / pinch) with live-follow mode
  */
 
 import type { TickSnapshot, DisplayUnit } from '@cgmsim/shared';
@@ -19,22 +20,21 @@ import type { SimEvent } from './inline-simulator.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const WINDOW_MINUTES = 24 * 60;         // total display window
-const HISTORY_MINUTES = 18 * 60;        // filled region
-const FUTURE_MINUTES = 6 * 60;          // empty region
+const DEFAULT_WINDOW_MINUTES = 24 * 60;
 const TICK_MINUTES = 5;
-const MAX_BUFFER = HISTORY_MINUTES / TICK_MINUTES + 1; // 217 points
+const MAX_BUFFER = 7 * 24 * 60 / TICK_MINUTES + 1; // 7 days of 5-min ticks
 
 // ATTD glucose thresholds (mg/dL)
 const TIR_LOW = 70;
 const TIR_HIGH = 180;
 const HYPO_L1 = 54;
 
-// Canvas colours (CSS variables mapped to actual values for canvas 2D)
+// Canvas colours
 const COLORS = {
   bg: '#0d1117',
   grid: 'rgba(48, 54, 61, 0.6)',
   gridLabel: '#8b949e',
+  gridDay: 'rgba(88, 166, 255, 0.25)',
   greenBand: 'rgba(38, 166, 65, 0.12)',
   amberBand: 'rgba(210, 153, 34, 0.20)',
   redBand: 'rgba(218, 54, 51, 0.20)',
@@ -52,9 +52,6 @@ const COLORS = {
   future: 'rgba(255, 255, 255, 0.03)',
 };
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-// Comparison trace colours (orange/coral — distinct from primary blue)
 const COMPARE_COLORS = {
   trace:     '#ff7b54',
   traceGlow: 'rgba(255, 123, 84, 0.30)',
@@ -62,15 +59,15 @@ const COMPARE_COLORS = {
   hypoL2:    '#ee5a24',
 };
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 export interface RendererOptions {
   showIOB: boolean;
   showCOB: boolean;
   showTrueGlucose: boolean;
   showEvents: boolean;
   displayUnit: DisplayUnit;
-  /** Label for primary trace legend (shown when comparison active) */
   primaryLabel: string;
-  /** Label for comparison trace */
   compareLabel: string;
 }
 
@@ -87,7 +84,7 @@ interface RingEntry {
 
 class RingBuffer {
   private buf: (RingEntry | null)[];
-  private head = 0;  // next write position
+  private head = 0;
   private _size = 0;
 
   constructor(capacity: number) {
@@ -102,7 +99,6 @@ class RingBuffer {
 
   get size(): number { return this._size; }
 
-  /** Iterate from oldest to newest. */
   forEach(cb: (entry: RingEntry, index: number) => void): void {
     const cap = this.buf.length;
     const start = this._size < cap ? 0 : this.head;
@@ -136,6 +132,20 @@ export class CGMRenderer {
   private events: SimEvent[] = [];
   private rafId = 0;
   private dirty = false;
+  private lastTickWallMs = 0;
+  private currentThrottle = 10;
+  private isRunning = false;
+
+  // View state — pan and zoom
+  private viewWindowMinutes = DEFAULT_WINDOW_MINUTES;
+  private viewOffsetMs = 0;            // 0 = live-follow; positive = panned into history
+  private isDragging = false;
+  private dragStartX = 0;
+  private dragStartOffset = 0;
+  private pinchStartDist = 0;
+  private pinchStartWindow = DEFAULT_WINDOW_MINUTES;
+  private viewChangeCallbacks: (() => void)[] = [];
+
   public options: RendererOptions = {
     showIOB: true,
     showCOB: true,
@@ -146,13 +156,11 @@ export class CGMRenderer {
     compareLabel: 'Run B',
   };
 
-  // Padding
   private readonly PAD_LEFT = 56;
   private readonly PAD_RIGHT = 16;
   private readonly PAD_TOP = 24;
   private readonly PAD_BOTTOM = 36;
 
-  // CSS-pixel dimensions — what all drawing code uses
   private cssW = 0;
   private cssH = 0;
 
@@ -170,24 +178,46 @@ export class CGMRenderer {
     const rect = this.canvas.getBoundingClientRect();
     this.cssW = Math.max(rect.width, 400);
     this.cssH = Math.max(rect.height, 200);
-    // Physical pixel dimensions
     this.canvas.width = Math.round(this.cssW * dpr);
     this.canvas.height = Math.round(this.cssH * dpr);
-    // Reset to identity then scale once — never accumulate
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.dirty = true;
   }
 
-  /** Called on every tick from the worker bridge. */
+  // ── Public API ────────────────────────────────────────────────────────────
+
+  setPlayback(throttle: number, running: boolean): void {
+    this.currentThrottle = throttle;
+    this.isRunning = running;
+    this.dirty = true;
+  }
+
+  setZoom(minutes: number): void {
+    this.viewWindowMinutes = Math.max(360, Math.min(1440, minutes));
+    this.dirty = true;
+    this.notifyViewChange();
+  }
+
+  snapToLive(): void {
+    this.viewOffsetMs = 0;
+    this.dirty = true;
+    this.notifyViewChange();
+  }
+
+  get isLive(): boolean { return this.viewOffsetMs === 0; }
+  get zoomMinutes(): number { return this.viewWindowMinutes; }
+
+  onViewChange(cb: () => void): void { this.viewChangeCallbacks.push(cb); }
+
   pushTick(snap: TickSnapshot): void {
     this.ring.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend,
     });
+    this.lastTickWallMs = performance.now();
     this.dirty = true;
   }
 
-  /** Push a tick from the comparison simulator. */
   pushComparisonTick(snap: TickSnapshot): void {
     this.comparisonRing.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
@@ -196,38 +226,34 @@ export class CGMRenderer {
     this.dirty = true;
   }
 
-  /** True if a comparison trace has any data. */
   get hasComparison(): boolean { return this.comparisonRing.size > 0; }
 
-  /** Add simulation events for canvas markers. */
   pushEvents(evs: SimEvent[]): void {
     for (const ev of evs) this.events.push(ev);
     this.dirty = true;
   }
 
-  /** Clear all historical data (e.g. on RESET). */
   clearHistory(): void {
     this.ring.clear();
     this.comparisonRing.clear();
     this.events = [];
+    this.viewOffsetMs = 0;
     this.dirty = true;
+    this.notifyViewChange();
   }
 
-  /** Clear only comparison trace. */
   clearComparison(): void {
     this.comparisonRing.clear();
     this.dirty = true;
   }
 
-  /** Force a redraw on the next animation frame. */
-  markDirty(): void {
-    this.dirty = true;
-  }
+  markDirty(): void { this.dirty = true; }
 
   start(): void {
-    this.dirty = true; // ensure first frame always paints
+    this.dirty = true;
+    this.setupPanZoom();
     const loop = () => {
-      if (this.dirty) {
+      if (this.dirty || this.isRunning) {
         this.render();
         this.dirty = false;
       }
@@ -236,181 +262,203 @@ export class CGMRenderer {
     this.rafId = requestAnimationFrame(loop);
   }
 
-  stop(): void {
-    cancelAnimationFrame(this.rafId);
-  }
+  stop(): void { cancelAnimationFrame(this.rafId); }
 
   // ── Coordinate helpers ────────────────────────────────────────────────────
 
-  private get plotW(): number {
-    return this.cssW - this.PAD_LEFT - this.PAD_RIGHT;
-  }
-  private get plotH(): number {
-    return this.cssH - this.PAD_TOP - this.PAD_BOTTOM;
-  }
+  private get plotW(): number { return this.cssW - this.PAD_LEFT - this.PAD_RIGHT; }
+  private get plotH(): number { return this.cssH - this.PAD_TOP - this.PAD_BOTTOM; }
 
   private toDisplay(mgdl: number): number {
     return this.options.displayUnit === 'mmoll' ? mgdl / 18.0182 : mgdl;
   }
 
-  /** Y coordinate for a given mg/dL value. Glucose range: 40–400 mg/dL. */
   private glucoseY(mgdl: number): number {
     const MIN = 40, MAX = 400;
-    const frac = 1 - (mgdl - MIN) / (MAX - MIN);
-    return this.PAD_TOP + frac * this.plotH;
+    return this.PAD_TOP + (1 - (mgdl - MIN) / (MAX - MIN)) * this.plotH;
   }
 
-  /**
-   * X coordinate for a simulated time offset (minutes from the window start).
-   * The window always shows WINDOW_MINUTES across the full plot width.
-   */
   private timeX(minuteOffset: number): number {
-    return this.PAD_LEFT + (minuteOffset / WINDOW_MINUTES) * this.plotW;
+    return this.PAD_LEFT + (minuteOffset / this.viewWindowMinutes) * this.plotW;
   }
 
-  /**
-   * Compute the simulated time (in minutes from epoch) that should appear
-   * at the left edge of the display.
-   *
-   * Spec §8.2 scrolling behaviour:
-   *   - For first 18 simulated hours: midnight fixed at left, trace grows right
-   *   - After 18 simulated hours: scroll so the most recent 18h fills left portion
-   */
-  private windowStartMinutes(latestSimTimeMs: number): number {
-    const latestMin = latestSimTimeMs / 60_000;
-    if (latestMin <= HISTORY_MINUTES) {
-      return 0; // midnight fixed
-    }
-    return latestMin - HISTORY_MINUTES;
+  // Live-follow window start (original drift spec), then subtract pan offset.
+  private getWinStart(latestSimMs: number): number {
+    const latestMin = latestSimMs / 60_000;
+    const histMin = this.viewWindowMinutes * 0.75; // 75% history, 25% future
+    const liveStart = latestMin <= histMin ? 0 : latestMin - histMin;
+    return liveStart - this.viewOffsetMs / 60_000;
+  }
+
+  // ── Pan / zoom event handling ─────────────────────────────────────────────
+
+  private setupPanZoom(): void {
+    const canvas = this.canvas;
+    canvas.style.cursor = 'grab';
+
+    canvas.addEventListener('mousedown', (e) => {
+      this.isDragging = true;
+      this.dragStartX = e.clientX;
+      this.dragStartOffset = this.viewOffsetMs;
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!this.isDragging) return;
+      this.applyDrag(e.clientX);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!this.isDragging) return;
+      this.isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+
+    // Touch: single finger = pan, two fingers = pinch zoom
+    canvas.addEventListener('touchstart', (e) => {
+      const touches = Array.from(e.touches);
+      if (touches.length === 1) {
+        this.isDragging = true;
+        this.dragStartX = touches[0]!.clientX;
+        this.dragStartOffset = this.viewOffsetMs;
+      } else if (touches.length === 2) {
+        this.isDragging = false;
+        this.pinchStartDist = Math.hypot(
+          touches[0]!.clientX - touches[1]!.clientX,
+          touches[0]!.clientY - touches[1]!.clientY,
+        );
+        this.pinchStartWindow = this.viewWindowMinutes;
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      const touches = Array.from(e.touches);
+      if (touches.length === 1 && this.isDragging) {
+        this.applyDrag(touches[0]!.clientX);
+      } else if (touches.length === 2) {
+        const dist = Math.hypot(
+          touches[0]!.clientX - touches[1]!.clientX,
+          touches[0]!.clientY - touches[1]!.clientY,
+        );
+        const raw = this.pinchStartWindow * (this.pinchStartDist / dist);
+        this.viewWindowMinutes = Math.max(360, Math.min(1440, raw));
+        this.dirty = true;
+        this.notifyViewChange();
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    // Wheel: cycle through zoom levels
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const levels = [360, 720, 1440];
+      const idx = levels.indexOf(this.viewWindowMinutes);
+      const current = idx === -1 ? 1440 : idx;
+      const next = e.deltaY > 0
+        ? Math.min(current + 1, levels.length - 1)  // scroll down → zoom out
+        : Math.max(current - 1, 0);                  // scroll up  → zoom in
+      if (next !== current) {
+        this.viewWindowMinutes = levels[next]!;
+        this.dirty = true;
+        this.notifyViewChange();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => {
+      this.isDragging = false;
+      // Snap to nearest discrete zoom level after pinch
+      const levels = [360, 720, 1440];
+      this.viewWindowMinutes = levels.reduce((best, lvl) =>
+        Math.abs(lvl - this.viewWindowMinutes) < Math.abs(best - this.viewWindowMinutes) ? lvl : best
+      );
+      this.dirty = true;
+      this.notifyViewChange();
+    });
+  }
+
+  private applyDrag(clientX: number): void {
+    const dx = clientX - this.dragStartX;
+    const msPerPixel = (this.viewWindowMinutes * 60_000) / this.plotW;
+    const delta = dx * msPerPixel; // drag right → graph moves right → older data
+    const latest = this.ring.latest();
+    const latestSimMs = latest?.simTimeMs ?? 0;
+    const histMin = this.viewWindowMinutes * 0.75;
+    const liveStartMs = Math.max(0, latestSimMs - histMin * 60_000);
+    this.viewOffsetMs = Math.max(0, Math.min(this.dragStartOffset + delta, liveStartMs));
+    this.dirty = true;
+    this.notifyViewChange();
+  }
+
+  private notifyViewChange(): void {
+    for (const cb of this.viewChangeCallbacks) cb();
   }
 
   // ── Main render ───────────────────────────────────────────────────────────
 
   private render(): void {
-    // Re-measure if resize() ran before layout completed
     if (this.cssW === 0 || this.cssH === 0) {
       this.resize();
       if (this.cssW === 0 || this.cssH === 0) return;
     }
-    const W = this.cssW;
-    const H = this.cssH;
+    const W = this.cssW, H = this.cssH;
     const ctx = this.ctx;
 
     ctx.clearRect(0, 0, W, H);
-
-    // Background
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, W, H);
 
     const latest = this.ring.latest();
     const latestSimMs = latest?.simTimeMs ?? 0;
-    const winStartMin = this.windowStartMinutes(latestSimMs);
+    const animSimMs = this.computeAnimatedSimMs(latest);
+    const winStartMin = this.getWinStart(latestSimMs);
 
-    // ── Layer 1: colour bands ────────────────────────────────────────────
     this.drawBands(winStartMin);
-
-    // ── Layer 2: future space ────────────────────────────────────────────
-    this.drawFutureSpace(winStartMin, latestSimMs);
-
-    // ── Layer 3: grid lines and labels ───────────────────────────────────
+    this.drawFutureSpace(winStartMin, animSimMs);
     this.drawGrid(winStartMin);
 
-    // ── Layer 4: COB fill (below baseline) ──────────────────────────────
     if (this.options.showCOB) this.drawCOBOverlay(winStartMin);
-
-    // ── Layer 5: IOB fill (below glucose axis, mirrored down) ───────────
     if (this.options.showIOB) this.drawIOBOverlay(winStartMin);
-
-    // ── Layer 6: true glucose (faint, for debug) ─────────────────────────
     if (this.options.showTrueGlucose) this.drawTrueLine(winStartMin);
 
-    // ── Layer 7: CGM trace ───────────────────────────────────────────────
     this.drawTrace(winStartMin);
+    this.drawAnimatedExtension(winStartMin, latest, animSimMs);
 
-    // ── Layer 8: comparison trace (if active) ────────────────────────────
     if (this.hasComparison) {
       this.drawComparisonTrace(winStartMin);
       this.drawLegend();
     }
 
-    // ── Layer 9: event markers ───────────────────────────────────────────
     if (this.options.showEvents) this.drawEventMarkers(winStartMin);
   }
 
-  private drawEventMarkers(winStartMin: number): void {
-    const ctx = this.ctx;
-    const latest = this.ring.latest();
-    if (!latest) return;
-
-    for (const ev of this.events) {
-      const offsetMin = ev.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) continue;
-
-      const x = this.timeX(offsetMin);
-
-      if (ev.kind === 'bolus') {
-        // Blue downward triangle at bottom of plot area
-        const y = this.PAD_TOP + this.plotH;
-        ctx.beginPath();
-        ctx.moveTo(x, y - 2);
-        ctx.lineTo(x - 5, y - 12);
-        ctx.lineTo(x + 5, y - 12);
-        ctx.closePath();
-        ctx.fillStyle = COLORS.bolusMarker;
-        ctx.fill();
-        // Label: units
-        ctx.fillStyle = COLORS.bolusMarker;
-        ctx.font = 'bold 9px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ev.units}U`, x, y - 15);
-
-      } else if (ev.kind === 'meal') {
-        // Amber upward triangle at top of plot area
-        const y = this.PAD_TOP;
-        ctx.beginPath();
-        ctx.moveTo(x, y + 2);
-        ctx.lineTo(x - 5, y + 12);
-        ctx.lineTo(x + 5, y + 12);
-        ctx.closePath();
-        ctx.fillStyle = COLORS.mealMarker;
-        ctx.fill();
-        // Label: grams
-        ctx.fillStyle = COLORS.mealMarker;
-        ctx.font = 'bold 9px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ev.carbsG}g`, x, y + 24);
-      }
-    }
-    ctx.textAlign = 'left'; // reset
-  }
+  // ── Draw layers ───────────────────────────────────────────────────────────
 
   private drawBands(winStartMin: number): void {
+    void winStartMin;
     const ctx = this.ctx;
-    // Green TIR band
     const yTop = this.glucoseY(TIR_HIGH);
     const yBot = this.glucoseY(TIR_LOW);
     ctx.fillStyle = COLORS.greenBand;
     ctx.fillRect(this.PAD_LEFT, yTop, this.plotW, yBot - yTop);
 
-    // Amber L1 hypo band
     const yAmberBot = this.glucoseY(HYPO_L1);
     ctx.fillStyle = COLORS.amberBand;
     ctx.fillRect(this.PAD_LEFT, yBot, this.plotW, yAmberBot - yBot);
 
-    // Red L2 hypo band
     ctx.fillStyle = COLORS.redBand;
     ctx.fillRect(this.PAD_LEFT, yAmberBot, this.plotW, this.glucoseY(40) - yAmberBot);
   }
 
-  private drawFutureSpace(winStartMin: number, latestSimMs: number): void {
-    const latestMin = latestSimMs / 60_000;
-    const filledUntilOffset = latestMin - winStartMin;
-    const xFutureStart = this.timeX(filledUntilOffset);
-    const xEnd = this.timeX(WINDOW_MINUTES);
-    if (xFutureStart >= xEnd) return;
-
+  private drawFutureSpace(winStartMin: number, animSimMs: number): void {
+    const animMin = animSimMs / 60_000;
+    const filledOffset = animMin - winStartMin;
+    const xStart = this.timeX(filledOffset);
+    const xEnd = this.timeX(this.viewWindowMinutes);
+    if (xStart >= xEnd) return;
     this.ctx.fillStyle = COLORS.future;
-    this.ctx.fillRect(xFutureStart, this.PAD_TOP, xEnd - xFutureStart, this.plotH);
+    this.ctx.fillRect(xStart, this.PAD_TOP, xEnd - xStart, this.plotH);
   }
 
   private drawGrid(winStartMin: number): void {
@@ -441,68 +489,66 @@ export class CGMRenderer {
     }
     ctx.setLineDash([]);
 
-    // Vertical time lines — every 3 hours
+    // Vertical time lines — adaptive density based on zoom level
+    const stepMin = this.viewWindowMinutes <= 360 ? 60
+      : this.viewWindowMinutes <= 720 ? 120 : 180;
+
     ctx.textAlign = 'center';
-    for (let h = 0; h <= 24; h += 3) {
-      const simMin = winStartMin - (winStartMin % (24 * 60)) + h * 60;
+    const firstMark = Math.ceil(winStartMin / stepMin) * stepMin;
+    for (let simMin = firstMark; simMin <= winStartMin + this.viewWindowMinutes; simMin += stepMin) {
       const offsetMin = simMin - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) continue;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) continue;
 
       const x = this.timeX(offsetMin);
-      ctx.strokeStyle = COLORS.grid;
-      ctx.setLineDash([4, 4]);
+      const isMidnight = Math.round(simMin) % (24 * 60) === 0;
+
+      ctx.strokeStyle = isMidnight ? COLORS.gridDay : COLORS.grid;
+      ctx.lineWidth = isMidnight ? 1.5 : 1;
+      ctx.setLineDash(isMidnight ? [] : [4, 4]);
       ctx.beginPath();
       ctx.moveTo(x, this.PAD_TOP);
       ctx.lineTo(x, this.PAD_TOP + this.plotH);
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.lineWidth = 1;
 
-      // Hour label (24h clock, using absolute sim hour mod 24)
-      const absHour = Math.round(simMin / 60) % 24;
-      ctx.fillStyle = COLORS.gridLabel;
-      ctx.fillText(`${String(absHour).padStart(2, '0')}:00`,
-        x, this.PAD_TOP + this.plotH + 18);
+      const totalMin = Math.round(simMin);
+      const absHour = Math.floor(totalMin / 60) % 24;
+      const absMin = totalMin % 60;
+      const label = `${String(absHour).padStart(2, '0')}:${String(absMin).padStart(2, '0')}`;
+      ctx.fillStyle = isMidnight ? COLORS.trace : COLORS.gridLabel;
+      ctx.fillText(label, x, this.PAD_TOP + this.plotH + 18);
     }
   }
 
   private drawTrace(winStartMin: number): void {
-    const ctx = this.ctx;
     if (this.ring.size === 0) return;
-
-    // Glow pass (wider, transparent) then sharp line
     this.drawTracePath(this.ring, winStartMin, 6, COLORS.traceGlow, false);
     this.drawTracePath(this.ring, winStartMin, 2, COLORS.trace, true);
   }
 
   private drawComparisonTrace(winStartMin: number): void {
     if (this.comparisonRing.size === 0) return;
-    this.drawTracePath(this.comparisonRing, winStartMin, 6,  COMPARE_COLORS.traceGlow, false);
-    this.drawTracePath(this.comparisonRing, winStartMin, 2,  COMPARE_COLORS.trace, false);
+    this.drawTracePath(this.comparisonRing, winStartMin, 6, COMPARE_COLORS.traceGlow, false);
+    this.drawTracePath(this.comparisonRing, winStartMin, 2, COMPARE_COLORS.trace, false);
   }
 
   private drawLegend(): void {
-    const ctx   = this.ctx;
-    const x     = this.PAD_LEFT + 8;
-    const y     = this.PAD_TOP + 10;
-    const swatch = 14;
-    const gap    = 6;
-
+    const ctx = this.ctx;
+    const x = this.PAD_LEFT + 8, y = this.PAD_TOP + 10, swatch = 14, gap = 6;
     ctx.font = 'bold 11px -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
 
-    // Primary
     ctx.fillStyle = COLORS.trace;
     ctx.fillRect(x, y - swatch / 2, swatch, swatch);
     ctx.fillStyle = '#e6edf3';
     ctx.fillText(this.options.primaryLabel, x + swatch + gap, y);
 
-    // Comparison
     const x2 = x + swatch + gap + ctx.measureText(this.options.primaryLabel).width + 16;
     ctx.fillStyle = COMPARE_COLORS.trace;
     ctx.fillRect(x2, y - swatch / 2, swatch, swatch);
     ctx.fillStyle = '#e6edf3';
     ctx.fillText(this.options.compareLabel, x2 + swatch + gap, y);
-
     ctx.textBaseline = 'alphabetic';
   }
 
@@ -526,7 +572,7 @@ export class CGMRenderer {
 
     ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
 
       const x = this.timeX(offsetMin);
       const y = this.glucoseY(entry.cgm);
@@ -560,7 +606,7 @@ export class CGMRenderer {
 
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
       const y = this.glucoseY(entry.trueGlucose);
       if (first) { ctx.moveTo(x, y); first = false; }
@@ -574,88 +620,162 @@ export class CGMRenderer {
   private drawIOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
+    const maxIOB = 5, maxPx = this.plotH * 0.25;
+    const baseY = this.glucoseY(TIR_LOW);
 
-    // Normalise IOB to a display scale (max 5U → 25% of plotH)
-    const maxIOB = 5;
-    const maxPx = this.plotH * 0.25;
-    const baseY = this.glucoseY(TIR_LOW); // anchor at 70 mg/dL line
+    let firstX = 0, lastX = 0, hasPoints = false;
 
     ctx.beginPath();
-    let first = true;
-
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
-      const iobPx = Math.min(entry.iob / maxIOB, 1) * maxPx;
-      const y = baseY + iobPx; // draw downward from anchor
-      if (first) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); first = false; }
+      const y = baseY + Math.min(entry.iob / maxIOB, 1) * maxPx;
+      if (!hasPoints) { firstX = x; ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
       else ctx.lineTo(x, y);
+      lastX = x;
     });
+    if (!hasPoints) return;
 
-    ctx.lineTo(this.timeX(HISTORY_MINUTES), baseY);
+    ctx.lineTo(lastX, baseY);
     ctx.closePath();
-
     ctx.fillStyle = COLORS.iobFill;
     ctx.fill();
 
-    // Redraw line on top
     ctx.beginPath();
-    first = true;
+    let first = true;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
-      const iobPx = Math.min(entry.iob / maxIOB, 1) * maxPx;
-      const y = baseY + iobPx;
+      const y = baseY + Math.min(entry.iob / maxIOB, 1) * maxPx;
       if (first) { ctx.moveTo(x, y); first = false; }
       else ctx.lineTo(x, y);
     });
     ctx.strokeStyle = COLORS.iobLine;
     ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    void firstX;
   }
 
   private drawCOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
+    const maxCOB = 80, maxPx = this.plotH * 0.20;
+    const baseY = this.glucoseY(TIR_HIGH);
 
-    const maxCOB = 80; // g
-    const maxPx = this.plotH * 0.20;
-    const baseY = this.glucoseY(TIR_HIGH); // anchor at 180 mg/dL
+    let lastX = 0, hasPoints = false;
 
     ctx.beginPath();
-    let first = true;
-
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
-      const cobPx = Math.min(entry.cob / maxCOB, 1) * maxPx;
-      const y = baseY - cobPx; // draw upward from anchor
-      if (first) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); first = false; }
+      const y = baseY - Math.min(entry.cob / maxCOB, 1) * maxPx;
+      if (!hasPoints) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
       else ctx.lineTo(x, y);
+      lastX = x;
     });
+    if (!hasPoints) return;
 
-    ctx.lineTo(this.timeX(HISTORY_MINUTES), baseY);
+    ctx.lineTo(lastX, baseY);
     ctx.closePath();
-
     ctx.fillStyle = COLORS.cobFill;
     ctx.fill();
 
     ctx.beginPath();
-    first = true;
+    let first = true;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > WINDOW_MINUTES) return;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
-      const cobPx = Math.min(entry.cob / maxCOB, 1) * maxPx;
-      const y = baseY - cobPx;
+      const y = baseY - Math.min(entry.cob / maxCOB, 1) * maxPx;
       if (first) { ctx.moveTo(x, y); first = false; }
       else ctx.lineTo(x, y);
     });
     ctx.strokeStyle = COLORS.cobLine;
     ctx.lineWidth = 1.5;
     ctx.stroke();
+  }
+
+  private computeAnimatedSimMs(latest: RingEntry | null): number {
+    // No animation when paused or when the user is reviewing history
+    if (!latest || !this.isRunning || this.viewOffsetMs > 0) return latest?.simTimeMs ?? 0;
+    const advance = (performance.now() - this.lastTickWallMs) * this.currentThrottle;
+    return Math.min(latest.simTimeMs + advance, latest.simTimeMs + TICK_MINUTES * 60_000);
+  }
+
+  private drawAnimatedExtension(winStartMin: number, latest: RingEntry | null, animSimMs: number): void {
+    if (!latest || !this.isRunning || this.viewOffsetMs > 0) return;
+    if (animSimMs <= latest.simTimeMs) return;
+
+    const lastOffsetMin = latest.simTimeMs / 60_000 - winStartMin;
+    if (lastOffsetMin > this.viewWindowMinutes) return;
+
+    const animOffsetMin = animSimMs / 60_000 - winStartMin;
+    const x1 = this.timeX(lastOffsetMin);
+    const x2 = this.timeX(Math.min(animOffsetMin, this.viewWindowMinutes));
+
+    const dtMin = (animSimMs - latest.simTimeMs) / 60_000;
+    const extrapCGM = Math.max(40, Math.min(400, latest.cgm + latest.trend * dtMin));
+    const y1 = this.glucoseY(latest.cgm);
+    const y2 = this.glucoseY(extrapCGM);
+
+    const color = extrapCGM < HYPO_L1 ? COLORS.traceHypoL2
+      : extrapCGM < TIR_LOW ? COLORS.traceHypoL1 : COLORS.trace;
+
+    const ctx = this.ctx;
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+  }
+
+  private drawEventMarkers(winStartMin: number): void {
+    const ctx = this.ctx;
+    if (!this.ring.latest()) return;
+
+    for (const ev of this.events) {
+      const offsetMin = ev.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) continue;
+
+      const x = this.timeX(offsetMin);
+
+      if (ev.kind === 'bolus') {
+        const y = this.PAD_TOP + this.plotH;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 2);
+        ctx.lineTo(x - 5, y - 12);
+        ctx.lineTo(x + 5, y - 12);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.bolusMarker;
+        ctx.fill();
+        ctx.fillStyle = COLORS.bolusMarker;
+        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.units}U`, x, y - 15);
+      } else if (ev.kind === 'meal') {
+        const y = this.PAD_TOP;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 2);
+        ctx.lineTo(x - 5, y + 12);
+        ctx.lineTo(x + 5, y + 12);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.mealMarker;
+        ctx.fill();
+        ctx.fillStyle = COLORS.mealMarker;
+        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.carbsG}g`, x, y + 24);
+      }
+    }
+    ctx.textAlign = 'left';
   }
 }

@@ -138,6 +138,11 @@ const btnLoad          = getEl<HTMLButtonElement>('btn-load');
 const btnExport        = getEl<HTMLButtonElement>('btn-export');
 const btnImport        = getEl<HTMLButtonElement>('btn-import');
 const btnReset         = getEl<HTMLButtonElement>('btn-reset');
+const btnZoom6h        = getEl<HTMLButtonElement>('btn-zoom-6h');
+const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
+const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
+const btnLive          = getEl<HTMLButtonElement>('btn-live');
+const scenarioBadge    = getEl<HTMLElement>('scenario-badge');
 const btnSnapshot      = getEl<HTMLButtonElement>('btn-snapshot');
 const btnRunCompare    = getEl<HTMLButtonElement>('btn-run-compare');
 const btnStopCompare   = getEl<HTMLButtonElement>('btn-stop-compare');
@@ -200,6 +205,7 @@ function setRunning(running: boolean): void {
   appState.running = running;
   btnPause.textContent = running ? '⏸' : '▶';
   btnPause.classList.toggle('running', running);
+  renderer.setPlayback(appState.throttle, running);
 }
 
 btnPause.addEventListener('click', () => {
@@ -222,16 +228,73 @@ throttleSlider.addEventListener('input', () => {
   throttleVal.textContent = `×${t}`;
   bridge.setThrottle(t);
   if (appState.compareRunning) compare.setThrottle(t);
+  renderer.setPlayback(t, appState.running);
 });
 throttleVal.textContent = `×${sliderToThrottle(parseInt(throttleSlider.value))}`;
 
+// ── Zoom and pan controls ─────────────────────────────────────────────────────
+
+function updateZoomButtons(activeMinutes: number): void {
+  btnZoom6h.classList.toggle('active',  activeMinutes === 360);
+  btnZoom12h.classList.toggle('active', activeMinutes === 720);
+  btnZoom24h.classList.toggle('active', activeMinutes === 1440);
+}
+
+btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360); });
+btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720); });
+btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); });
+btnLive.addEventListener('click', () => renderer.snapToLive());
+
+renderer.onViewChange(() => {
+  btnLive.hidden = renderer.isLive;
+  updateZoomButtons(renderer.zoomMinutes);
+});
+
 // ── Unit toggle ───────────────────────────────────────────────────────────────
 
+/** Convert a value from current display unit to mg/dL (for simulator). */
+function fromDisplay(val: number): number {
+  return appState.displayUnit === 'mmoll' ? val * 18.0182 : val;
+}
+
+/** Update panel inputs and unit labels when display unit changes. */
+function syncPanelUnits(prevUnit: 'mgdl' | 'mmoll'): void {
+  const isMmol = appState.displayUnit === 'mmoll';
+
+  // Convert a value from prevUnit to the new display unit
+  const conv = (v: number) => {
+    const mgdl = prevUnit === 'mmoll' ? v * 18.0182 : v;
+    return isMmol ? mgdl / 18.0182 : mgdl;
+  };
+  const fmt = (v: number) => isMmol ? v.toFixed(1) : Math.round(v).toString();
+
+  // Glucose target
+  const gt = parseFloat(glucoseTarget.value);
+  if (!isNaN(gt)) glucoseTarget.value = fmt(conv(gt));
+  glucoseTarget.min  = isMmol ? '3.9'  : '70';
+  glucoseTarget.max  = isMmol ? '13.9' : '250';
+  glucoseTarget.step = isMmol ? '0.1'  : '5';
+  document.getElementById('unit-glucose-target')!.textContent = isMmol ? 'mmol/L' : 'mg/dL';
+
+  // ISF fields (both programmed and true)
+  for (const input of [progISF, trueISF]) {
+    const v = parseFloat(input.value);
+    if (!isNaN(v)) input.value = fmt(conv(v));
+    input.min  = isMmol ? '0.5'  : '10';
+    input.max  = isMmol ? '11.1' : '200';
+    input.step = isMmol ? '0.1'  : '5';
+  }
+  document.getElementById('unit-prog-isf')!.textContent  = isMmol ? 'mmol/L/U' : 'mg/dL/U';
+  document.getElementById('unit-true-isf')!.textContent  = isMmol ? 'mmol/L/U' : 'mg/dL/U';
+}
+
 unitToggle.addEventListener('click', () => {
-  appState.displayUnit = appState.displayUnit === 'mgdl' ? 'mmoll' : 'mgdl';
+  const prev = appState.displayUnit;
+  appState.displayUnit = prev === 'mgdl' ? 'mmoll' : 'mgdl';
   renderer.options.displayUnit = appState.displayUnit;
   unitToggle.textContent = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
   cgmUnitEl.textContent  = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+  syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
 });
@@ -284,11 +347,13 @@ btnMeal.addEventListener('click', () => {
 
 function onTherapyChange(): void {
   const mode = therapyMode.value as 'AID' | 'PUMP' | 'MDI';
+  const modeLabel = mode === 'AID' ? 'AID mode' : mode === 'PUMP' ? 'Pump (open loop)' : 'MDI';
+  scenarioBadge.textContent = `Default patient · ${modeLabel}`;
   bridge.setTherapyParam({
     mode,
-    glucoseTarget:           parseFloat(glucoseTarget.value),
+    glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),
     rapidAnalogue:           rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
-    programmedISF:           parseFloat(progISF.value),
+    programmedISF:           fromDisplay(parseFloat(progISF.value)),
     programmedCR:            parseFloat(progCR.value),
     longActingType:          longActingType.value as 'Glargine' | 'Degludec' | 'Detemir',
     longActingDose:          parseFloat(longActingDose.value),
@@ -376,7 +441,7 @@ renderBasalRows();
 
 function onPatientChange(): void {
   bridge.setPatientParam({
-    trueISF:             parseFloat(trueISF.value),
+    trueISF:             fromDisplay(parseFloat(trueISF.value)),
     trueCR:              parseFloat(trueCR.value),
     weight:              parseFloat(patientWeight.value),
     diabetesDuration:    parseFloat(diabetesDuration.value),
@@ -526,7 +591,6 @@ document.addEventListener('keydown', (e) => {
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 
-onTherapyChange();  // set MDI/pump section visibility
+onTherapyChange();  // set MDI/pump section visibility + initial badge
 bridge.setThrottle(10);
-bridge.resume();
-setRunning(true);
+setRunning(false);  // start paused — user presses ▶ to begin

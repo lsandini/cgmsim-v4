@@ -105,7 +105,8 @@ type EventHandler = (events: SimEvent[]) => void;
 
 export class InlineSimulator {
   private s: SimState = createInitialState();
-  private timerId: ReturnType<typeof setTimeout> | null = null;
+  private rafId: number | null = null;
+  private lastTickWallMs = 0;
   private tickHandlers:  TickHandler[]  = [];
   private savedHandlers: SavedHandler[] = [];
   private eventHandlers: EventHandler[] = [];
@@ -220,21 +221,32 @@ export class InlineSimulator {
     for (const h of this.tickHandlers) h(snap);
   }
 
-  private scheduleNext(): void {
+  private rafLoop(wallNow: number): void {
     if (!this.s.running) return;
-    this.timerId = setTimeout(() => { this.tick(); this.scheduleNext(); }, 300_000 / this.s.throttle);
+    const intervalMs = 300_000 / this.s.throttle;
+    const ticksDue = Math.floor((wallNow - this.lastTickWallMs) / intervalMs);
+    const ticksToRun = Math.min(ticksDue, 10); // cap catch-up after tab was hidden
+    for (let i = 0; i < ticksToRun; i++) this.tick();
+    if (ticksToRun > 0) this.lastTickWallMs += ticksToRun * intervalMs;
+    this.rafId = requestAnimationFrame((t) => this.rafLoop(t));
   }
 
-  private clearTimer(): void {
-    if (this.timerId !== null) { clearTimeout(this.timerId); this.timerId = null; }
+  resume(): void {
+    this.s.running = true;
+    this.tick();
+    this.lastTickWallMs = performance.now();
+    this.rafId = requestAnimationFrame((t) => this.rafLoop(t));
   }
 
-  resume(): void { this.s.running = true; this.tick(); this.scheduleNext(); }
-  pause():  void { this.s.running = false; this.clearTimer(); }
+  pause(): void {
+    this.s.running = false;
+    if (this.rafId !== null) { cancelAnimationFrame(this.rafId); this.rafId = null; }
+  }
 
   setThrottle(throttle: number): void {
     this.s.throttle = throttle;
-    if (this.s.running) { this.clearTimer(); this.scheduleNext(); }
+    // Reset reference point to avoid a burst of catch-up ticks at the new rate
+    if (this.s.running) this.lastTickWallMs = performance.now();
   }
 
   bolus(units: number, analogue?: RapidAnalogueType): void {
@@ -308,5 +320,5 @@ export class InlineSimulator {
     });
   }
 
-  terminate(): void { this.clearTimer(); }
+  terminate(): void { this.pause(); }
 }
