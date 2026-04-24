@@ -12,6 +12,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "composite": true,
+    "skipLibCheck": true,
     "lib": ["ES2022", "WebWorker"]
   },
   "references": [

@@ -9,39 +9,45 @@
 /**
  * Compute instantaneous insulin activity (U/min) for a single dose.
  *
- * Uses the biexponential parametric model from cgmsim-lib.
- * The curve is normalised so its integral over [0, duration] equals `units`.
- * Returns zero outside the active window [0, duration].
+ * Matches v3 cgmsim-lib exactly: biexponential parametric model with a
+ * 15-minute subcutaneous absorption ramp-up at the start of action.
  */
 export function getExpTreatmentActivity(p) {
     const { peak, duration, minutesAgo: t, units } = p;
     if (t < 0 || t > duration)
         return 0;
-    // Biexponential parameters
-    const tau = peak * (1 - peak / duration) / (1 - 2 * peak / duration);
-    const a = 2 * tau / duration;
-    const S = 1 / (1 - a + (1 + a) * Math.exp(-duration / tau));
-    // Activity per unit: area under curve = 1 unit
-    // From cgmsim-lib: activity = (S/tau^2) * t * (1 - t/duration) * exp(-t/tau)
-    const actPerUnit = (S / Math.pow(tau, 2)) *
-        t * (1 - t / duration) *
-        Math.exp(-t / tau);
-    return units * actPerUnit;
+    const tau = (peak * (1 - peak / duration)) / (1 - (2 * peak) / duration);
+    const S = 1 / (1 - (2 * tau / duration) + (1 + (2 * tau / duration)) * Math.exp(-duration / tau));
+    let act = units * (S / (tau * tau)) * t * (1 - t / duration) * Math.exp(-t / tau);
+    if (act <= 0)
+        return 0;
+    // 15-minute subcutaneous absorption ramp-up (matches v3 behaviour)
+    if (t < 15)
+        return act * (t / 15);
+    return act;
 }
 /**
  * Compute insulin on board (units remaining) for a single dose.
- * Uses smooth cubic IOB decay that matches the activity integral.
+ *
+ * Analytical integral of the biexponential activity curve, matching v3
+ * cgmsim-lib exactly. Includes the 15-minute ramp-up correction.
  */
 export function getExpTreatmentIOB(p) {
     const { peak, duration, minutesAgo: t, units } = p;
-    if (t < 0)
-        return units;
-    if (t > duration)
+    if (t >= duration)
         return 0;
-    // Smooth cubic decay: matches the "S-curve" shape of IOB rundown
-    const frac = t / duration;
-    const iobFraction = 1 - frac * frac * (3 - 2 * frac);
-    return units * Math.max(0, iobFraction);
+    if (t <= 0)
+        return units;
+    const tau = (peak * (1 - peak / duration)) / (1 - (2 * peak) / duration);
+    const a = (2 * tau) / duration;
+    const S = 1 / (1 - a + (1 + a) * Math.exp(-duration / tau));
+    let iobFraction = 1 - S * (1 - a) *
+        ((t * t / (tau * duration * (1 - a)) - t / tau - 1) *
+            Math.exp(-t / tau) + 1);
+    // 15-minute ramp-up correction (matches v3 behaviour)
+    if (t < 15)
+        iobFraction = 1 - (t / 15) * (1 - iobFraction);
+    return Math.max(0, units * iobFraction);
 }
 // ── Rounding ─────────────────────────────────────────────────────────────────
 export function roundTo8Decimals(n) {

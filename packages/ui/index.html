@@ -423,7 +423,7 @@
     <div id="canvas-area">
       <canvas id="cgm-canvas"></canvas>
 
-      <button id="unit-toggle" title="Toggle display units">mg/dL</button>
+      <button id="unit-toggle" title="Toggle display units">mmol/L</button>
 
       <div id="view-controls">
         <button class="view-btn" id="btn-zoom-3h">3h</button>
@@ -467,6 +467,10 @@
           <div class="panel-section">
             <h3>Overlays</h3>
             <div class="panel-row">
+              <label>Basal rate</label>
+              <input type="checkbox" id="overlay-basal" checked />
+            </div>
+            <div class="panel-row">
               <label>IOB curve</label>
               <input type="checkbox" id="overlay-iob" checked />
             </div>
@@ -493,13 +497,17 @@
               <label>Mode</label>
               <select id="therapy-mode">
                 <option value="AID">AID (PID)</option>
-                <option value="PUMP">Pump (open loop)</option>
+                <option value="PUMP" selected>Pump (open loop)</option>
                 <option value="MDI">MDI</option>
               </select>
             </div>
             <div class="panel-row" id="row-target">
               <label>Glucose target <span class="param-unit" id="unit-glucose-target">mg/dL</span></label>
               <input type="number" id="glucose-target" min="70" max="180" step="5" value="100" />
+            </div>
+            <div class="panel-row" id="row-smb" style="display:none;">
+              <label>Supermicrobolus (SMB)</label>
+              <input type="checkbox" id="enable-smb" />
             </div>
           </div>
           <div class="panel-section">
@@ -662,7 +670,7 @@
 
       <div style="display:flex; align-items:baseline; gap:2px;">
         <div id="current-cgm">---</div>
-        <div id="cgm-unit">mg/dL</div>
+        <div id="cgm-unit">mmol/L</div>
       </div>
       <div id="trend-arrow">→</div>
 

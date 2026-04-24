@@ -19,7 +19,7 @@ export function calculateBolusActivity(boluses, nowSimTimeMs) {
         const minAgo = getDeltaMinutes(b.simTimeMs, nowSimTimeMs);
         return sum + getExpTreatmentActivity({
             peak: profile.peak,
-            duration: profile.dia * 60,
+            duration: b.dia * 60,
             minutesAgo: minAgo,
             units: b.units,
         });
@@ -33,7 +33,7 @@ export function calculateBolusIOB(boluses, nowSimTimeMs) {
         const minAgo = getDeltaMinutes(b.simTimeMs, nowSimTimeMs);
         return sum + getExpTreatmentIOB({
             peak: profile.peak,
-            duration: profile.dia * 60,
+            duration: b.dia * 60,
             minutesAgo: minAgo,
             units: b.units,
         });

@@ -72,7 +72,7 @@ function minutesToTimeString(m: number): string {
 const appState = {
   running:        false,
   throttle:       10 as ThrottleStop,
-  displayUnit:    'mgdl' as DisplayUnit,
+  displayUnit:    'mmoll' as DisplayUnit,
   panelOpen:      false,
   fullScreen:     false,
   lastSnap:       null as TickSnapshot | null,
@@ -129,6 +129,9 @@ const egpPeak          = getEl<HTMLInputElement>('egp-peak');
 const egpBasal         = getEl<HTMLInputElement>('egp-basal');
 const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
+const enableSMB        = getEl<HTMLInputElement>('enable-smb');
+const rowSMB           = getEl<HTMLElement>('row-smb');
+const overlayBasal     = getEl<HTMLInputElement>('overlay-basal');
 const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
 const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
 const overlayEvents    = getEl<HTMLInputElement>('overlay-events');
@@ -361,15 +364,18 @@ function onTherapyChange(): void {
     longActingType:          longActingType.value as 'Glargine' | 'Degludec' | 'Detemir',
     longActingDose:          parseFloat(longActingDose.value),
     longActingInjectionTime: timeStringToMinutes(longActingTime.value),
+    enableSMB:               enableSMB.checked,
   });
   sectionMDI.style.display   = mode === 'MDI'  ? 'block' : 'none';
   sectionBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
+  rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
 }
 
 [therapyMode, glucoseTarget, rapidAnalogue, progISF, progCR,
  longActingType, longActingDose, longActingTime].forEach(el =>
   el.addEventListener('change', onTherapyChange)
 );
+enableSMB.addEventListener('change', onTherapyChange);
 
 // ── Temp basal ────────────────────────────────────────────────────────────────
 
@@ -462,6 +468,7 @@ function onPatientChange(): void {
 
 // ── Overlay toggles ───────────────────────────────────────────────────────────
 
+overlayBasal.addEventListener('change',  () => { renderer.options.showBasal = overlayBasal.checked; renderer.markDirty(); });
 overlayIOB.addEventListener('change',    () => { renderer.options.showIOB = overlayIOB.checked; renderer.markDirty(); });
 overlayCOB.addEventListener('change',    () => { renderer.options.showCOB = overlayCOB.checked; renderer.markDirty(); });
 overlayEvents.addEventListener('change', () => { renderer.options.showEvents = overlayEvents.checked; renderer.markDirty(); });
@@ -505,12 +512,12 @@ btnReset.addEventListener('click', () => {
     simTimeMs:0, trueGlucose:100, lastCGM:100,
     patient:{weight:75,age:35,gender:'Male',diabetesDuration:10,trueISF:40,trueCR:12,
              dia:6,tp:75,carbsAbsTime:360,egpBasalLevel:0.04,egpAmplitude:1,egpPeakHour:5,gastricEmptyingRate:1},
-    therapy:{mode:'AID',programmedISF:40,programmedCR:12,basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
-             rapidAnalogue:'Fiasp',longActingType:'Glargine',longActingDose:20,
-             longActingInjectionTime:22*60,glucoseTarget:100,correctionThreshold:120},
+    therapy:{mode:'PUMP',programmedISF:40,programmedCR:12,basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
+             rapidAnalogue:'Fiasp',rapidDia:5,longActingType:'Glargine',longActingDose:20,
+             longActingInjectionTime:22*60,glucoseTarget:100,correctionThreshold:120,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:{jsr:123456789^42,seed:42}},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
-    pidIntegral:0,pidPrevCGM:100,throttle:10,running:false,
+    pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
   renderer.clearHistory();
   setStatus('Simulation reset.');
@@ -595,5 +602,6 @@ document.addEventListener('keydown', (e) => {
 // ── Initial state ─────────────────────────────────────────────────────────────
 
 onTherapyChange();  // set MDI/pump section visibility + initial badge
+syncPanelUnits('mgdl');  // convert panel inputs and labels to mmol/L on load
 bridge.setThrottle(10);
 setRunning(false);  // start paused — user presses ▶ to begin

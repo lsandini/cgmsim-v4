@@ -32,16 +32,19 @@ import type { PumpBasalBolus } from '../../simulator/src/iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from '../../simulator/src/carbs.js';
 import type { ResolvedMeal } from '../../simulator/src/carbs.js';
 import { runPID, rateToMicroBolus } from '../../simulator/src/pid.js';
+import type { PIDState } from '../../simulator/src/pid.js';
 import { RAPID_PROFILES, LONG_ACTING_PROFILES } from '../../simulator/src/insulinProfiles.js';
 
-const TICK_SIM_MS  = 1 * 60_000;
+const TICK_SIM_MINUTES = 5;
+const TICK_SIM_MS      = TICK_SIM_MINUTES * 60_000;
 const DEFAULT_SEED = 42;
 const INITIAL_BG   = 100;
 
 export type SimEvent =
   | { kind: 'bolus';      simTimeMs: number; units: number }
   | { kind: 'meal';       simTimeMs: number; carbsG: number }
-  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: string };
+  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: string }
+  | { kind: 'smb';        simTimeMs: number; units: number };
 
 interface TempBasal {
   rateUPerHour: number;
@@ -59,8 +62,9 @@ interface SimState {
   activeLongActing:  ActiveLongActing[];
   resolvedMeals:     ResolvedMeal[];
   pumpMicroBoluses:  PumpBasalBolus[];
-  pidIntegral:       number;
-  pidPrevCGM:        number;
+  pidCGMHistory:     number[];
+  pidPrevRate:       number;
+  pidTicksSinceLastMB: number;
   throttle:          number;
   running:           boolean;
   g6:                DexcomG6Noise;
@@ -82,8 +86,9 @@ function createInitialState(): SimState {
     activeLongActing:  [],
     resolvedMeals:     [],
     pumpMicroBoluses:  [],
-    pidIntegral:       0,
-    pidPrevCGM:        INITIAL_BG,
+    pidCGMHistory:     [],
+    pidPrevRate:       0.8,
+    pidTicksSinceLastMB: 999,
     throttle:          10,
     running:           false,
     g6:                createG6NoiseGenerator(DEFAULT_SEED, null),
@@ -157,8 +162,7 @@ export class InlineSimulator {
     this.checkLongActingDose();
 
     // Purge expired
-    const diaMin = s.patient.dia * 60;
-    s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= diaMin);
+    s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60);
     s.activeLongActing = s.activeLongActing.filter(d => {
       const p = LONG_ACTING_PROFILES[d.type];
       return p !== undefined && (nowMs - d.simTimeMs) / 60_000 <= p.dia * 60;
@@ -169,18 +173,28 @@ export class InlineSimulator {
     let basalRate = this.getBasalRate(nowMs);
 
     if (s.therapy.mode === 'AID') {
-      const pid = runPID(
-        s.lastCGM, calculateBolusIOB(s.activeBoluses, nowMs),
-        s.therapy, { integral: s.pidIntegral, prevCGM: s.pidPrevCGM }, basalRate,
-      );
-      basalRate     = pid.rateUPerHour;
-      s.pidIntegral = pid.nextState.integral;
-      s.pidPrevCGM  = pid.nextState.prevCGM;
+      const totalIOB = calculateBolusIOB(s.activeBoluses, nowMs)
+        + calculatePumpBasalIOB(s.pumpMicroBoluses, nowMs);
+      const rp = RAPID_PROFILES[s.therapy.rapidAnalogue];
+      const pidState: PIDState = {
+        cgmHistory: s.pidCGMHistory,
+        prevRate: s.pidPrevRate,
+        ticksSinceLastMB: s.pidTicksSinceLastMB,
+      };
+      const pid = runPID(s.lastCGM, totalIOB, s.therapy, pidState, basalRate, rp?.peak ?? 55);
+      basalRate              = pid.rateUPerHour;
+      s.pidCGMHistory        = pid.nextState.cgmHistory;
+      s.pidPrevRate          = pid.nextState.prevRate;
+      s.pidTicksSinceLastMB  = pid.nextState.ticksSinceLastMB;
       if (pid.microbolusUnits > 0) {
         s.activeBoluses.push({
           id: `mb-${nowMs}`, simTimeMs: nowMs,
           units: pid.microbolusUnits, analogue: s.therapy.rapidAnalogue,
+          dia: s.therapy.rapidDia,
         });
+        const smbEv: SimEvent = { kind: 'smb', simTimeMs: nowMs, units: pid.microbolusUnits };
+        s.events.push(smbEv);
+        for (const h of this.eventHandlers) h([smbEv]);
       }
     }
 
@@ -188,7 +202,7 @@ export class InlineSimulator {
       const rp = RAPID_PROFILES[s.therapy.rapidAnalogue];
       if (rp) {
         const u = rateToMicroBolus(basalRate);
-        if (u > 0) s.pumpMicroBoluses.push({ simTimeMs: nowMs, units: u, dia: rp.dia, peak: rp.peak });
+        if (u > 0) s.pumpMicroBoluses.push({ simTimeMs: nowMs, units: u, dia: s.therapy.rapidDia, peak: rp.peak });
       }
     }
 
@@ -216,7 +230,7 @@ export class InlineSimulator {
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
-      deltaMinutes: 1, trend: delta.deltaBG, basalRate,
+      deltaMinutes: 5, trend: delta.deltaBG / TICK_SIM_MINUTES, basalRate,
     };
     for (const h of this.tickHandlers) h(snap);
   }
@@ -254,6 +268,7 @@ export class InlineSimulator {
       id: `bolus-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
       simTimeMs: this.s.simTimeMs, units,
       analogue: analogue ?? this.s.therapy.rapidAnalogue,
+      dia: this.s.therapy.rapidDia,
     });
     const ev: SimEvent = { kind: 'bolus', simTimeMs: this.s.simTimeMs, units };
     this.s.events.push(ev);
@@ -299,21 +314,25 @@ export class InlineSimulator {
       g6State: this.s.g6.getState(),
       activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
       activeLongActing: [...this.s.activeLongActing],
-      pidIntegral: this.s.pidIntegral, pidPrevCGM: this.s.pidPrevCGM,
+      pidCGMHistory: [...this.s.pidCGMHistory],
+      pidPrevRate: this.s.pidPrevRate,
+      pidTicksSinceLastMB: this.s.pidTicksSinceLastMB,
       throttle: this.s.throttle, running: this.s.running,
     };
     for (const h of this.savedHandlers) h(state);
   }
 
   reset(state: WorkerState): void {
-    this.clearTimer();
+    this.pause();
     Object.assign(this.s, {
       simTimeMs: state.simTimeMs, trueGlucose: state.trueGlucose, lastCGM: state.lastCGM,
       patient: { ...state.patient }, therapy: { ...state.therapy },
       activeBoluses: [...state.activeBoluses], activeMeals: [...state.activeMeals],
       activeLongActing: [...state.activeLongActing],
       resolvedMeals: [], pumpMicroBoluses: [],
-      pidIntegral: state.pidIntegral, pidPrevCGM: state.pidPrevCGM,
+      pidCGMHistory: [...(state.pidCGMHistory ?? [])],
+      pidPrevRate: state.pidPrevRate ?? 0.8,
+      pidTicksSinceLastMB: state.pidTicksSinceLastMB ?? 999,
       throttle: state.throttle, running: false,
       g6: createG6NoiseGenerator(DEFAULT_SEED, state.g6State),
       rngState: DEFAULT_SEED, lastLongActingDay: -1, tempBasal: null, events: [],

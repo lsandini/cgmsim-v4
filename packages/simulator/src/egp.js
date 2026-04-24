@@ -12,7 +12,7 @@
  */
 const TWO_PI = 2 * Math.PI;
 const MINUTES_PER_DAY = 24 * 60;
-const TICK_MINUTES = 1;
+const TICK_MINUTES = 5;
 // Counter-regulation thresholds (mg/dL)
 const CR_ONSET_BG = 80; // response begins here
 const CR_FULL_BG = 54; // full response at this level
@@ -34,7 +34,8 @@ export function calculateEGP(patient, simTimeMs, isf, currentGlucose) {
     const hourOfDay = minuteOfDay / 60;
     const phase = TWO_PI * (hourOfDay - patient.egpPeakHour) / 24;
     const amplitude = 1 + patient.egpAmplitude * Math.cos(phase);
-    let egpPerMin = patient.egpBasalLevel * amplitude * (isf / 40);
+    // v3 liver.js formula: EGP (mg/dL/min) = (isf/cr) × 0.002 × weight × hepaticFactor × circadian
+    let egpPerMin = (isf / patient.trueCR) * 0.002 * patient.weight * patient.egpBasalLevel * amplitude;
     // Counter-regulatory boost during hypoglycaemia
     if (currentGlucose !== undefined && currentGlucose < CR_ONSET_BG) {
         // Integrity: 1.0 at 0 years T1D, 0.0 at CR_ZERO_YEARS+

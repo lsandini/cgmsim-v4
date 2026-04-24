@@ -14,7 +14,7 @@
 import { calculateBolusActivity, calculateLongActingActivity, calculatePumpBasalActivity } from './iob.js';
 import { calculateCarbEffect } from './carbs.js';
 import { calculateEGP } from './egp.js';
-const TICK_MINUTES = 1;
+const TICK_MINUTES = 5;
 export function computeDeltaBG(inputs) {
     const { patient, isf, cr, boluses, longActing, pumpMicroBoluses, meals, nowSimTimeMs, isPump, } = inputs;
     // ── Insulin effect ──────────────────────────────────────────────────────

@@ -47,8 +47,11 @@ const COLORS = {
   iobLine: 'rgba(88, 166, 255, 0.4)',
   cobFill: 'rgba(210, 153, 34, 0.10)',
   cobLine: 'rgba(210, 153, 34, 0.4)',
+  basalFill: 'rgba(63, 185, 80, 0.12)',
+  basalLine: 'rgba(63, 185, 80, 0.55)',
   bolusMarker: '#58a6ff',
   mealMarker: '#d29922',
+  smbMarker: '#bc8cff',
   future: 'rgba(255, 255, 255, 0.03)',
 };
 
@@ -64,6 +67,7 @@ const COMPARE_COLORS = {
 export interface RendererOptions {
   showIOB: boolean;
   showCOB: boolean;
+  showBasal: boolean;
   showTrueGlucose: boolean;
   showEvents: boolean;
   displayUnit: DisplayUnit;
@@ -78,6 +82,7 @@ interface RingEntry {
   iob: number;
   cob: number;
   trend: number;
+  basalRate: number;
 }
 
 // ── Ring buffer ──────────────────────────────────────────────────────────────
@@ -149,9 +154,10 @@ export class CGMRenderer {
   public options: RendererOptions = {
     showIOB: true,
     showCOB: true,
+    showBasal: true,
     showTrueGlucose: false,
     showEvents: true,
-    displayUnit: 'mgdl',
+    displayUnit: 'mmoll',
     primaryLabel: 'Run A',
     compareLabel: 'Run B',
   };
@@ -212,7 +218,7 @@ export class CGMRenderer {
   pushTick(snap: TickSnapshot): void {
     this.ring.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
-      iob: snap.iob, cob: snap.cob, trend: snap.trend,
+      iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
     });
     this.lastTickWallMs = performance.now();
     this.dirty = true;
@@ -221,7 +227,7 @@ export class CGMRenderer {
   pushComparisonTick(snap: TickSnapshot): void {
     this.comparisonRing.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
-      iob: snap.iob, cob: snap.cob, trend: snap.trend,
+      iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
     });
     this.dirty = true;
   }
@@ -418,6 +424,7 @@ export class CGMRenderer {
     this.drawFutureSpace(winStartMin, animSimMs);
     this.drawGrid(winStartMin);
 
+    if (this.options.showBasal) this.drawBasalOverlay(winStartMin);
     if (this.options.showCOB) this.drawCOBOverlay(winStartMin);
     if (this.options.showIOB) this.drawIOBOverlay(winStartMin);
     if (this.options.showTrueGlucose) this.drawTrueLine(winStartMin);
@@ -635,21 +642,75 @@ export class CGMRenderer {
     ctx.setLineDash([]);
   }
 
+  private drawBasalOverlay(winStartMin: number): void {
+    if (this.ring.size === 0) return;
+    const ctx = this.ctx;
+    const MAX_BASAL = 2;       // U/hr full-scale
+    const maxPx     = this.plotH * 0.15;
+    const baseY     = this.PAD_TOP + this.plotH;
+
+    // Collect visible points in order
+    const pts: { x: number; y: number }[] = [];
+    this.ring.forEach((entry) => {
+      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      pts.push({
+        x: this.timeX(offsetMin),
+        y: baseY - Math.min(entry.basalRate / MAX_BASAL, 1) * maxPx,
+      });
+    });
+    if (pts.length === 0) return;
+
+    // Filled step chart
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, baseY);
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]!;
+      ctx.lineTo(p.x, p.y);                              // vertical to rate
+      if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y); // hold until next tick
+    }
+    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
+    ctx.closePath();
+    ctx.fillStyle = COLORS.basalFill;
+    ctx.fill();
+
+    // Step line
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]!;
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+      if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y);
+    }
+    ctx.strokeStyle = COLORS.basalLine;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    // Scale label in bottom padding
+    ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.basalLine;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Basal (0–2 U/h)', this.PAD_LEFT + 4, this.PAD_TOP + this.plotH + this.PAD_BOTTOM - 4);
+    ctx.textBaseline = 'alphabetic';
+  }
+
   private drawIOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
     const maxIOB = 5, maxPx = this.plotH * 0.25;
-    const baseY = this.glucoseY(TIR_LOW);
+    const baseY = this.glucoseY(TIR_HIGH);
 
-    let firstX = 0, lastX = 0, hasPoints = false;
+    let lastX = 0, hasPoints = false;
 
     ctx.beginPath();
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
-      const y = baseY + Math.min(entry.iob / maxIOB, 1) * maxPx;
-      if (!hasPoints) { firstX = x; ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
+      const y = baseY - Math.min(entry.iob / maxIOB, 1) * maxPx;
+      if (!hasPoints) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
       else ctx.lineTo(x, y);
       lastX = x;
     });
@@ -666,15 +727,13 @@ export class CGMRenderer {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
-      const y = baseY + Math.min(entry.iob / maxIOB, 1) * maxPx;
+      const y = baseY - Math.min(entry.iob / maxIOB, 1) * maxPx;
       if (first) { ctx.moveTo(x, y); first = false; }
       else ctx.lineTo(x, y);
     });
     ctx.strokeStyle = COLORS.iobLine;
     ctx.lineWidth = 1.5;
     ctx.stroke();
-
-    void firstX;
   }
 
   private drawCOBOverlay(winStartMin: number): void {
@@ -792,6 +851,20 @@ export class CGMRenderer {
         ctx.font = 'bold 9px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${ev.carbsG}g`, x, y + 24);
+      } else if (ev.kind === 'smb') {
+        // Small upward triangle just above the bottom axis — visually distinct from manual bolus
+        const y = this.PAD_TOP + this.plotH - 18;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 2);
+        ctx.lineTo(x - 4, y + 6);
+        ctx.lineTo(x + 4, y + 6);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.smbMarker;
+        ctx.fill();
+        ctx.fillStyle = COLORS.smbMarker;
+        ctx.font = '8px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.units}U`, x, y + 16);
       }
     }
     ctx.textAlign = 'left';

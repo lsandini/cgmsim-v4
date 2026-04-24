@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(git stash *)",
+      "Bash(npx vitest *)"
     ]
   }
 }
