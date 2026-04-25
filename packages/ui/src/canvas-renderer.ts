@@ -162,10 +162,12 @@ export class CGMRenderer {
     compareLabel: 'Run B',
   };
 
-  private readonly PAD_LEFT = 56;
-  private readonly PAD_RIGHT = 16;
-  private readonly PAD_TOP = 24;
-  private readonly PAD_BOTTOM = 36;
+  private readonly PAD_LEFT        = 56;
+  private readonly PAD_RIGHT       = 16;
+  private readonly PAD_TOP         = 24;
+  private readonly PAD_BOTTOM      = 80;  // time row(22) + gap(8) + basal panel(44) + margin(6)
+  private readonly BASAL_PANEL_H   = 44;  // height of the basal sub-panel in px
+  private readonly BASAL_PANEL_OFF = 30;  // offset of sub-panel top below main plot bottom
 
   private cssW = 0;
   private cssH = 0;
@@ -645,31 +647,61 @@ export class CGMRenderer {
   private drawBasalOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
-    const MAX_BASAL = 2;       // U/hr full-scale
-    const maxPx     = this.plotH * 0.15;
-    const baseY     = this.PAD_TOP + this.plotH;
+    const MAX_BASAL  = 2;
+    const mainBottom = this.PAD_TOP + this.plotH;
+    const panelTop   = mainBottom + this.BASAL_PANEL_OFF;
+    const panelBot   = panelTop + this.BASAL_PANEL_H;
 
-    // Collect visible points in order
+    // Separator line between time-label zone and basal panel
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(this.PAD_LEFT, panelTop - 4);
+    ctx.lineTo(this.PAD_LEFT + this.plotW, panelTop - 4);
+    ctx.stroke();
+
+    // Y-axis tick labels: '2' at top, '0' at bottom
+    ctx.font = '9px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.basalLine;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('2', this.PAD_LEFT - 3, panelTop);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('0', this.PAD_LEFT - 3, panelBot);
+
+    // Rotated 'Basal' label on the left margin
+    ctx.save();
+    ctx.font = '9px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.basalLine;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(this.PAD_LEFT - 18, panelTop + this.BASAL_PANEL_H / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Basal', 0, 0);
+    ctx.restore();
+
+    // Collect visible step points
     const pts: { x: number; y: number }[] = [];
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
       pts.push({
         x: this.timeX(offsetMin),
-        y: baseY - Math.min(entry.basalRate / MAX_BASAL, 1) * maxPx,
+        y: panelBot - Math.min(entry.basalRate / MAX_BASAL, 1) * this.BASAL_PANEL_H,
       });
     });
     if (pts.length === 0) return;
 
-    // Filled step chart
+    // Filled area
     ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, baseY);
+    ctx.moveTo(pts[0]!.x, panelBot);
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i]!;
-      ctx.lineTo(p.x, p.y);                              // vertical to rate
-      if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y); // hold until next tick
+      ctx.lineTo(p.x, p.y);
+      if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y);
     }
-    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
+    ctx.lineTo(pts[pts.length - 1]!.x, panelBot);
     ctx.closePath();
     ctx.fillStyle = COLORS.basalFill;
     ctx.fill();
@@ -687,13 +719,16 @@ export class CGMRenderer {
     ctx.setLineDash([]);
     ctx.stroke();
 
-    // Scale label in bottom padding
-    ctx.font = '10px -apple-system, sans-serif';
-    ctx.fillStyle = COLORS.basalLine;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('Basal (0–2 U/h)', this.PAD_LEFT + 4, this.PAD_TOP + this.plotH + this.PAD_BOTTOM - 4);
-    ctx.textBaseline = 'alphabetic';
+    // Current rate readout inside the panel (bottom-left)
+    const latest = this.ring.latest();
+    if (latest) {
+      ctx.font = '10px -apple-system, sans-serif';
+      ctx.fillStyle = COLORS.basalLine;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 2);
+      ctx.textBaseline = 'alphabetic';
+    }
   }
 
   private drawIOBOverlay(winStartMin: number): void {

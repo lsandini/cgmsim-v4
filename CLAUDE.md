@@ -25,6 +25,16 @@ Within packages/ui:
 npm run build:standalone   # Produces the single-file HTML via inline.mjs
 ```
 
+## After every code change
+
+Always rebuild the standalone file before reporting work as done:
+
+```bash
+cd packages/ui && npm run build:standalone
+```
+
+This is the primary deliverable — the `.ts` sources alone are not sufficient.
+
 ## Key architecture decisions
 
 - All glucose computations in **mg/dL** internally. mmol/L conversion at display layer only (÷ 18.0182). Default display unit is **mmol/L**.

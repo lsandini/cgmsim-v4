@@ -17,7 +17,7 @@ import { runPID, rateToMicroBolus } from '../../simulator/src/pid.js';
 import { RAPID_PROFILES, LONG_ACTING_PROFILES } from '../../simulator/src/insulinProfiles.js';
 const TICK_SIM_MINUTES = 5;
 const TICK_SIM_MS = TICK_SIM_MINUTES * 60_000;
-const DEFAULT_SEED = 42;
+function randomSeed() { return (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1; }
 const INITIAL_BG = 100;
 function createInitialState() {
     return {
@@ -36,8 +36,8 @@ function createInitialState() {
         pidTicksSinceLastMB: 999,
         throttle: 10,
         running: false,
-        g6: createG6NoiseGenerator(DEFAULT_SEED, null),
-        rngState: DEFAULT_SEED,
+        g6: createG6NoiseGenerator(randomSeed(), null),
+        rngState: randomSeed(),
         lastLongActingDay: -1,
         tempBasal: null,
         events: [],
@@ -265,8 +265,8 @@ export class InlineSimulator {
             pidPrevRate: state.pidPrevRate ?? 0.8,
             pidTicksSinceLastMB: state.pidTicksSinceLastMB ?? 999,
             throttle: state.throttle, running: false,
-            g6: createG6NoiseGenerator(DEFAULT_SEED, state.g6State),
-            rngState: DEFAULT_SEED, lastLongActingDay: -1, tempBasal: null, events: [],
+            g6: createG6NoiseGenerator(1, state.g6State),
+            rngState: randomSeed(), lastLongActingDay: -1, tempBasal: null, events: [],
         });
     }
     terminate() { this.pause(); }

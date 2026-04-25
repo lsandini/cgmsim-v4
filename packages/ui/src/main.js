@@ -476,7 +476,7 @@ btnReset.addEventListener('click', () => {
         therapy: { mode: 'PUMP', programmedISF: 40, programmedCR: 12, basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
             rapidAnalogue: 'Fiasp', rapidDia: 5, longActingType: 'Glargine', longActingDose: 20,
             longActingInjectionTime: 22 * 60, glucoseTarget: 100, correctionThreshold: 120, enableSMB: false },
-        g6State: { v: [0, 0], cc: [0, 0], tCalib: 0, rng: { jsr: 123456789 ^ 42, seed: 42 } },
+        g6State: { v: [0, 0], cc: [0, 0], tCalib: 0, rng: (() => { const s = (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1; return { jsr: 123456789 ^ s, seed: s }; })() },
         activeBoluses: [], activeMeals: [], activeLongActing: [],
         pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999, throttle: 10, running: false,
     });
