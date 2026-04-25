@@ -31,7 +31,7 @@ function showError(msg: string): void {
 
 // ── Throttle ──────────────────────────────────────────────────────────────────
 
-const THROTTLE_STOPS = [0.25, 0.5, 1, 5, 10, 50, 100] as const;
+const THROTTLE_STOPS = [0.25, 0.5, 1, 5, 10, 50, 100, 600, 3600] as const;
 type ThrottleStop = typeof THROTTLE_STOPS[number];
 
 function sliderToThrottle(v: number): ThrottleStop {
@@ -72,7 +72,7 @@ function minutesToTimeString(m: number): string {
 const appState = {
   running:        false,
   throttle:       10 as ThrottleStop,
-  displayUnit:    'mgdl' as DisplayUnit,
+  displayUnit:    'mmoll' as DisplayUnit,
   panelOpen:      false,
   fullScreen:     false,
   lastSnap:       null as TickSnapshot | null,
@@ -129,6 +129,9 @@ const egpPeak          = getEl<HTMLInputElement>('egp-peak');
 const egpBasal         = getEl<HTMLInputElement>('egp-basal');
 const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
+const enableSMB        = getEl<HTMLInputElement>('enable-smb');
+const rowSMB           = getEl<HTMLElement>('row-smb');
+const overlayBasal     = getEl<HTMLInputElement>('overlay-basal');
 const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
 const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
 const overlayEvents    = getEl<HTMLInputElement>('overlay-events');
@@ -138,6 +141,12 @@ const btnLoad          = getEl<HTMLButtonElement>('btn-load');
 const btnExport        = getEl<HTMLButtonElement>('btn-export');
 const btnImport        = getEl<HTMLButtonElement>('btn-import');
 const btnReset         = getEl<HTMLButtonElement>('btn-reset');
+const btnZoom3h        = getEl<HTMLButtonElement>('btn-zoom-3h');
+const btnZoom6h        = getEl<HTMLButtonElement>('btn-zoom-6h');
+const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
+const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
+const btnLive          = getEl<HTMLButtonElement>('btn-live');
+const scenarioBadge    = getEl<HTMLElement>('scenario-badge');
 const btnSnapshot      = getEl<HTMLButtonElement>('btn-snapshot');
 const btnRunCompare    = getEl<HTMLButtonElement>('btn-run-compare');
 const btnStopCompare   = getEl<HTMLButtonElement>('btn-stop-compare');
@@ -200,6 +209,7 @@ function setRunning(running: boolean): void {
   appState.running = running;
   btnPause.textContent = running ? '⏸' : '▶';
   btnPause.classList.toggle('running', running);
+  renderer.setPlayback(appState.throttle, running);
 }
 
 btnPause.addEventListener('click', () => {
@@ -222,16 +232,75 @@ throttleSlider.addEventListener('input', () => {
   throttleVal.textContent = `×${t}`;
   bridge.setThrottle(t);
   if (appState.compareRunning) compare.setThrottle(t);
+  renderer.setPlayback(t, appState.running);
 });
 throttleVal.textContent = `×${sliderToThrottle(parseInt(throttleSlider.value))}`;
 
+// ── Zoom and pan controls ─────────────────────────────────────────────────────
+
+function updateZoomButtons(activeMinutes: number): void {
+  btnZoom3h.classList.toggle('active',  activeMinutes === 180);
+  btnZoom6h.classList.toggle('active',  activeMinutes === 360);
+  btnZoom12h.classList.toggle('active', activeMinutes === 720);
+  btnZoom24h.classList.toggle('active', activeMinutes === 1440);
+}
+
+btnZoom3h.addEventListener('click',  () => { renderer.setZoom(180);  updateZoomButtons(180); });
+btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360); });
+btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720); });
+btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); });
+btnLive.addEventListener('click', () => renderer.snapToLive());
+
+renderer.onViewChange(() => {
+  btnLive.hidden = renderer.isLive;
+  updateZoomButtons(renderer.zoomMinutes);
+});
+
 // ── Unit toggle ───────────────────────────────────────────────────────────────
 
+/** Convert a value from current display unit to mg/dL (for simulator). */
+function fromDisplay(val: number): number {
+  return appState.displayUnit === 'mmoll' ? val * 18.0182 : val;
+}
+
+/** Update panel inputs and unit labels when display unit changes. */
+function syncPanelUnits(prevUnit: 'mgdl' | 'mmoll'): void {
+  const isMmol = appState.displayUnit === 'mmoll';
+
+  // Convert a value from prevUnit to the new display unit
+  const conv = (v: number) => {
+    const mgdl = prevUnit === 'mmoll' ? v * 18.0182 : v;
+    return isMmol ? mgdl / 18.0182 : mgdl;
+  };
+  const fmt = (v: number) => isMmol ? v.toFixed(1) : Math.round(v).toString();
+
+  // Glucose target
+  const gt = parseFloat(glucoseTarget.value);
+  if (!isNaN(gt)) glucoseTarget.value = fmt(conv(gt));
+  glucoseTarget.min  = isMmol ? '3.9'  : '70';
+  glucoseTarget.max  = isMmol ? '13.9' : '250';
+  glucoseTarget.step = isMmol ? '0.1'  : '5';
+  document.getElementById('unit-glucose-target')!.textContent = isMmol ? 'mmol/L' : 'mg/dL';
+
+  // ISF fields (both programmed and true)
+  for (const input of [progISF, trueISF]) {
+    const v = parseFloat(input.value);
+    if (!isNaN(v)) input.value = fmt(conv(v));
+    input.min  = isMmol ? '0.5'  : '10';
+    input.max  = isMmol ? '11.1' : '200';
+    input.step = isMmol ? '0.1'  : '5';
+  }
+  document.getElementById('unit-prog-isf')!.textContent  = isMmol ? 'mmol/L/U' : 'mg/dL/U';
+  document.getElementById('unit-true-isf')!.textContent  = isMmol ? 'mmol/L/U' : 'mg/dL/U';
+}
+
 unitToggle.addEventListener('click', () => {
-  appState.displayUnit = appState.displayUnit === 'mgdl' ? 'mmoll' : 'mgdl';
+  const prev = appState.displayUnit;
+  appState.displayUnit = prev === 'mgdl' ? 'mmoll' : 'mgdl';
   renderer.options.displayUnit = appState.displayUnit;
   unitToggle.textContent = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
   cgmUnitEl.textContent  = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+  syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
 });
@@ -284,24 +353,29 @@ btnMeal.addEventListener('click', () => {
 
 function onTherapyChange(): void {
   const mode = therapyMode.value as 'AID' | 'PUMP' | 'MDI';
+  const modeLabel = mode === 'AID' ? 'AID mode' : mode === 'PUMP' ? 'Pump (open loop)' : 'MDI';
+  scenarioBadge.textContent = `Default patient · ${modeLabel}`;
   bridge.setTherapyParam({
     mode,
-    glucoseTarget:           parseFloat(glucoseTarget.value),
+    glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),
     rapidAnalogue:           rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
-    programmedISF:           parseFloat(progISF.value),
+    programmedISF:           fromDisplay(parseFloat(progISF.value)),
     programmedCR:            parseFloat(progCR.value),
     longActingType:          longActingType.value as 'Glargine' | 'Degludec' | 'Detemir',
     longActingDose:          parseFloat(longActingDose.value),
     longActingInjectionTime: timeStringToMinutes(longActingTime.value),
+    enableSMB:               enableSMB.checked,
   });
   sectionMDI.style.display   = mode === 'MDI'  ? 'block' : 'none';
   sectionBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
+  rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
 }
 
 [therapyMode, glucoseTarget, rapidAnalogue, progISF, progCR,
  longActingType, longActingDose, longActingTime].forEach(el =>
   el.addEventListener('change', onTherapyChange)
 );
+enableSMB.addEventListener('change', onTherapyChange);
 
 // ── Temp basal ────────────────────────────────────────────────────────────────
 
@@ -376,7 +450,7 @@ renderBasalRows();
 
 function onPatientChange(): void {
   bridge.setPatientParam({
-    trueISF:             parseFloat(trueISF.value),
+    trueISF:             fromDisplay(parseFloat(trueISF.value)),
     trueCR:              parseFloat(trueCR.value),
     weight:              parseFloat(patientWeight.value),
     diabetesDuration:    parseFloat(diabetesDuration.value),
@@ -394,6 +468,7 @@ function onPatientChange(): void {
 
 // ── Overlay toggles ───────────────────────────────────────────────────────────
 
+overlayBasal.addEventListener('change',  () => { renderer.options.showBasal = overlayBasal.checked; renderer.markDirty(); });
 overlayIOB.addEventListener('change',    () => { renderer.options.showIOB = overlayIOB.checked; renderer.markDirty(); });
 overlayCOB.addEventListener('change',    () => { renderer.options.showCOB = overlayCOB.checked; renderer.markDirty(); });
 overlayEvents.addEventListener('change', () => { renderer.options.showEvents = overlayEvents.checked; renderer.markDirty(); });
@@ -437,12 +512,12 @@ btnReset.addEventListener('click', () => {
     simTimeMs:0, trueGlucose:100, lastCGM:100,
     patient:{weight:75,age:35,gender:'Male',diabetesDuration:10,trueISF:40,trueCR:12,
              dia:6,tp:75,carbsAbsTime:360,egpBasalLevel:0.04,egpAmplitude:1,egpPeakHour:5,gastricEmptyingRate:1},
-    therapy:{mode:'AID',programmedISF:40,programmedCR:12,basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
-             rapidAnalogue:'Fiasp',longActingType:'Glargine',longActingDose:20,
-             longActingInjectionTime:22*60,glucoseTarget:100,correctionThreshold:120},
-    g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:{jsr:123456789^42,seed:42}},
+    therapy:{mode:'PUMP',programmedISF:40,programmedCR:12,basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
+             rapidAnalogue:'Fiasp',rapidDia:5,longActingType:'Glargine',longActingDose:20,
+             longActingInjectionTime:22*60,glucoseTarget:100,correctionThreshold:120,enableSMB:false},
+    g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
-    pidIntegral:0,pidPrevCGM:100,throttle:10,running:false,
+    pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
   renderer.clearHistory();
   setStatus('Simulation reset.');
@@ -526,7 +601,7 @@ document.addEventListener('keydown', (e) => {
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 
-onTherapyChange();  // set MDI/pump section visibility
+onTherapyChange();  // set MDI/pump section visibility + initial badge
+syncPanelUnits('mgdl');  // convert panel inputs and labels to mmol/L on load
 bridge.setThrottle(10);
-bridge.resume();
-setRunning(true);
+setRunning(false);  // start paused — user presses ▶ to begin

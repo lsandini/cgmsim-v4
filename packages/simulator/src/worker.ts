@@ -33,6 +33,7 @@ import { calculateBolusIOB, calculateLongActingIOB, calculatePumpBasalIOB } from
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from './carbs.js';
 import type { ResolvedMeal } from './carbs.js';
 import { runPID, rateToMicroBolus } from './pid.js';
+import type { PIDState } from './pid.js';
 import type { PumpBasalBolus } from './iob.js';
 import { RAPID_PROFILES, LONG_ACTING_PROFILES } from './insulinProfiles.js';
 
@@ -82,8 +83,9 @@ function createInitialCoreState(): WorkerState {
     activeBoluses: [],
     activeMeals: [],
     activeLongActing: [],
-    pidIntegral: 0,
-    pidPrevCGM: INITIAL_GLUCOSE_MG_DL,
+    pidCGMHistory: [],
+    pidPrevRate: 0.8,
+    pidTicksSinceLastMB: 999,
     throttle: DEFAULT_THROTTLE,
     running: false,
   };
@@ -122,9 +124,8 @@ function tick(): void {
   const isPump = s.therapy.mode === 'PUMP' || s.therapy.mode === 'AID';
 
   // 1. Purge expired treatments
-  const diaMinutes = s.patient.dia * 60;
   s.activeBoluses = s.activeBoluses.filter(
-    (b) => (nowMs - b.simTimeMs) / 60_000 <= diaMinutes,
+    (b) => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60,
   );
   s.activeLongActing = s.activeLongActing.filter((d) => {
     const profile = LONG_ACTING_PROFILES[d.type];
@@ -143,16 +144,21 @@ function tick(): void {
   let microbolusUnits = 0;
 
   if (s.therapy.mode === 'AID') {
+    const totalIOB = calculateBolusIOB(s.activeBoluses, nowMs)
+      + calculatePumpBasalIOB(internal.pumpMicroBoluses, nowMs);
+    const rp = RAPID_PROFILES[s.therapy.rapidAnalogue];
+    const pidState: PIDState = {
+      cgmHistory: s.pidCGMHistory,
+      prevRate: s.pidPrevRate,
+      ticksSinceLastMB: s.pidTicksSinceLastMB,
+    };
     const pidResult = runPID(
-      s.lastCGM,
-      calculateBolusIOB(s.activeBoluses, nowMs),
-      s.therapy,
-      { integral: s.pidIntegral, prevCGM: s.pidPrevCGM },
-      currentBasalRate,
+      s.lastCGM, totalIOB, s.therapy, pidState, currentBasalRate, rp?.peak ?? 55,
     );
     currentBasalRate = pidResult.rateUPerHour;
-    s.pidIntegral = pidResult.nextState.integral;
-    s.pidPrevCGM = pidResult.nextState.prevCGM;
+    s.pidCGMHistory = pidResult.nextState.cgmHistory;
+    s.pidPrevRate = pidResult.nextState.prevRate;
+    s.pidTicksSinceLastMB = pidResult.nextState.ticksSinceLastMB;
     microbolusUnits = pidResult.microbolusUnits;
 
     // Record AID micro-bolus in active boluses for IOB accounting
@@ -162,6 +168,7 @@ function tick(): void {
         simTimeMs: nowMs,
         units: microbolusUnits,
         analogue: s.therapy.rapidAnalogue,
+        dia: s.therapy.rapidDia,
       });
     }
   }
@@ -175,7 +182,7 @@ function tick(): void {
         internal.pumpMicroBoluses.push({
           simTimeMs: nowMs,
           units: microBolusUnits,
-          dia: rapidProfile.dia,
+          dia: s.therapy.rapidDia,
           peak: rapidProfile.peak,
         });
       }
@@ -193,6 +200,7 @@ function tick(): void {
     meals: internal.resolvedMeals,
     nowSimTimeMs: nowMs,
     isPump,
+    currentGlucose: s.trueGlucose,
   });
 
   // 5. Apply deltaBG to true glucose, clamp to physiological limits
@@ -268,6 +276,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerInboundMessage>) => 
         simTimeMs: internal.core.simTimeMs,
         units: msg.units,
         analogue,
+        dia: internal.core.therapy.rapidDia,
       });
       break;
     }

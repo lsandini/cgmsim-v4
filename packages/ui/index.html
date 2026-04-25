@@ -284,6 +284,11 @@
       min-width: 0;
     }
 
+    .param-unit {
+      font-size: 10px;
+      opacity: 0.7;
+    }
+
     .panel-row input[type="number"],
     .panel-row select {
       background: var(--bg-surface);
@@ -333,12 +338,38 @@
     /* Scenario chip */
     #scenario-badge {
       position: absolute;
-      bottom: 8px;
-      left: 12px;
+      top: 28px;
+      left: 60px;
       font-size: 11px;
       color: var(--text-muted);
       pointer-events: none;
     }
+
+    /* View controls — zoom and live button */
+    #view-controls {
+      position: absolute;
+      top: 48px;
+      right: 12px;
+      display: flex;
+      gap: 4px;
+      z-index: 5;
+    }
+
+    .view-btn {
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      opacity: 0.75;
+      transition: opacity 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .view-btn:hover { opacity: 1; color: var(--text); }
+    .view-btn.active { border-color: var(--accent); color: var(--accent); opacity: 1; }
+    .view-btn.live-btn { border-color: var(--green); color: var(--green); opacity: 1; }
 
     /* Panel tabs */
     #panel-tabs {
@@ -392,7 +423,15 @@
     <div id="canvas-area">
       <canvas id="cgm-canvas"></canvas>
 
-      <button id="unit-toggle" title="Toggle display units">mg/dL</button>
+      <button id="unit-toggle" title="Toggle display units">mmol/L</button>
+
+      <div id="view-controls">
+        <button class="view-btn" id="btn-zoom-3h">3h</button>
+        <button class="view-btn" id="btn-zoom-6h">6h</button>
+        <button class="view-btn" id="btn-zoom-12h">12h</button>
+        <button class="view-btn active" id="btn-zoom-24h">24h</button>
+        <button class="view-btn live-btn" id="btn-live" hidden>↩ Live</button>
+      </div>
 
       <div id="iob-cob">
         IOB <span id="iob-val">0.00</span> U &nbsp;
@@ -428,6 +467,10 @@
           <div class="panel-section">
             <h3>Overlays</h3>
             <div class="panel-row">
+              <label>Basal rate</label>
+              <input type="checkbox" id="overlay-basal" checked />
+            </div>
+            <div class="panel-row">
               <label>IOB curve</label>
               <input type="checkbox" id="overlay-iob" checked />
             </div>
@@ -454,13 +497,17 @@
               <label>Mode</label>
               <select id="therapy-mode">
                 <option value="AID">AID (PID)</option>
-                <option value="PUMP">Pump (open loop)</option>
+                <option value="PUMP" selected>Pump (open loop)</option>
                 <option value="MDI">MDI</option>
               </select>
             </div>
             <div class="panel-row" id="row-target">
-              <label>Glucose target</label>
+              <label>Glucose target <span class="param-unit" id="unit-glucose-target">mg/dL</span></label>
               <input type="number" id="glucose-target" min="70" max="180" step="5" value="100" />
+            </div>
+            <div class="panel-row" id="row-smb" style="display:none;">
+              <label>Supermicrobolus (SMB)</label>
+              <input type="checkbox" id="enable-smb" />
             </div>
           </div>
           <div class="panel-section">
@@ -474,7 +521,7 @@
               </select>
             </div>
             <div class="panel-row">
-              <label>Programmed ISF</label>
+              <label>Programmed ISF <span class="param-unit" id="unit-prog-isf">mg/dL/U</span></label>
               <input type="number" id="prog-isf" min="10" max="200" step="5" value="40" />
             </div>
             <div class="panel-row">
@@ -522,7 +569,7 @@
           <div class="panel-section">
             <h3>True physiology</h3>
             <div class="panel-row">
-              <label>True ISF</label>
+              <label>True ISF <span class="param-unit" id="unit-true-isf">mg/dL/U</span></label>
               <input type="number" id="true-isf" min="10" max="200" step="5" value="40" />
             </div>
             <div class="panel-row">
@@ -616,14 +663,14 @@
           <span id="throttle-val">×10</span>
         </div>
         <input type="range" id="throttle-slider"
-               min="0" max="7" step="1" value="3" />
+               min="0" max="8" step="1" value="4" />
       </div>
 
       <div id="sim-time">D+00:00</div>
 
       <div style="display:flex; align-items:baseline; gap:2px;">
         <div id="current-cgm">---</div>
-        <div id="cgm-unit">mg/dL</div>
+        <div id="cgm-unit">mmol/L</div>
       </div>
       <div id="trend-arrow">→</div>
 

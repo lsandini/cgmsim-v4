@@ -49,11 +49,11 @@ export interface VirtualPatient {
   /** Carbohydrate absorption time in minutes (default 360). */
   carbsAbsTime: number;
 
-  /** EGP: average hepatic glucose contribution (mg/dL/min). */
+  /** EGP: hepatic factor (dimensionless, default 1.0 = normal). Scales EGP derived from isf/cr × 0.002 × weight. */
   egpBasalLevel: number;
-  /** EGP: dawn phenomenon amplitude multiplier (0–2, default 1). */
+  /** EGP: circadian amplitude (±fraction, default 0.2 = ±20% swing matching v3 sinus model). */
   egpAmplitude: number;
-  /** EGP: hour of peak hepatic output (0–23, default 5). */
+  /** EGP: hour of peak hepatic output (0–23, default 6 = 6 AM, matching v3 sinus peak). */
   egpPeakHour: number;
 
   /** Gastric emptying rate multiplier (0.5 = slow/fatty, 2.0 = fast/sugary). */
@@ -70,9 +70,9 @@ export const DEFAULT_PATIENT: VirtualPatient = {
   dia: 6,
   tp: 75,
   carbsAbsTime: 360,
-  egpBasalLevel: 0.04,
-  egpAmplitude: 1.0,
-  egpPeakHour: 5,
+  egpBasalLevel: 1.0,
+  egpAmplitude: 0.2,
+  egpPeakHour: 6,
   gastricEmptyingRate: 1.0,
 };
 
@@ -100,6 +100,8 @@ export interface TherapyProfile {
   basalProfile: BasalEntry[];
 
   rapidAnalogue: RapidAnalogueType;
+  /** Duration of insulin action in hours used by the controller for IOB calculations. */
+  rapidDia: number;
 
   /** MDI long-acting insulin type. */
   longActingType: LongActingType;
@@ -112,19 +114,23 @@ export interface TherapyProfile {
   glucoseTarget: MgdL;
   /** Bolus advisor correction threshold (mg/dL). */
   correctionThreshold: MgdL;
+  /** AID: enable supermicrobolus rules (rapid rise, sustained rise, prolonged high). */
+  enableSMB: boolean;
 }
 
 export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
-  mode: 'AID',
+  mode: 'PUMP',
   programmedISF: 40,
   programmedCR: 12,
   basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
   rapidAnalogue: 'Fiasp',
+  rapidDia: 5,
   longActingType: 'Glargine',
   longActingDose: 20,
   longActingInjectionTime: 22 * 60,
   glucoseTarget: 100,
   correctionThreshold: 120,
+  enableSMB: false,
 };
 
 // ------------------------------------------------------------
@@ -152,6 +158,8 @@ export interface ActiveBolus {
   simTimeMs: SimTimeMs;
   units: number;
   analogue: RapidAnalogueType;
+  /** DIA in hours stamped at injection time from therapy.rapidDia. */
+  dia: number;
 }
 
 export interface ActiveMeal {
@@ -192,10 +200,12 @@ export interface WorkerState {
   activeMeals: ActiveMeal[];
   activeLongActing: ActiveLongActing[];
 
-  /** PID controller integral accumulator (mg/dL·min). */
-  pidIntegral: number;
-  /** Previous CGM reading for derivative term. */
-  pidPrevCGM: MgdL;
+  /** PID controller: last ≤24 CGM readings for integral term (oldest first). */
+  pidCGMHistory: number[];
+  /** PID controller: last delivered basal rate for rate-of-change limiting. */
+  pidPrevRate: number;
+  /** PID controller: ticks since last microbolus for interval safety. */
+  pidTicksSinceLastMB: number;
 
   /** Throttle factor (1 = real time, 100 = max). */
   throttle: number;

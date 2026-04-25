@@ -1,58 +1,105 @@
 /**
- * PID Controller for AID therapy mode.
+ * PID-IFB Controller for AID therapy mode.
  *
- * Ported from @lsandini/cgmsim-lib PID controller implementation.
- * Receives the noisy CGM signal (not true glucose) — physiologically accurate
- * and pedagogically important (controller reacts to sensor artefacts).
+ * Rewritten to match v3 cgmsim-lib pid7smb.js faithfully:
  *
- * Includes a fuzzy-logic microbolus layer that adds small correction boluses
- * when both PID output and glucose trajectory agree a bolus is warranted.
+ *   rate = basalRate + (KP·e + KI·Σe + KD·ė×60) − 0.72·excessIOB
  *
- * Returns the insulin delivery rate for this tick in U/hr.
+ *   where excessIOB = max(0, totalIOB − equilibriumIOB)
+ *   and   equilibriumIOB is the steady-state IOB for the current base basal rate.
+ *
+ * Key differences from the previous v4 implementation:
+ *   - Feedback only on EXCESS IOB (not a multiplicative safety factor on the whole rate)
+ *   - Gains match v3: KP=0.01, KI=0.0005, KD=0.15 (derivative converted ×60 to U/hr)
+ *   - Integral is a 2-hour sliding window sum (last 24 CGM errors), not an accumulator
+ *   - Suspend at ≤70 mg/dL; minimum 0.1 U/hr above that threshold
+ *   - Rate-of-change limited to 1 U/hr per 5-min tick
+ *   - Microbolus rules from v3 supermicrobolus.js (rapid rise ≥2 mg/dL/min, sustained ≥1)
  */
 
 import type { TherapyProfile } from '@cgmsim/shared';
 
+const TICK_MINUTES = 5;
+
+// Gains — matching v3 pid7smb.js
+const KP = 0.012;
+const KI = 0.0008;
+const KD = 0.04;    // derivative is multiplied by 60 inside (per-hour conversion)
+const INSULIN_FEEDBACK_GAIN = 0.72;
+
+// Safety limits
+const SUSPEND_THRESHOLD = 70;   // mg/dL: zero basal at or below this
+const MIN_BASAL_RATE    = 0.1;  // U/hr: floor above suspend threshold
+const MAX_BASAL_RATE    = 5.0;  // U/hr: ceiling
+const MAX_RATE_CHANGE   = 1.0;  // U/hr per tick: rate-of-change limit
+const MAX_HISTORY       = 24;   // readings = 2 hours at 5-min ticks (v3 uses 24)
+
+// Microbolus — v3 supermicrobolus.js rules 1, 2, 3
+const MB_MIN_GLUCOSE      = 100;   // mg/dL: no microbolus below this
+const MB_RAPID_RATE       = 2.0;   // mg/dL/min → 0.2 U rapid-rise bolus (Rule 1)
+const MB_SUSTAINED_RATE   = 1.0;   // mg/dL/min over 15 min → 0.15 U (Rule 2)
+const MB_HIGH_THRESHOLD   = 130;   // mg/dL: prolonged-high trigger (Rule 3)
+const MB_HIGH_TICKS       = 6;     // 30 min at 5-min ticks = 6 ticks of sustained high
+const MB_HIGH_UNITS       = 0.1;   // U for prolonged high
+const MB_MIN_TICKS        = 3;     // 15-min minimum interval between any microbolus
+
 export interface PIDState {
-  integral: number;
-  prevCGM: number;
+  /** Last ≤24 CGM readings (oldest first, newest last). Used for integral term. */
+  cgmHistory: number[];
+  /** Basal rate delivered last tick (U/hr). Used for rate-of-change limiting. */
+  prevRate: number;
+  /** Ticks elapsed since last microbolus was given. Prevents rapid stacking. */
+  ticksSinceLastMB: number;
 }
 
 export interface PIDOutput {
   rateUPerHour: number;
-  /** Updated PID state to store back into WorkerState. */
-  nextState: PIDState;
-  /** Microbolus delivered this tick (units), if any. */
   microbolusUnits: number;
+  nextState: PIDState;
 }
 
-const TICK_MINUTES = 5;
-const TICK_HOURS = TICK_MINUTES / 60;
+/**
+ * Equilibrium IOB at steady state for a constant basal infusion.
+ *
+ * Computed numerically — sums the IOB contribution of each 5-min micro-bolus
+ * over one full DIA window using the same biexponential + 15-min ramp formula
+ * used by calculatePumpBasalIOB. This matches the actual steady-state IOB that
+ * the simulator accumulates, so excessIOB = max(0, actual - equilibrium) is
+ * non-zero when there is genuinely excess insulin on board.
+ *
+ * The v3 analytical formula (auc = td*(1-a/2)) overestimates by ~2.4× because
+ * it was tuned for a different IOB normalisation used in Nightscout-based loops.
+ */
+export function calculateEquilibriumIOB(
+  basalRateUPerHour: number,
+  diaHours: number,
+  peakMin: number,
+): number {
+  const td  = diaHours * 60;
+  const tau = (peakMin * (1 - peakMin / td)) / (1 - (2 * peakMin) / td);
+  const a   = (2 * tau) / td;
+  const S   = 1 / (1 - a + (1 + a) * Math.exp(-td / tau));
+  const coeff = S * (1 - a);
+  const tickUnits = basalRateUPerHour * TICK_MINUTES / 60;
 
-// PID tuning constants — matching v3 values
-const KP = 0.005; // Proportional gain (U/hr per mg/dL error)
-const KI = 0.0001; // Integral gain (U/hr per mg/dL·min)
-const KD = 0.01;  // Derivative gain (U/hr per (mg/dL/min))
-
-// Safety limits
-const MAX_RATE_U_PER_HOUR = 5.0;
-const MIN_RATE_U_PER_HOUR = 0.0;
-const MAX_INTEGRAL = 500;  // Cap integral accumulation (mg/dL·min)
-const MIN_INTEGRAL = -200;
-
-// Fuzzy microbolus thresholds
-const MICROBOLUS_CGM_THRESHOLD = 140;  // mg/dL: only bolus above this
-const MICROBOLUS_TREND_THRESHOLD = 1;  // mg/dL/min: only bolus when rising
-const MICROBOLUS_MAX_UNITS = 0.3;      // Max microbolus per tick
+  let iob = 0;
+  for (let t = 0; t < td; t += TICK_MINUTES) {
+    let frac = 1 - coeff * ((t * t / (tau * td * (1 - a)) - t / tau - 1) * Math.exp(-t / tau) + 1);
+    if (t < 15) frac = 1 - (t / 15) * (1 - frac);
+    iob += Math.max(0, frac) * tickUnits;
+  }
+  return iob;
+}
 
 /**
- * Run one tick of the PID controller.
+ * Run one tick of the PID-IFB controller.
  *
- * @param cgm           Current CGM reading (noisy, mg/dL)
- * @param iob           Current IOB (units)
- * @param therapy       Current therapy profile (for target and programmed ISF)
- * @param state         PID state from previous tick
- * @param basalRateUPerHour  Current scheduled basal rate (U/hr)
+ * @param cgm               Current CGM reading (noisy, mg/dL)
+ * @param iob               Total IOB — bolus + pump basal (units)
+ * @param therapy           Current therapy profile
+ * @param state             PID state from previous tick
+ * @param basalRateUPerHour Scheduled basal rate for this tick (U/hr)
+ * @param insulinPeak       Minutes to peak for the rapid analogue (from RAPID_PROFILES)
  */
 export function runPID(
   cgm: number,
@@ -60,61 +107,96 @@ export function runPID(
   therapy: TherapyProfile,
   state: PIDState,
   basalRateUPerHour: number,
+  insulinPeak: number,
 ): PIDOutput {
-  const target = therapy.glucoseTarget;
-  const error = cgm - target; // positive = above target → need more insulin
+  const newHistory = pushHistory(state.cgmHistory, cgm);
+  const newMBTicks = Math.min(state.ticksSinceLastMB + 1, 999);
 
-  // Derivative: rate of change per minute
-  const dCGM = (cgm - state.prevCGM) / TICK_MINUTES;
-
-  // Integral: accumulate error × tick duration
-  const newIntegral = Math.max(
-    MIN_INTEGRAL,
-    Math.min(MAX_INTEGRAL, state.integral + error * TICK_MINUTES),
-  );
-
-  // PID output (additive adjustment above scheduled basal)
-  const pidAdjustment =
-    KP * error +
-    KI * newIntegral +
-    KD * dCGM;
-
-  // Total rate = scheduled basal + PID adjustment
-  const rawRate = basalRateUPerHour + pidAdjustment;
-
-  // Clamp and apply IOB safety: reduce if IOB is already high
-  const iobSafetyFactor = Math.max(0, 1 - iob / 5);
-  const clampedRate = Math.max(
-    MIN_RATE_U_PER_HOUR,
-    Math.min(MAX_RATE_U_PER_HOUR, rawRate * iobSafetyFactor),
-  );
-
-  // ── Fuzzy microbolus layer ──────────────────────────────────────────────
-  let microbolusUnits = 0;
-  if (
-    cgm > MICROBOLUS_CGM_THRESHOLD &&
-    dCGM > MICROBOLUS_TREND_THRESHOLD &&
-    iob < 2.0
-  ) {
-    // Microbolus proportional to error above threshold, capped
-    const fuzzyAmount = Math.min(
-      MICROBOLUS_MAX_UNITS,
-      (cgm - MICROBOLUS_CGM_THRESHOLD) / therapy.programmedISF * 0.3,
-    );
-    microbolusUnits = Math.max(0, fuzzyAmount);
+  // ── Suspend: force zero basal at or below threshold ───────────────────────
+  if (cgm <= SUSPEND_THRESHOLD) {
+    return {
+      rateUPerHour: 0,
+      microbolusUnits: 0,
+      nextState: { cgmHistory: newHistory, prevRate: 0, ticksSinceLastMB: newMBTicks },
+    };
   }
 
+  const target  = therapy.glucoseTarget;
+  const prevCGM = state.cgmHistory.length > 0
+    ? state.cgmHistory[state.cgmHistory.length - 1]!
+    : cgm;
+
+  // ── Error terms ───────────────────────────────────────────────────────────
+  const error        = cgm - target;
+  const derivative   = (cgm - prevCGM) / TICK_MINUTES;   // mg/dL per min
+  // Integral: sum of last 24 CGM errors (2-hour window — matches v3)
+  const integralError = state.cgmHistory.reduce((s, v) => s + (v - target), 0);
+
+  // ── PID terms ─────────────────────────────────────────────────────────────
+  const pTerm    = KP * error;
+  const iTerm    = KI * integralError;
+  const dTerm    = KD * derivative * 60;  // ×60: convert per-min derivative to per-hour (v3 does this)
+  const pidDelta = pTerm + iTerm + dTerm;
+
+  // ── Insulin feedback on EXCESS IOB only ───────────────────────────────────
+  const equilibriumIOB = calculateEquilibriumIOB(basalRateUPerHour, therapy.rapidDia, insulinPeak);
+  const excessIOB      = Math.max(0, iob - equilibriumIOB);
+  const feedbackTerm   = INSULIN_FEEDBACK_GAIN * excessIOB;
+
+  const rawRate = basalRateUPerHour + pidDelta - feedbackTerm;
+
+  // ── Safety limits ─────────────────────────────────────────────────────────
+  let finalRate = Math.max(MIN_BASAL_RATE, Math.min(MAX_BASAL_RATE, rawRate));
+
+  // Rate-of-change limit: no more than 1 U/hr change per tick
+  const rateDelta = finalRate - state.prevRate;
+  if (Math.abs(rateDelta) > MAX_RATE_CHANGE) {
+    finalRate = state.prevRate + Math.sign(rateDelta) * MAX_RATE_CHANGE;
+  }
+
+  // Round to 0.05 U/hr (pump resolution — matches v3 finalizeBasalRate)
+  finalRate = Math.round(finalRate * 20) / 20;
+
+  // ── Supermicrobolus (v3 supermicrobolus.js rules 1, 2, 3) — optional ─────
+  let microbolusUnits = 0;
+  if (therapy.enableSMB && cgm >= MB_MIN_GLUCOSE && newMBTicks >= MB_MIN_TICKS) {
+    const riseRate = (cgm - prevCGM) / TICK_MINUTES;
+
+    if (state.cgmHistory.length >= 1 && riseRate >= MB_RAPID_RATE) {
+      // Rule 1: rapid rise ≥ 2 mg/dL/min
+      microbolusUnits = 0.2;
+    } else if (state.cgmHistory.length >= 3 && riseRate >= MB_SUSTAINED_RATE) {
+      // Rule 2: sustained rise ≥ 1 mg/dL/min over 15 min
+      const cgmMinus15 = state.cgmHistory[state.cgmHistory.length - 3]!;
+      if ((cgm - cgmMinus15) / 15 >= MB_SUSTAINED_RATE) microbolusUnits = 0.15;
+    } else if (
+      cgm >= MB_HIGH_THRESHOLD &&
+      state.cgmHistory.length >= MB_HIGH_TICKS &&
+      state.cgmHistory.slice(-MB_HIGH_TICKS).every(v => v >= MB_HIGH_THRESHOLD) &&
+      (cgm - prevCGM) / TICK_MINUTES > -2.0   // not already dropping rapidly
+    ) {
+      // Rule 3: prolonged high — BG ≥ 130 for 30+ min and not in rapid descent
+      microbolusUnits = MB_HIGH_UNITS;
+    }
+  }
+
+  const ticksSinceLastMB = microbolusUnits > 0 ? 0 : newMBTicks;
+
   return {
-    rateUPerHour: clampedRate,
-    nextState: { integral: newIntegral, prevCGM: cgm },
+    rateUPerHour: finalRate,
     microbolusUnits,
+    nextState: { cgmHistory: newHistory, prevRate: finalRate, ticksSinceLastMB },
   };
+}
+
+function pushHistory(history: number[], value: number): number[] {
+  const trimmed = history.length >= MAX_HISTORY ? history.slice(1) : history;
+  return [...trimmed, value];
 }
 
 /**
  * Convert AID basal rate to a 5-minute micro-bolus equivalent.
- * Pump delivers basal as micro-boluses every TICK_MINUTES.
  */
 export function rateToMicroBolus(rateUPerHour: number): number {
-  return rateUPerHour * TICK_HOURS;
+  return rateUPerHour * (TICK_MINUTES / 60);
 }

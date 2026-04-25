@@ -46,7 +46,8 @@ export function calculateEGP(
   const phase     = TWO_PI * (hourOfDay - patient.egpPeakHour) / 24;
   const amplitude = 1 + patient.egpAmplitude * Math.cos(phase);
 
-  let egpPerMin = patient.egpBasalLevel * amplitude * (isf / 40);
+  // v3 liver.js formula: EGP (mg/dL/min) = (isf/cr) × 0.002 × weight × hepaticFactor × circadian
+  let egpPerMin = (isf / patient.trueCR) * 0.002 * patient.weight * patient.egpBasalLevel * amplitude;
 
   // Counter-regulatory boost during hypoglycaemia
   if (currentGlucose !== undefined && currentGlucose < CR_ONSET_BG) {
