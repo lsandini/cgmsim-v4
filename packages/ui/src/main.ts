@@ -326,15 +326,22 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // ── Full-screen mode ──────────────────────────────────────────────────────────
 
 function toggleFullScreen(): void {
-  appState.fullScreen = !appState.fullScreen;
-  sidePanel.classList.toggle('open', appState.fullScreen ? false : appState.panelOpen);
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {/* permission denied */});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+document.addEventListener('fullscreenchange', () => {
+  appState.fullScreen = !!document.fullscreenElement;
   if (appState.fullScreen) {
     sidePanel.classList.remove('open');
     appState.panelOpen = false;
   }
   btnFullscreen.textContent = appState.fullScreen ? '⊡' : '⛶';
   renderer.markDirty();
-}
+});
 
 btnFullscreen.addEventListener('click', toggleFullScreen);
 

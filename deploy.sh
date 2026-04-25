@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "visual fixes, random seed"
+git commit -m "fix full screen button"
 git push -u origin dev
