@@ -28,7 +28,8 @@ export function computeDeltaBG(inputs) {
     // ── Carbohydrate effect ─────────────────────────────────────────────────
     const carbEffect = calculateCarbEffect(meals, isf, cr, patient.carbsAbsTime, nowSimTimeMs, TICK_MINUTES);
     // ── Endogenous glucose production ───────────────────────────────────────
-    const egpEffect = calculateEGP(patient, nowSimTimeMs, isf, inputs.currentGlucose);
+    // v3-faithful: pass total insulin activity so EGP feels SC-insulin suppression
+    const egpEffect = calculateEGP(patient, nowSimTimeMs, isf, totalInsulinActivity, inputs.currentGlucose);
     const deltaBG = insulinEffect + carbEffect + egpEffect;
     return { deltaBG, insulinEffect, carbEffect, egpEffect };
 }

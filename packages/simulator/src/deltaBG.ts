@@ -66,7 +66,8 @@ export function computeDeltaBG(inputs: DeltaBGInputs): DeltaBGResult {
   );
 
   // ── Endogenous glucose production ───────────────────────────────────────
-  const egpEffect = calculateEGP(patient, nowSimTimeMs, isf, inputs.currentGlucose);
+  // v3-faithful: pass total insulin activity so EGP feels SC-insulin suppression
+  const egpEffect = calculateEGP(patient, nowSimTimeMs, isf, totalInsulinActivity, inputs.currentGlucose);
 
   const deltaBG = insulinEffect + carbEffect + egpEffect;
 

@@ -163,8 +163,8 @@ export class CGMRenderer {
   };
 
   private readonly PAD_LEFT        = 56;
-  private readonly PAD_RIGHT       = 16;
-  private readonly PAD_TOP         = 24;
+  private readonly PAD_RIGHT       = 36;
+  private readonly PAD_TOP         = 52;  // headroom for IOB/COB row (top: 12) + scenario badge (top: 28)
   private readonly PAD_BOTTOM      = 80;  // time row(22) + gap(8) + basal panel(44) + margin(6)
   private readonly BASAL_PANEL_H   = 44;  // height of the basal sub-panel in px
   private readonly BASAL_PANEL_OFF = 30;  // offset of sub-panel top below main plot bottom
@@ -482,7 +482,7 @@ export class CGMRenderer {
     ctx.strokeStyle = COLORS.grid;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
-    ctx.font = '11px -apple-system, sans-serif';
+    ctx.font = '13.2px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.gridLabel;
     ctx.textAlign = 'right';
 
@@ -544,7 +544,7 @@ export class CGMRenderer {
   private drawLegend(): void {
     const ctx = this.ctx;
     const x = this.PAD_LEFT + 8, y = this.PAD_TOP + 10, swatch = 14, gap = 6;
-    ctx.font = 'bold 11px -apple-system, sans-serif';
+    ctx.font = 'bold 13.2px -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
 
     ctx.fillStyle = COLORS.trace;
@@ -662,7 +662,7 @@ export class CGMRenderer {
     ctx.stroke();
 
     // Y-axis tick labels: '2' at top, '0' at bottom
-    ctx.font = '9px -apple-system, sans-serif';
+    ctx.font = '10.8px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -672,7 +672,7 @@ export class CGMRenderer {
 
     // Rotated 'Basal' label on the left margin
     ctx.save();
-    ctx.font = '9px -apple-system, sans-serif';
+    ctx.font = '10.8px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -722,7 +722,7 @@ export class CGMRenderer {
     // Current rate readout inside the panel (bottom-left)
     const latest = this.ring.latest();
     if (latest) {
-      ctx.font = '10px -apple-system, sans-serif';
+      ctx.font = '12px -apple-system, sans-serif';
       ctx.fillStyle = COLORS.basalLine;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
@@ -870,7 +870,7 @@ export class CGMRenderer {
         ctx.fillStyle = COLORS.bolusMarker;
         ctx.fill();
         ctx.fillStyle = COLORS.bolusMarker;
-        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.font = 'bold 10.8px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${ev.units}U`, x, y - 15);
       } else if (ev.kind === 'meal') {
@@ -883,7 +883,7 @@ export class CGMRenderer {
         ctx.fillStyle = COLORS.mealMarker;
         ctx.fill();
         ctx.fillStyle = COLORS.mealMarker;
-        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.font = 'bold 10.8px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${ev.carbsG}g`, x, y + 24);
       } else if (ev.kind === 'smb') {
@@ -897,7 +897,7 @@ export class CGMRenderer {
         ctx.fillStyle = COLORS.smbMarker;
         ctx.fill();
         ctx.fillStyle = COLORS.smbMarker;
-        ctx.font = '8px -apple-system, sans-serif';
+        ctx.font = '9.6px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${ev.units}U`, x, y + 16);
       }

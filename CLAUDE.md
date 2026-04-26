@@ -44,8 +44,10 @@ This is the primary deliverable — the `.ts` sources alone are not sufficient.
 - Two-layer parameter model: patient physiology (ground truth) vs therapy profile (programmed settings). The mismatch between them creates teaching scenarios.
 - G6 noise model is stateful (AR(2) + Ziggurat RNG). State must be serialized for save/restore and comparison runs.
 - Comparison runs use two independent `InlineSimulator` instances with identical initial state but divergent parameters.
-- `ActiveBolus.dia` is stamped at injection time from `TherapyProfile.rapidDia`, so IOB calculations use the controller's programmed DIA, not a hard-coded analogue profile value.
+- **Two-layer DIA**: `patient.dia` (true physiology) drives the actual physical decay of bolus and pump-microbolus insulin — `ActiveBolus.dia` and `pumpMicroBoluses[].dia` are stamped from it at injection time. `therapy.rapidDia` (the controller's programmed belief) is read **only** by `pid.ts` for the equilibrium-IOB calculation. The mismatch is the v4 teaching scenario.
 - The `.js` files in `packages/simulator/src/` are the live runtime files resolved directly by Vite. They must be kept manually in sync with the `.ts` sources. `TICK_MINUTES` in all simulator `.js` files is **5**.
+- The `.js` files in `packages/ui/src/` are **NOT** used at runtime — Vite bundles directly from `main.ts`. They are gitignored. UI `tsconfig.json` has `noEmit: true` so `tsc --build` does not regenerate them. Only edit `.ts` for UI code.
+- Sourcemaps (`*.js.map`) are gitignored; they are debug aids only and not part of the runtime contract.
 
 ## AID / PID-IFB controller
 
@@ -94,19 +96,21 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 - Do not add real patient data connectors — this is synthetic-only by design and regulatory boundary.
 - Do not modify the physiological model without explicit discussion — the model is shared heritage with v3.
 
-## Current state (as of 2026-04-24)
+## Current state (as of 2026-04-26)
 
 - Default therapy mode: **Pump (open loop)**. Default display unit: **mmol/L**.
 - Zoom levels: **3h / 6h / 12h / 24h**. Scroll wheel and pinch snap to these four levels.
 - Throttle slider: 9 stops `[×0.25, ×0.5, ×1, ×5, ×10, ×50, ×100, ×600, ×3600]`, default ×10.
 - AID mode: v3-faithful PID-IFB with corrected `calculateEquilibriumIOB` (numerical, matches actual pump steady-state IOB ~1.28 U at 0.8 U/hr Fiasp). SMB optional.
-- 52 unit tests passing (`packages/simulator/src/physics.test.ts` and `.js`).
+- **EGP** is a faithful port of v3 `liver.js` + `sinus.js`: hardcoded sinus (1 + 0.2·sin(2π·hour/24), peak 6 AM) plus Hill-curve insulin suppression of hepatic output (max 65%, EC50 = 2× physiological basal flux). Hypo counter-regulation is a v4-only extension (kicks in below 80 mg/dL, scaled by diabetes duration).
+- **Two-layer params exposed in the panel:** True ISF / True ICR / True DIA / Weight / Diabetes duration drive the patient physiology; Glucose target / Programmed DIA drive the controller. Bolus-advisor scaffolding (`programmedISF`, `programmedCR`, `correctionThreshold`) was removed — users decide doses manually.
+- Vestigial fields removed: `patient.tp`, `patient.age`, `patient.gender`, `GenderType`.
+- 68 unit tests passing (`packages/simulator/src/physics.test.ts` and `.js`).
 
 ## Upcoming work (next priorities)
 
 1. **IOB display rework** — The blue filled-area overlay needs a more prominent, readable treatment. IOB is the most important teaching variable.
-2. **Math audit** — Verify remaining simulator functions (`deltaBG`, `carbs`, `egp`, `g6Noise`) against the original `@lsandini/cgmsim-lib` v3. Goal: eventually extract `packages/simulator` as a shared dependency.
-3. **Bolus advisor** — Use `programmedISF` and `programmedCR` to suggest a correction + meal bolus in the instructor panel.
+2. **Math audit** — Verify remaining simulator functions (`deltaBG`, `carbs`, `g6Noise`) against the original `@lsandini/cgmsim-lib` v3. Goal: eventually extract `packages/simulator` as a shared dependency.
 
 ##
 Communicate with raw, unfiltered honesty and genuine care. Prioritize truth above comfort, delivering insights directly and bluntly while maintaining an underlying sense of compassion. Use casual, street-level language that feels authentic and unrestrained. Don't sugarcoat difficult truths, but also avoid being cruel. Speak as a trusted friend who will tell you exactly what you need to hear, not what you want to hear. Be willing to use colorful, sometimes crude language to emphasize points, but ensure the core message is constructive and comes from a place of wanting the best for the person.

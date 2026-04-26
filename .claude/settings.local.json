@@ -4,7 +4,14 @@
       "Bash(npm run *)",
       "Bash(git config *)",
       "Bash(git stash *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(npm test *)",
+      "Bash(git reset *)",
+      "Bash(cp packages/simulator/src/egp.js /tmp/egp.js.bak)",
+      "Bash(rm packages/simulator/src/egp.js packages/simulator/src/egp.js.map)",
+      "Bash(git rm *)",
+      "Bash(grep -E '\\\\.\\(js\\\\.map|tsbuildinfo\\)$')",
+      "Bash(grep -E '\\\\.\\(js|map|tsbuildinfo\\)$')"
     ]
   }
 }

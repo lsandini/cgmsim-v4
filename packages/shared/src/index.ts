@@ -14,8 +14,6 @@ export type MgdL = number;
 /** Simulation time in milliseconds since epoch (simulated, not wall-clock). */
 export type SimTimeMs = number;
 
-export type GenderType = 'Male' | 'Female';
-
 export type TherapyMode = 'MDI' | 'PUMP' | 'AID';
 
 export type RapidAnalogueType = 'Fiasp' | 'Lispro' | 'Aspart';
@@ -31,10 +29,7 @@ export type DisplayUnit = 'mgdl' | 'mmoll';
 export interface VirtualPatient {
   /** Body weight in kg. */
   weight: number;
-  /** Age in years. */
-  age: number;
-  gender: GenderType;
-  /** Diabetes duration in years (affects counter-regulation, Phase 4). */
+  /** Diabetes duration in years (affects counter-regulation). */
   diabetesDuration: number;
 
   /** True ISF: how much 1 unit of rapid insulin lowers BG (mg/dL/U). */
@@ -42,19 +37,10 @@ export interface VirtualPatient {
   /** True insulin-to-carbohydrate ratio (g/U). */
   trueCR: number;
 
-  /** Duration of insulin action in hours (default 6). */
+  /** True duration of insulin action in hours — drives physical bolus/microbolus decay. */
   dia: number;
-  /** Time to peak activity in minutes (default 75). */
-  tp: number;
   /** Carbohydrate absorption time in minutes (default 360). */
   carbsAbsTime: number;
-
-  /** EGP: hepatic factor (dimensionless, default 1.0 = normal). Scales EGP derived from isf/cr × 0.002 × weight. */
-  egpBasalLevel: number;
-  /** EGP: circadian amplitude (±fraction, default 0.2 = ±20% swing matching v3 sinus model). */
-  egpAmplitude: number;
-  /** EGP: hour of peak hepatic output (0–23, default 6 = 6 AM, matching v3 sinus peak). */
-  egpPeakHour: number;
 
   /** Gastric emptying rate multiplier (0.5 = slow/fatty, 2.0 = fast/sugary). */
   gastricEmptyingRate: number;
@@ -62,17 +48,11 @@ export interface VirtualPatient {
 
 export const DEFAULT_PATIENT: VirtualPatient = {
   weight: 75,
-  age: 35,
-  gender: 'Male',
   diabetesDuration: 10,
   trueISF: 40,
   trueCR: 12,
   dia: 6,
-  tp: 75,
   carbsAbsTime: 360,
-  egpBasalLevel: 1.0,
-  egpAmplitude: 0.2,
-  egpPeakHour: 6,
   gastricEmptyingRate: 1.0,
 };
 
@@ -91,16 +71,11 @@ export interface BasalEntry {
 export interface TherapyProfile {
   mode: TherapyMode;
 
-  /** Programmed ISF (may differ from trueISF to create teaching scenarios). */
-  programmedISF: MgdL;
-  /** Programmed ICR (may differ from trueCR). */
-  programmedCR: number;
-
   /** 24-hour basal schedule (pump/AID). Sorted ascending by timeMinutes. */
   basalProfile: BasalEntry[];
 
   rapidAnalogue: RapidAnalogueType;
-  /** Duration of insulin action in hours used by the controller for IOB calculations. */
+  /** DIA in hours used by the controller / PID for IOB math (programmed belief, may differ from patient.dia). */
   rapidDia: number;
 
   /** MDI long-acting insulin type. */
@@ -110,18 +85,14 @@ export interface TherapyProfile {
   /** MDI injection time as minutes since midnight. */
   longActingInjectionTime: number;
 
-  /** AID/bolus advisor glucose target (mg/dL). */
+  /** AID PID glucose target (mg/dL). */
   glucoseTarget: MgdL;
-  /** Bolus advisor correction threshold (mg/dL). */
-  correctionThreshold: MgdL;
   /** AID: enable supermicrobolus rules (rapid rise, sustained rise, prolonged high). */
   enableSMB: boolean;
 }
 
 export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
   mode: 'PUMP',
-  programmedISF: 40,
-  programmedCR: 12,
   basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
   rapidAnalogue: 'Fiasp',
   rapidDia: 5,
@@ -129,7 +100,6 @@ export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
   longActingDose: 20,
   longActingInjectionTime: 22 * 60,
   glucoseTarget: 100,
-  correctionThreshold: 120,
   enableSMB: false,
 };
 
@@ -158,7 +128,7 @@ export interface ActiveBolus {
   simTimeMs: SimTimeMs;
   units: number;
   analogue: RapidAnalogueType;
-  /** DIA in hours stamped at injection time from therapy.rapidDia. */
+  /** DIA in hours stamped at injection time from patient.dia (true physiological DIA). */
   dia: number;
 }
 

@@ -190,7 +190,7 @@ export class InlineSimulator {
         s.activeBoluses.push({
           id: `mb-${nowMs}`, simTimeMs: nowMs,
           units: pid.microbolusUnits, analogue: s.therapy.rapidAnalogue,
-          dia: s.therapy.rapidDia,
+          dia: s.patient.dia,
         });
         const smbEv: SimEvent = { kind: 'smb', simTimeMs: nowMs, units: pid.microbolusUnits };
         s.events.push(smbEv);
@@ -202,7 +202,7 @@ export class InlineSimulator {
       const rp = RAPID_PROFILES[s.therapy.rapidAnalogue];
       if (rp) {
         const u = rateToMicroBolus(basalRate);
-        if (u > 0) s.pumpMicroBoluses.push({ simTimeMs: nowMs, units: u, dia: s.therapy.rapidDia, peak: rp.peak });
+        if (u > 0) s.pumpMicroBoluses.push({ simTimeMs: nowMs, units: u, dia: s.patient.dia, peak: rp.peak });
       }
     }
 
@@ -268,7 +268,7 @@ export class InlineSimulator {
       id: `bolus-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
       simTimeMs: this.s.simTimeMs, units,
       analogue: analogue ?? this.s.therapy.rapidAnalogue,
-      dia: this.s.therapy.rapidDia,
+      dia: this.s.patient.dia,
     });
     const ev: SimEvent = { kind: 'bolus', simTimeMs: this.s.simTimeMs, units };
     this.s.events.push(ev);

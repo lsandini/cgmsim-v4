@@ -111,8 +111,7 @@ const mealCarbs        = getEl<HTMLInputElement>('meal-carbs');
 const therapyMode      = getEl<HTMLSelectElement>('therapy-mode');
 const glucoseTarget    = getEl<HTMLInputElement>('glucose-target');
 const rapidAnalogue    = getEl<HTMLSelectElement>('rapid-analogue');
-const progISF          = getEl<HTMLInputElement>('prog-isf');
-const progCR           = getEl<HTMLInputElement>('prog-cr');
+const progDIA          = getEl<HTMLInputElement>('prog-dia');
 const longActingType   = getEl<HTMLSelectElement>('long-acting-type');
 const longActingDose   = getEl<HTMLInputElement>('long-acting-dose');
 const longActingTime   = getEl<HTMLInputElement>('long-acting-time');
@@ -122,11 +121,9 @@ const btnSetTemp       = getEl<HTMLButtonElement>('btn-set-temp');
 const btnCancelTemp    = getEl<HTMLButtonElement>('btn-cancel-temp');
 const trueISF          = getEl<HTMLInputElement>('true-isf');
 const trueCR           = getEl<HTMLInputElement>('true-cr');
+const trueDIA          = getEl<HTMLInputElement>('true-dia');
 const patientWeight    = getEl<HTMLInputElement>('patient-weight');
 const diabetesDuration = getEl<HTMLInputElement>('diabetes-duration');
-const egpAmp           = getEl<HTMLInputElement>('egp-amp');
-const egpPeak          = getEl<HTMLInputElement>('egp-peak');
-const egpBasal         = getEl<HTMLInputElement>('egp-basal');
 const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
 const enableSMB        = getEl<HTMLInputElement>('enable-smb');
@@ -282,16 +279,13 @@ function syncPanelUnits(prevUnit: 'mgdl' | 'mmoll'): void {
   glucoseTarget.step = isMmol ? '0.1'  : '5';
   document.getElementById('unit-glucose-target')!.textContent = isMmol ? 'mmol/L' : 'mg/dL';
 
-  // ISF fields (both programmed and true)
-  for (const input of [progISF, trueISF]) {
-    const v = parseFloat(input.value);
-    if (!isNaN(v)) input.value = fmt(conv(v));
-    input.min  = isMmol ? '0.5'  : '10';
-    input.max  = isMmol ? '11.1' : '200';
-    input.step = isMmol ? '0.1'  : '5';
-  }
-  document.getElementById('unit-prog-isf')!.textContent  = isMmol ? 'mmol/L/U' : 'mg/dL/U';
-  document.getElementById('unit-true-isf')!.textContent  = isMmol ? 'mmol/L/U' : 'mg/dL/U';
+  // True ISF input
+  const v = parseFloat(trueISF.value);
+  if (!isNaN(v)) trueISF.value = fmt(conv(v));
+  trueISF.min  = isMmol ? '0.5'  : '10';
+  trueISF.max  = isMmol ? '11.1' : '200';
+  trueISF.step = isMmol ? '0.1'  : '5';
+  document.getElementById('unit-true-isf')!.textContent = isMmol ? 'mmol/L/U' : 'mg/dL/U';
 }
 
 unitToggle.addEventListener('click', () => {
@@ -366,8 +360,7 @@ function onTherapyChange(): void {
     mode,
     glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),
     rapidAnalogue:           rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
-    programmedISF:           fromDisplay(parseFloat(progISF.value)),
-    programmedCR:            parseFloat(progCR.value),
+    rapidDia:                parseFloat(progDIA.value),
     longActingType:          longActingType.value as 'Glargine' | 'Degludec' | 'Detemir',
     longActingDose:          parseFloat(longActingDose.value),
     longActingInjectionTime: timeStringToMinutes(longActingTime.value),
@@ -378,7 +371,7 @@ function onTherapyChange(): void {
   rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
 }
 
-[therapyMode, glucoseTarget, rapidAnalogue, progISF, progCR,
+[therapyMode, glucoseTarget, rapidAnalogue, progDIA,
  longActingType, longActingDose, longActingTime].forEach(el =>
   el.addEventListener('change', onTherapyChange)
 );
@@ -406,12 +399,12 @@ function renderBasalRows(): void {
     row.style.marginBottom = '4px';
     row.innerHTML = `
       <input type="time" value="${minutesToTimeString(seg.timeMinutes)}"
-        style="width:80px;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:13px;"
+        style="width:80px;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;"
         ${i === 0 ? 'disabled' : ''} />
       <input type="number" value="${seg.rateUPerHour}" min="0" max="5" step="0.05"
-        style="flex:1;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:13px;" />
+        style="flex:1;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;" />
       ${i > 0
-        ? `<button style="padding:4px 8px;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;cursor:pointer;font-size:12px;">×</button>`
+        ? `<button style="padding:4px 8px;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;cursor:pointer;font-size:14.4px;">×</button>`
         : '<div style="width:32px;"></div>'}
     `;
     const [timeInput, rateInput] = Array.from(row.querySelectorAll('input')) as HTMLInputElement[];
@@ -459,18 +452,15 @@ function onPatientChange(): void {
   bridge.setPatientParam({
     trueISF:             fromDisplay(parseFloat(trueISF.value)),
     trueCR:              parseFloat(trueCR.value),
+    dia:                 parseFloat(trueDIA.value),
     weight:              parseFloat(patientWeight.value),
     diabetesDuration:    parseFloat(diabetesDuration.value),
-    egpAmplitude:        parseFloat(egpAmp.value),
-    egpPeakHour:         parseFloat(egpPeak.value),
-    egpBasalLevel:       parseFloat(egpBasal.value),
     carbsAbsTime:        parseFloat(carbsAbsTime.value),
     gastricEmptyingRate: parseFloat(gastricRate.value),
   });
 }
 
-[trueISF, trueCR, patientWeight, diabetesDuration,
- egpAmp, egpPeak, egpBasal, carbsAbsTime, gastricRate]
+[trueISF, trueCR, trueDIA, patientWeight, diabetesDuration, carbsAbsTime, gastricRate]
   .forEach(el => el.addEventListener('change', onPatientChange));
 
 // ── Overlay toggles ───────────────────────────────────────────────────────────
@@ -517,11 +507,11 @@ btnReset.addEventListener('click', () => {
   bridge.pause(); setRunning(false);
   bridge.reset({
     simTimeMs:0, trueGlucose:100, lastCGM:100,
-    patient:{weight:75,age:35,gender:'Male',diabetesDuration:10,trueISF:40,trueCR:12,
-             dia:6,tp:75,carbsAbsTime:360,egpBasalLevel:0.04,egpAmplitude:1,egpPeakHour:5,gastricEmptyingRate:1},
-    therapy:{mode:'PUMP',programmedISF:40,programmedCR:12,basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
+    patient:{weight:75,diabetesDuration:10,trueISF:40,trueCR:12,
+             dia:6,carbsAbsTime:360,gastricEmptyingRate:1},
+    therapy:{mode:'PUMP',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
              rapidAnalogue:'Fiasp',rapidDia:5,longActingType:'Glargine',longActingDose:20,
-             longActingInjectionTime:22*60,glucoseTarget:100,correctionThreshold:120,enableSMB:false},
+             longActingInjectionTime:22*60,glucoseTarget:100,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
@@ -609,6 +599,8 @@ document.addEventListener('keydown', (e) => {
 // ── Initial state ─────────────────────────────────────────────────────────────
 
 onTherapyChange();  // set MDI/pump section visibility + initial badge
+onPatientChange();  // push panel-shown patient values into the model (panel = source of truth)
+pushBasalProfile();  // push panel basal segments into the model
 syncPanelUnits('mgdl');  // convert panel inputs and labels to mmol/L on load
 bridge.setThrottle(10);
 setRunning(false);  // start paused — user presses ▶ to begin

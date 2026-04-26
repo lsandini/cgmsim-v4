@@ -16,3 +16,10 @@ dist/
 
 # Build artifacts
 *.bak
+
+# tsc compile output for UI — Vite bundles directly from .ts, these are dead artifacts
+packages/ui/src/*.js
+packages/ui/src/*.js.map
+
+# Sourcemaps for the hand-maintained simulator runtime .js files (debug-only, not runtime)
+packages/simulator/src/*.js.map

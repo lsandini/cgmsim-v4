@@ -91,20 +91,4 @@ export function calculatePumpBasalIOB(microBoluses, nowSimTimeMs) {
         });
     }, 0));
 }
-export function calculateTotalInsulin(boluses, longActing, pumpMicroBoluses, nowSimTimeMs, isPump) {
-    const bolusActivity = calculateBolusActivity(boluses, nowSimTimeMs);
-    const basalActivity = isPump
-        ? calculatePumpBasalActivity(pumpMicroBoluses, nowSimTimeMs)
-        : calculateLongActingActivity(longActing, nowSimTimeMs);
-    const bolusIOB = calculateBolusIOB(boluses, nowSimTimeMs);
-    const basalIOB = isPump
-        ? calculatePumpBasalIOB(pumpMicroBoluses, nowSimTimeMs)
-        : calculateLongActingIOB(longActing, nowSimTimeMs);
-    return {
-        bolusActivity,
-        basalActivity,
-        totalActivity: bolusActivity + basalActivity,
-        totalIOB: bolusIOB + basalIOB,
-    };
-}
 //# sourceMappingURL=iob.js.map

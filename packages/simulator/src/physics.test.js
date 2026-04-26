@@ -7,7 +7,7 @@
  *   At sinus=1 (midnight): 0.75 U/h pump basal → steady state for ISF=40, CR=12, weight=75
  */
 import { describe, it, expect } from 'vitest';
-import { calculateEGP } from './egp.js';
+import { calculateEGP, calculateInsulinSuppressionFactor } from './egp.js';
 import { rateToMicroBolus, runPID, calculateEquilibriumIOB } from './pid.js';
 import { DEFAULT_PATIENT, DEFAULT_THERAPY_PROFILE } from '@cgmsim/shared';
 import { computeDeltaBG } from './deltaBG.js';
@@ -29,6 +29,43 @@ describe('EGP model — v3 liver parity', () => {
         const egpSixAm = calculateEGP(DEFAULT_PATIENT, SIX_AM_MS, DEFAULT_PATIENT.trueISF);
         // sinus at 6 AM = 1 + 0.2 × sin(π/2) = 1.2 → 20% higher than midnight
         expect(egpSixAm / egpMidnight).toBeCloseTo(1.2, 2);
+    });
+    it('troughs at 6 PM (sinus = 0.8 → 80% of midnight)', () => {
+        const SIX_PM_MS = 18 * 60 * 60_000;
+        const egpMidnight = calculateEGP(DEFAULT_PATIENT, MIDNIGHT_MS, DEFAULT_PATIENT.trueISF);
+        const egpSixPm = calculateEGP(DEFAULT_PATIENT, SIX_PM_MS, DEFAULT_PATIENT.trueISF);
+        expect(egpSixPm / egpMidnight).toBeCloseTo(0.8, 2);
+    });
+});
+describe('insulin suppression of EGP — v3 Hill curve', () => {
+    // Direct port of v3 liver.js calculateInsulinSuppressionFactor
+    // physiological basal flux = 0.01 U/kg/h → 0.0125 U/min for 75 kg
+    const PHYS = 0.0125;
+    it('returns 1.0 (no suppression) at zero insulin activity', () => {
+        expect(calculateInsulinSuppressionFactor(0, 75)).toBe(1);
+    });
+    it('returns ≈ 0.83 at physiological basal flux (1× phys)', () => {
+        // r=1, r^1.5/(2^1.5 + r^1.5) = 1/3.828 = 0.261; × 0.65 = 0.170; factor = 0.830
+        expect(calculateInsulinSuppressionFactor(PHYS, 75)).toBeCloseTo(0.83, 2);
+    });
+    it('reaches ~50% of max suppression at EC50 (2× phys → 0.675)', () => {
+        // r=2, r^1.5 = 2.828; suppression = 2.828/(2.828+2.828) × 0.65 = 0.325; factor = 0.675
+        expect(calculateInsulinSuppressionFactor(2 * PHYS, 75)).toBeCloseTo(0.675, 2);
+    });
+    it('floors at 0.35 at very high insulin flux (max 65% suppression)', () => {
+        expect(calculateInsulinSuppressionFactor(100 * PHYS, 75)).toBeCloseTo(0.35, 2);
+    });
+    it('scales with patient weight: same activity has less effect on heavier patient', () => {
+        // For weight=150kg, physiological is 2× → same insulinActivity is 0.5× ratio → less suppression
+        const f75 = calculateInsulinSuppressionFactor(PHYS, 75);
+        const f150 = calculateInsulinSuppressionFactor(PHYS, 150);
+        expect(f150).toBeGreaterThan(f75); // less suppression at higher weight
+    });
+    it('insulin actively reduces EGP — bolus shrinks hepatic output', () => {
+        const noInsulin = calculateEGP(DEFAULT_PATIENT, MIDNIGHT_MS, DEFAULT_PATIENT.trueISF, 0);
+        const someInsulin = calculateEGP(DEFAULT_PATIENT, MIDNIGHT_MS, DEFAULT_PATIENT.trueISF, 0.05); // big bolus active
+        expect(someInsulin).toBeLessThan(noInsulin);
+        expect(someInsulin / noInsulin).toBeGreaterThan(0.35); // never below floor
     });
 });
 describe('rateToMicroBolus — 5-minute tick', () => {
@@ -136,6 +173,16 @@ describe('calculateBolusIOB — respects per-bolus DIA, not hard-coded profile',
         expect(calculateBolusIOB([bolus], 4 * 60 * 60_000)).toBe(0);
         // At t=3h (180 min) it should still have residual IOB
         expect(calculateBolusIOB([bolus], 3 * 60 * 60_000)).toBeGreaterThan(0);
+    });
+    it('two-layer DIA: longer patient.dia means insulin lingers past programmed DIA', () => {
+        // Scenario: patient has true DIA = 7h, controller is programmed for 5h.
+        // The bolus is stamped with patient.dia (true physical decay).
+        // → at t=6h, real IOB > 0 (still acting), but controller's belief = 0.
+        //   This is the v4 teaching mismatch.
+        const longDia = { id: 'a', simTimeMs: 0, units: 1, analogue: 'Fiasp', dia: 7 };
+        const shortDia = { id: 'b', simTimeMs: 0, units: 1, analogue: 'Fiasp', dia: 5 };
+        expect(calculateBolusIOB([longDia], 6 * 60 * 60_000)).toBeGreaterThan(0);
+        expect(calculateBolusIOB([shortDia], 6 * 60 * 60_000)).toBe(0);
     });
 });
 describe('runPID — v3 PID-IFB parity', () => {

@@ -9,7 +9,7 @@
 
 // ── Biexponential helpers ────────────────────────────────────────────────────
 
-export interface ExpTreatmentParams {
+interface ExpTreatmentParams {
   /** Time to peak activity in minutes. */
   peak: number;
   /** Total duration of action in minutes. */

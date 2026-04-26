@@ -120,36 +120,3 @@ export function calculatePumpBasalIOB(microBoluses: PumpBasalBolus[], nowSimTime
   );
 }
 
-// ── Combined ─────────────────────────────────────────────────────────────────
-
-export interface TotalInsulinActivity {
-  bolusActivity: number;
-  basalActivity: number;
-  totalActivity: number;
-  totalIOB: number;
-}
-
-export function calculateTotalInsulin(
-  boluses: ActiveBolus[],
-  longActing: ActiveLongActing[],
-  pumpMicroBoluses: PumpBasalBolus[],
-  nowSimTimeMs: number,
-  isPump: boolean,
-): TotalInsulinActivity {
-  const bolusActivity = calculateBolusActivity(boluses, nowSimTimeMs);
-  const basalActivity = isPump
-    ? calculatePumpBasalActivity(pumpMicroBoluses, nowSimTimeMs)
-    : calculateLongActingActivity(longActing, nowSimTimeMs);
-
-  const bolusIOB = calculateBolusIOB(boluses, nowSimTimeMs);
-  const basalIOB = isPump
-    ? calculatePumpBasalIOB(pumpMicroBoluses, nowSimTimeMs)
-    : calculateLongActingIOB(longActing, nowSimTimeMs);
-
-  return {
-    bolusActivity,
-    basalActivity,
-    totalActivity: bolusActivity + basalActivity,
-    totalIOB: bolusIOB + basalIOB,
-  };
-}

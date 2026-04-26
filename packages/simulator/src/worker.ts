@@ -168,7 +168,7 @@ function tick(): void {
         simTimeMs: nowMs,
         units: microbolusUnits,
         analogue: s.therapy.rapidAnalogue,
-        dia: s.therapy.rapidDia,
+        dia: s.patient.dia,
       });
     }
   }
@@ -182,7 +182,7 @@ function tick(): void {
         internal.pumpMicroBoluses.push({
           simTimeMs: nowMs,
           units: microBolusUnits,
-          dia: s.therapy.rapidDia,
+          dia: s.patient.dia,
           peak: rapidProfile.peak,
         });
       }
@@ -276,7 +276,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerInboundMessage>) => 
         simTimeMs: internal.core.simTimeMs,
         units: msg.units,
         analogue,
-        dia: internal.core.therapy.rapidDia,
+        dia: internal.core.patient.dia,
       });
       break;
     }
