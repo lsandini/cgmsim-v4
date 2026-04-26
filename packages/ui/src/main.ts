@@ -1,7 +1,6 @@
 /**
  * CGMSIM v4 — Main UI entry point (Phase 3)
- * Adds: comparison runs, full-screen mode, diabetes duration control,
- *       UI parameter persistence via localStorage
+ * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
 import { type TickSnapshot, type DisplayUnit, type WorkerState, DEFAULT_PATIENT } from '@cgmsim/shared';
@@ -73,7 +72,7 @@ function minutesToTimeString(m: number): string {
 const appState = {
   running:        false,
   throttle:       10 as ThrottleStop,
-  displayUnit:    'mgdl' as DisplayUnit,
+  displayUnit:    'mmoll' as DisplayUnit,
   panelOpen:      false,
   fullScreen:     false,
   lastSnap:       null as TickSnapshot | null,
@@ -159,7 +158,6 @@ const btnAddBasal      = getEl<HTMLButtonElement>('btn-add-basal');
 const sectionMDI       = getEl<HTMLElement>('section-mdi');
 const sectionBasal     = getEl<HTMLElement>('section-basal');
 
-// Default patient values — overwritten by loadUIParams() if localStorage has data
 trueISF.value          = String(DEFAULT_PATIENT.trueISF);
 trueCR.value           = String(DEFAULT_PATIENT.trueCR);
 patientWeight.value    = String(DEFAULT_PATIENT.weight);  // kg
@@ -169,7 +167,7 @@ egpPeak.value          = String(DEFAULT_PATIENT.egpPeakHour);
 egpBasal.value         = String(DEFAULT_PATIENT.egpBasalLevel);
 carbsAbsTime.value     = String(DEFAULT_PATIENT.carbsAbsTime);
 gastricRate.value      = String(DEFAULT_PATIENT.gastricEmptyingRate);
-
+  
 
 // ── Simulators ────────────────────────────────────────────────────────────────
 
@@ -246,7 +244,6 @@ throttleSlider.addEventListener('input', () => {
   bridge.setThrottle(t);
   if (appState.compareRunning) compare.setThrottle(t);
   renderer.setPlayback(t, appState.running);
-  saveUIParams();
 });
 throttleVal.textContent = `×${sliderToThrottle(parseInt(throttleSlider.value))}`;
 
@@ -259,10 +256,10 @@ function updateZoomButtons(activeMinutes: number): void {
   btnZoom24h.classList.toggle('active', activeMinutes === 1440);
 }
 
-btnZoom3h.addEventListener('click',  () => { renderer.setZoom(180);  updateZoomButtons(180);  saveUIParams(); });
-btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360);  saveUIParams(); });
-btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720);  saveUIParams(); });
-btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); saveUIParams(); });
+btnZoom3h.addEventListener('click',  () => { renderer.setZoom(180);  updateZoomButtons(180); });
+btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360); });
+btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720); });
+btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); });
 btnLive.addEventListener('click', () => renderer.snapToLive());
 
 renderer.onViewChange(() => {
@@ -317,7 +314,6 @@ unitToggle.addEventListener('click', () => {
   syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
-  saveUIParams();
 });
 
 // ── Panel and tabs ────────────────────────────────────────────────────────────
@@ -384,7 +380,6 @@ function onTherapyChange(): void {
   sectionMDI.style.display   = mode === 'MDI'  ? 'block' : 'none';
   sectionBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
   rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
-  saveUIParams();
 }
 
 [therapyMode, glucoseTarget, rapidAnalogue, progISF, progCR,
@@ -452,7 +447,6 @@ function pushBasalProfile(): void {
   bridge.setTherapyParam({
     basalProfile: [...basalSegments].sort((a, b) => a.timeMinutes - b.timeMinutes),
   });
-  saveUIParams();
 }
 
 btnAddBasal.addEventListener('click', () => {
@@ -477,7 +471,6 @@ function onPatientChange(): void {
     carbsAbsTime:        parseFloat(carbsAbsTime.value),
     gastricEmptyingRate: parseFloat(gastricRate.value),
   });
-  saveUIParams();
 }
 
 [trueISF, trueCR, patientWeight, diabetesDuration,
@@ -486,11 +479,11 @@ function onPatientChange(): void {
 
 // ── Overlay toggles ───────────────────────────────────────────────────────────
 
-overlayBasal.addEventListener('change',  () => { renderer.options.showBasal        = overlayBasal.checked;  renderer.markDirty(); saveUIParams(); });
-overlayIOB.addEventListener('change',    () => { renderer.options.showIOB          = overlayIOB.checked;    renderer.markDirty(); saveUIParams(); });
-overlayCOB.addEventListener('change',    () => { renderer.options.showCOB          = overlayCOB.checked;    renderer.markDirty(); saveUIParams(); });
-overlayEvents.addEventListener('change', () => { renderer.options.showEvents       = overlayEvents.checked; renderer.markDirty(); saveUIParams(); });
-overlayTrue.addEventListener('change',   () => { renderer.options.showTrueGlucose  = overlayTrue.checked;   renderer.markDirty(); saveUIParams(); });
+overlayBasal.addEventListener('change',  () => { renderer.options.showBasal = overlayBasal.checked; renderer.markDirty(); });
+overlayIOB.addEventListener('change',    () => { renderer.options.showIOB = overlayIOB.checked; renderer.markDirty(); });
+overlayCOB.addEventListener('change',    () => { renderer.options.showCOB = overlayCOB.checked; renderer.markDirty(); });
+overlayEvents.addEventListener('change', () => { renderer.options.showEvents = overlayEvents.checked; renderer.markDirty(); });
+overlayTrue.addEventListener('change',   () => { renderer.options.showTrueGlucose = overlayTrue.checked; renderer.markDirty(); });
 
 // ── Session controls ──────────────────────────────────────────────────────────
 
@@ -538,7 +531,6 @@ btnReset.addEventListener('click', () => {
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
   renderer.clearHistory();
-  localStorage.removeItem(UI_STORAGE_KEY);
   setStatus('Simulation reset.');
 });
 
@@ -592,8 +584,8 @@ function stopCompare(): void {
 btnStopCompare.addEventListener('click', stopCompare);
 
 // Label inputs update legend live
-compareLabelA.addEventListener('input', () => { renderer.options.primaryLabel = compareLabelA.value; renderer.markDirty(); saveUIParams(); });
-compareLabelB.addEventListener('input', () => { renderer.options.compareLabel  = compareLabelB.value; renderer.markDirty(); saveUIParams(); });
+compareLabelA.addEventListener('input', () => { renderer.options.primaryLabel = compareLabelA.value; renderer.markDirty(); });
+compareLabelB.addEventListener('input', () => { renderer.options.compareLabel = compareLabelB.value; renderer.markDirty(); });
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
@@ -618,163 +610,9 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── UI parameter persistence (localStorage) ───────────────────────────────────
-
-const UI_STORAGE_KEY = 'cgmsim_ui_params';
-
-interface UIParams {
-  displayUnit:      'mgdl' | 'mmoll';
-  throttleIndex:    string;
-  therapyMode:      string;
-  glucoseTarget:    string;
-  rapidAnalogue:    string;
-  progISF:          string;
-  progCR:           string;
-  longActingType:   string;
-  longActingDose:   string;
-  longActingTime:   string;
-  enableSMB:        boolean;
-  trueISF:          string;
-  trueCR:           string;
-  patientWeight:    string;
-  diabetesDuration: string;
-  egpAmp:           string;
-  egpPeak:          string;
-  egpBasal:         string;
-  carbsAbsTime:     string;
-  gastricRate:      string;
-  basalSegments:    BasalSeg[];
-  overlayBasal:     boolean;
-  overlayIOB:       boolean;
-  overlayCOB:       boolean;
-  overlayEvents:    boolean;
-  overlayTrue:      boolean;
-  compareLabelA:    string;
-  compareLabelB:    string;
-  zoomMinutes:      number;
-}
-
-function saveUIParams(): void {
-  try {
-    const params: UIParams = {
-      displayUnit:      appState.displayUnit,
-      throttleIndex:    throttleSlider.value,
-      therapyMode:      therapyMode.value,
-      glucoseTarget:    glucoseTarget.value,
-      rapidAnalogue:    rapidAnalogue.value,
-      progISF:          progISF.value,
-      progCR:           progCR.value,
-      longActingType:   longActingType.value,
-      longActingDose:   longActingDose.value,
-      longActingTime:   longActingTime.value,
-      enableSMB:        enableSMB.checked,
-      trueISF:          trueISF.value,
-      trueCR:           trueCR.value,
-      patientWeight:    patientWeight.value,
-      diabetesDuration: diabetesDuration.value,
-      egpAmp:           egpAmp.value,
-      egpPeak:          egpPeak.value,
-      egpBasal:         egpBasal.value,
-      carbsAbsTime:     carbsAbsTime.value,
-      gastricRate:      gastricRate.value,
-      basalSegments:    [...basalSegments],
-      overlayBasal:     overlayBasal.checked,
-      overlayIOB:       overlayIOB.checked,
-      overlayCOB:       overlayCOB.checked,
-      overlayEvents:    overlayEvents.checked,
-      overlayTrue:      overlayTrue.checked,
-      compareLabelA:    compareLabelA.value,
-      compareLabelB:    compareLabelB.value,
-      zoomMinutes:      renderer.zoomMinutes,
-    };
-    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(params));
-  } catch {
-    // localStorage unavailable (private browsing, full storage, etc.)
-  }
-}
-
-function loadUIParams(): boolean {
-  try {
-    const raw = localStorage.getItem(UI_STORAGE_KEY);
-    if (!raw) return false;
-    const p: UIParams = JSON.parse(raw);
-
-    // Display unit — must be restored before syncPanelUnits
-    if (p.displayUnit && p.displayUnit !== appState.displayUnit) {
-      appState.displayUnit = p.displayUnit;
-      renderer.options.displayUnit = p.displayUnit;
-      unitToggle.textContent = p.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-      cgmUnitEl.textContent  = p.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-    }
-
-    // Throttle
-    if (p.throttleIndex != null) {
-      throttleSlider.value = p.throttleIndex;
-      const t = sliderToThrottle(parseInt(p.throttleIndex));
-      appState.throttle       = t;
-      throttleVal.textContent = `×${t}`;
-      bridge.setThrottle(t);
-    }
-
-    // Therapy
-    if (p.therapyMode)       therapyMode.value     = p.therapyMode;
-    if (p.glucoseTarget)     glucoseTarget.value   = p.glucoseTarget;
-    if (p.rapidAnalogue)     rapidAnalogue.value   = p.rapidAnalogue;
-    if (p.progISF)           progISF.value         = p.progISF;
-    if (p.progCR)            progCR.value          = p.progCR;
-    if (p.longActingType)    longActingType.value  = p.longActingType;
-    if (p.longActingDose)    longActingDose.value  = p.longActingDose;
-    if (p.longActingTime)    longActingTime.value  = p.longActingTime;
-    if (p.enableSMB != null) enableSMB.checked     = p.enableSMB;
-
-    // Patient — overrides the DEFAULT_PATIENT values set above
-    if (p.trueISF)           trueISF.value          = p.trueISF;
-    if (p.trueCR)            trueCR.value           = p.trueCR;
-    if (p.patientWeight)     patientWeight.value    = p.patientWeight;
-    if (p.diabetesDuration)  diabetesDuration.value = p.diabetesDuration;
-    if (p.egpAmp)            egpAmp.value           = p.egpAmp;
-    if (p.egpPeak)           egpPeak.value          = p.egpPeak;
-    if (p.egpBasal)          egpBasal.value         = p.egpBasal;
-    if (p.carbsAbsTime)      carbsAbsTime.value     = p.carbsAbsTime;
-    if (p.gastricRate)       gastricRate.value      = p.gastricRate;
-
-    // Basal profile
-    if (Array.isArray(p.basalSegments) && p.basalSegments.length > 0) {
-      basalSegments = p.basalSegments;
-      renderBasalRows();
-    }
-
-    // Overlays
-    if (p.overlayBasal  != null) { overlayBasal.checked  = p.overlayBasal;  renderer.options.showBasal        = p.overlayBasal; }
-    if (p.overlayIOB    != null) { overlayIOB.checked    = p.overlayIOB;    renderer.options.showIOB          = p.overlayIOB; }
-    if (p.overlayCOB    != null) { overlayCOB.checked    = p.overlayCOB;    renderer.options.showCOB          = p.overlayCOB; }
-    if (p.overlayEvents != null) { overlayEvents.checked = p.overlayEvents; renderer.options.showEvents       = p.overlayEvents; }
-    if (p.overlayTrue   != null) { overlayTrue.checked   = p.overlayTrue;   renderer.options.showTrueGlucose  = p.overlayTrue; }
-
-    // Comparison labels
-    if (p.compareLabelA) { compareLabelA.value = p.compareLabelA; renderer.options.primaryLabel = p.compareLabelA; }
-    if (p.compareLabelB) { compareLabelB.value = p.compareLabelB; renderer.options.compareLabel  = p.compareLabelB; }
-
-    // Zoom
-    if (p.zoomMinutes) { renderer.setZoom(p.zoomMinutes); updateZoomButtons(p.zoomMinutes); }
-    return true;
-  } catch {
-    // Corrupted data — silently ignore it and fall back to defaults
-    localStorage.removeItem(UI_STORAGE_KEY);
-    return false;
-  }
-}
-
 // ── Initial state ─────────────────────────────────────────────────────────────
 
-const loaded =loadUIParams();       // restore UI from localStorage (overrides DEFAULT_PATIENT if present)
-onTherapyChange();    // set MDI/pump section visibility + initial badge
-onPatientChange();    // propagate patient values (from localStorage or DEFAULT_PATIENT) to the simulator
-// syncPanelUnits converts DOM values from the "previous" unit to the current one.
-// Since loadUIParams may already have set appState.displayUnit to 'mmoll',
-// pass 'mgdl' as the starting unit so the conversion is applied correctly.
-if(!loaded) {
-  unitToggle.click();
-};  // set input constraints and unit labels based on display unit
-bridge.setThrottle(appState.throttle);
-setRunning(false);    // start paused — user presses ▶ to begin
+onTherapyChange();  // set MDI/pump section visibility + initial badge
+syncPanelUnits('mgdl');  // convert panel inputs and labels to mmol/L on load
+bridge.setThrottle(10);
+setRunning(false);  // start paused — user presses ▶ to begin
