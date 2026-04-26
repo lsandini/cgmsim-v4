@@ -598,9 +598,12 @@ document.addEventListener('keydown', (e) => {
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 
-onTherapyChange();  // set MDI/pump section visibility + initial badge
-onPatientChange();  // push panel-shown patient values into the model (panel = source of truth)
-pushBasalProfile();  // push panel basal segments into the model
-syncPanelUnits('mgdl');  // convert panel inputs and labels to mmol/L on load
+// HTML default input values are written in mg/dL (e.g. glucose-target=100, true-isf=40).
+// Default display unit is mmol/L. syncPanelUnits MUST run before the change handlers,
+// otherwise fromDisplay() treats "40" as mmol/L → 720 mg/dL/U and EGP rockets BG to ceiling.
+syncPanelUnits('mgdl');  // first: rewrite panel values into the current display unit (mmol/L)
+onTherapyChange();   // then: read converted values and push to model
+onPatientChange();
+pushBasalProfile();
 bridge.setThrottle(10);
-setRunning(false);  // start paused — user presses ▶ to begin
+setRunning(false);   // start paused — user presses ▶ to begin
