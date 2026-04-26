@@ -3,7 +3,7 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState } from '@cgmsim/shared';
+import { type TickSnapshot, type DisplayUnit, type WorkerState, DEFAULT_PATIENT } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer } from './canvas-renderer.js';
 import { saveState, loadState, exportSession, importSession } from './storage.js';
@@ -157,6 +157,17 @@ const basalProfileRows = getEl<HTMLElement>('basal-profile-rows');
 const btnAddBasal      = getEl<HTMLButtonElement>('btn-add-basal');
 const sectionMDI       = getEl<HTMLElement>('section-mdi');
 const sectionBasal     = getEl<HTMLElement>('section-basal');
+
+trueISF.value          = String(DEFAULT_PATIENT.trueISF);
+trueCR.value           = String(DEFAULT_PATIENT.trueCR);
+patientWeight.value    = String(DEFAULT_PATIENT.weight);  // kg
+diabetesDuration.value = String(DEFAULT_PATIENT.diabetesDuration);
+egpAmp.value           = String(DEFAULT_PATIENT.egpAmplitude);
+egpPeak.value          = String(DEFAULT_PATIENT.egpPeakHour);
+egpBasal.value         = String(DEFAULT_PATIENT.egpBasalLevel);
+carbsAbsTime.value     = String(DEFAULT_PATIENT.carbsAbsTime);
+gastricRate.value      = String(DEFAULT_PATIENT.gastricEmptyingRate);
+  
 
 // ── Simulators ────────────────────────────────────────────────────────────────
 
