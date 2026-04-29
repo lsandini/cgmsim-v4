@@ -152,7 +152,37 @@
       gap: 4px;
       flex: 1;
       min-width: 0;
+      position: relative;
     }
+
+    #throttle-bubble {
+      position: absolute;
+      bottom: 26px;            /* sit above the slider track */
+      left: 0;
+      transform: translateX(-50%);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-surface);
+      border: 1px solid var(--accent);
+      color: var(--text);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+      z-index: 5;
+    }
+    #throttle-bubble::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 4px solid transparent;
+      border-top-color: var(--accent);
+    }
+    #throttle-bubble.visible { opacity: 1; }
 
     #throttle-label {
       font-size: 11px;
@@ -650,7 +680,8 @@
           <span id="throttle-val">×10</span>
         </div>
         <input type="range" id="throttle-slider"
-               min="0" max="8" step="1" value="4" />
+               min="0" max="1000" step="1" value="281" />
+        <div id="throttle-bubble">×10</div>
       </div>
 
       <div id="sim-time">D+00:00</div>

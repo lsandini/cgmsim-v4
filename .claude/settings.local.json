@@ -11,7 +11,8 @@
       "Bash(rm packages/simulator/src/egp.js packages/simulator/src/egp.js.map)",
       "Bash(git rm *)",
       "Bash(grep -E '\\\\.\\(js\\\\.map|tsbuildinfo\\)$')",
-      "Bash(grep -E '\\\\.\\(js|map|tsbuildinfo\\)$')"
+      "Bash(grep -E '\\\\.\\(js|map|tsbuildinfo\\)$')",
+      "Bash(node *)"
     ]
   }
 }

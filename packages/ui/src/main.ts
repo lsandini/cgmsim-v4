@@ -31,11 +31,30 @@ function showError(msg: string): void {
 
 // ── Throttle ──────────────────────────────────────────────────────────────────
 
-const THROTTLE_STOPS = [0.25, 0.5, 1, 5, 10, 50, 100, 600, 3600] as const;
-type ThrottleStop = typeof THROTTLE_STOPS[number];
+// Continuous logarithmic slider: position 0..THROTTLE_SLIDER_MAX maps to
+// throttle ×1..×3600 via t = exp((pos/MAX) * ln(3600)).
+const THROTTLE_MIN = 1;
+const THROTTLE_MAX = 3600;
+const THROTTLE_SLIDER_MAX = 1000;
+const THROTTLE_LN_RANGE = Math.log(THROTTLE_MAX);
 
-function sliderToThrottle(v: number): ThrottleStop {
-  return THROTTLE_STOPS[Math.min(v, THROTTLE_STOPS.length - 1)] ?? 10;
+// Snap ladder for ArrowLeft / ArrowRight: jump to the next/previous round multiplier.
+const THROTTLE_LADDER = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600] as const;
+
+function posToThrottle(pos: number): number {
+  const clamped = Math.max(0, Math.min(THROTTLE_SLIDER_MAX, pos));
+  return Math.exp((clamped / THROTTLE_SLIDER_MAX) * THROTTLE_LN_RANGE);
+}
+
+function throttleToPos(t: number): number {
+  const clamped = Math.max(THROTTLE_MIN, Math.min(THROTTLE_MAX, t));
+  return Math.round((Math.log(clamped) / THROTTLE_LN_RANGE) * THROTTLE_SLIDER_MAX);
+}
+
+function formatThrottle(t: number): string {
+  if (t < 10)  return `×${Math.round(t)}`;
+  if (t < 100) return `×${Math.round(t / 5) * 5}`;
+  return `×${Math.round(t / 10) * 10}`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -71,7 +90,7 @@ function minutesToTimeString(m: number): string {
 
 const appState = {
   running:        false,
-  throttle:       10 as ThrottleStop,
+  throttle:       10 as number,
   displayUnit:    'mmoll' as DisplayUnit,
   panelOpen:      false,
   fullScreen:     false,
@@ -92,6 +111,7 @@ const canvas           = getEl<HTMLCanvasElement>('cgm-canvas');
 const btnPause         = getEl<HTMLButtonElement>('btn-pause');
 const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
 const throttleVal      = getEl<HTMLElement>('throttle-val');
+const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
 const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
@@ -223,15 +243,39 @@ btnPause.addEventListener('click', () => {
 
 // ── Throttle ──────────────────────────────────────────────────────────────────
 
+// Place the floating bubble centred over the slider thumb.
+// Native range thumbs travel from thumbW/2 to width - thumbW/2.
+const THROTTLE_THUMB_W = 18;
+function updateThrottleBubble(label: string): void {
+  throttleBubble.textContent = label;
+  const pos = parseInt(throttleSlider.value);
+  const frac = pos / THROTTLE_SLIDER_MAX;
+  const w = throttleSlider.getBoundingClientRect().width;
+  const x = THROTTLE_THUMB_W / 2 + frac * (w - THROTTLE_THUMB_W);
+  throttleBubble.style.left = `${x}px`;
+}
+
 throttleSlider.addEventListener('input', () => {
-  const t = sliderToThrottle(parseInt(throttleSlider.value));
+  const t = posToThrottle(parseInt(throttleSlider.value));
   appState.throttle = t;
-  throttleVal.textContent = `×${t}`;
+  const label = formatThrottle(t);
+  throttleVal.textContent = label;
+  updateThrottleBubble(label);
   bridge.setThrottle(t);
   if (appState.compareRunning) compare.setThrottle(t);
   renderer.setPlayback(t, appState.running);
 });
-throttleVal.textContent = `×${sliderToThrottle(parseInt(throttleSlider.value))}`;
+
+const showBubble = (): void => { throttleBubble.classList.add('visible'); updateThrottleBubble(throttleVal.textContent ?? ''); };
+const hideBubble = (): void => { throttleBubble.classList.remove('visible'); };
+throttleSlider.addEventListener('pointerenter', showBubble);
+throttleSlider.addEventListener('pointerleave', hideBubble);
+throttleSlider.addEventListener('focus', showBubble);
+throttleSlider.addEventListener('blur', hideBubble);
+window.addEventListener('resize', () => updateThrottleBubble(throttleVal.textContent ?? ''));
+
+throttleVal.textContent = formatThrottle(posToThrottle(parseInt(throttleSlider.value)));
+updateThrottleBubble(throttleVal.textContent);
 
 // ── Zoom and pan controls ─────────────────────────────────────────────────────
 
@@ -580,13 +624,15 @@ document.addEventListener('keydown', (e) => {
   switch (e.key) {
     case ' ': case 'p': e.preventDefault(); btnPause.click(); break;
     case 'ArrowRight': {
-      const v = Math.min(parseInt(throttleSlider.value) + 1, THROTTLE_STOPS.length - 1);
-      throttleSlider.value = String(v);
+      const cur = appState.throttle;
+      const next = THROTTLE_LADDER.find(v => v > cur * 1.001) ?? THROTTLE_LADDER[THROTTLE_LADDER.length - 1]!;
+      throttleSlider.value = String(throttleToPos(next));
       throttleSlider.dispatchEvent(new Event('input')); break;
     }
     case 'ArrowLeft': {
-      const v = Math.max(parseInt(throttleSlider.value) - 1, 0);
-      throttleSlider.value = String(v);
+      const cur = appState.throttle;
+      const prev = [...THROTTLE_LADDER].reverse().find(v => v < cur * 0.999) ?? THROTTLE_LADDER[0]!;
+      throttleSlider.value = String(throttleToPos(prev));
       throttleSlider.dispatchEvent(new Event('input')); break;
     }
     case 'm': bridge.meal(60); break;
