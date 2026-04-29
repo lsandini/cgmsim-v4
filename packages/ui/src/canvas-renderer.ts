@@ -183,8 +183,8 @@ export class CGMRenderer {
   private readonly PAD_RIGHT       = 36;
   private readonly PAD_TOP         = 52;  // headroom for IOB/COB row (top: 12) + scenario badge (top: 28)
   private readonly PAD_BOTTOM      = 80;  // time row(22) + gap(8) + basal panel(44) + margin(6)
-  private readonly BASAL_PANEL_H   = 44;  // height of the basal sub-panel in px
-  private readonly BASAL_PANEL_OFF = 30;  // offset of sub-panel top below main plot bottom
+  private readonly BASAL_PANEL_H   = 56;  // taller for legibility
+  private readonly BASAL_PANEL_OFF = 30;
 
   private cssW = 0;
   private cssH = 0;
@@ -703,7 +703,7 @@ export class CGMRenderer {
     ctx.stroke();
 
     // Y-axis tick labels: '2' at top, '0' at bottom
-    ctx.font = '10.8px -apple-system, sans-serif';
+    ctx.font = '12px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -713,7 +713,7 @@ export class CGMRenderer {
 
     // Rotated 'Basal' label on the left margin
     ctx.save();
-    ctx.font = '10.8px -apple-system, sans-serif';
+    ctx.font = '12px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -763,11 +763,11 @@ export class CGMRenderer {
     // Current rate readout inside the panel (bottom-left)
     const latest = this.ring.latest();
     if (latest) {
-      ctx.font = '12px -apple-system, sans-serif';
-      ctx.fillStyle = COLORS.basalLine;
+      ctx.font = 'bold 14px -apple-system, sans-serif';
+      ctx.fillStyle = '#eef2fa';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
-      ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 2);
+      ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 3);
       ctx.textBaseline = 'alphabetic';
     }
   }
