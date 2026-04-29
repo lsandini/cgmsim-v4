@@ -182,7 +182,7 @@ export class CGMRenderer {
   private readonly PAD_LEFT        = 56;
   private readonly PAD_RIGHT       = 36;
   private readonly PAD_TOP         = 52;  // headroom for IOB/COB row (top: 12) + scenario badge (top: 28)
-  private readonly PAD_BOTTOM      = 80;  // time row(22) + gap(8) + basal panel(44) + margin(6)
+  private readonly PAD_BOTTOM      = 92;  // time row(22) + gap(8) + basal panel(56) + margin(6)
   private readonly BASAL_PANEL_H   = 56;  // taller for legibility
   private readonly BASAL_PANEL_OFF = 30;
 
