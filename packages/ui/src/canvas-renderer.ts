@@ -499,8 +499,19 @@ export class CGMRenderer {
     const xStart = this.timeX(filledOffset);
     const xEnd = this.timeX(this.viewWindowMinutes);
     if (xStart >= xEnd) return;
-    this.ctx.fillStyle = COLORS.future;
-    this.ctx.fillRect(xStart, this.PAD_TOP, xEnd - xStart, this.plotH);
+    const ctx = this.ctx;
+    ctx.fillStyle = COLORS.future;
+    ctx.fillRect(xStart, this.PAD_TOP, xEnd - xStart, this.plotH);
+
+    // Soft accent line at the "now" boundary
+    ctx.strokeStyle = COLORS.futureEdge;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(xStart, this.PAD_TOP);
+    ctx.lineTo(xStart, this.PAD_TOP + this.plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   private drawGrid(winStartMin: number): void {
