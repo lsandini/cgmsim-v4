@@ -77,6 +77,17 @@ function formatSimTime(ms: number): string {
   return `D+${String(d).padStart(2,'0')}:${String(h).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+function updateSkyIcon(simTimeMs: number): void {
+  const totalMin = Math.floor(simTimeMs / 60_000);
+  const hourOfDay = (Math.floor(totalMin / 60) % 24 + 24) % 24;
+  let tod: 'day' | 'dawn' | 'dusk' | 'night';
+  if (hourOfDay >= 7  && hourOfDay < 17) tod = 'day';
+  else if (hourOfDay >= 5 && hourOfDay < 7)  tod = 'dawn';
+  else if (hourOfDay >= 17 && hourOfDay < 20) tod = 'dusk';
+  else tod = 'night';
+  skyIcon.setAttribute('data-tod', tod);
+}
+
 function timeStringToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return (h ?? 22) * 60 + (m ?? 0);
@@ -113,6 +124,7 @@ const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
 const throttleVal      = getEl<HTMLElement>('throttle-val');
 const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
+const skyIcon          = document.getElementById('sky-icon') as unknown as SVGSVGElement;
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
 const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
 const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
@@ -210,6 +222,7 @@ compare.onTick((snap) => {
 
 function updateHUD(snap: TickSnapshot): void {
   simTimeEl.textContent = formatSimTime(snap.simTimeMs);
+  updateSkyIcon(snap.simTimeMs);
   const disp = appState.displayUnit === 'mmoll'
     ? (snap.cgm / 18.0182).toFixed(1) : String(Math.round(snap.cgm));
   currentCGMEl.textContent = disp;

@@ -129,6 +129,40 @@
       letter-spacing: 0.04em;
     }
 
+    /* Sun / moon time-of-day indicator */
+    #sky-icon {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      transition: filter 0.6s ease, transform 0.6s ease;
+    }
+    #sky-icon .disc {
+      transition: fill 0.6s ease;
+    }
+    #sky-icon .crescent {
+      transition: opacity 0.6s ease, transform 0.6s ease;
+      transform-origin: center;
+    }
+    /* Day → bright yellow disc, crescent hidden */
+    #sky-icon[data-tod="day"]   .disc      { fill: #fbbf24; filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.55)); }
+    #sky-icon[data-tod="day"]   .crescent  { opacity: 0; }
+    /* Dawn → soft orange disc, low crescent */
+    #sky-icon[data-tod="dawn"]  .disc      { fill: #fb923c; }
+    #sky-icon[data-tod="dawn"]  .crescent  { opacity: 0.25; }
+    /* Dusk → warm pink disc */
+    #sky-icon[data-tod="dusk"]  .disc      { fill: #f472b6; }
+    #sky-icon[data-tod="dusk"]  .crescent  { opacity: 0.35; }
+    /* Night → cool moon disc, crescent shadow */
+    #sky-icon[data-tod="night"] .disc      { fill: #cbd5e1; filter: drop-shadow(0 0 3px rgba(203, 213, 225, 0.45)); }
+    #sky-icon[data-tod="night"] .crescent  { opacity: 1; }
+
+    /* Group sim-time + sky icon together */
+    #time-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
     /* Current CGM */
     #current-cgm {
       font-family: 'Courier New', monospace;
@@ -742,7 +776,13 @@
         <div id="throttle-bubble">×10</div>
       </div>
 
-      <div id="sim-time">D+00:00</div>
+      <div id="time-block">
+        <svg id="sky-icon" data-tod="day" viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="disc" cx="12" cy="12" r="7" />
+          <circle class="crescent" cx="15" cy="10" r="6" fill="var(--bg)" />
+        </svg>
+        <div id="sim-time">D+00:00</div>
+      </div>
 
       <div style="display:flex; align-items:baseline; gap:2px;">
         <div id="current-cgm">---</div>
