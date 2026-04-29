@@ -514,8 +514,8 @@ export class CGMRenderer {
 
     ctx.strokeStyle = COLORS.grid;
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.font = '13.2px -apple-system, sans-serif';
+    ctx.setLineDash([]);                     // solid (was [4,4])
+    ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.gridLabel;
     ctx.textAlign = 'right';
 
@@ -527,9 +527,8 @@ export class CGMRenderer {
       ctx.lineTo(this.PAD_LEFT + this.plotW, y);
       ctx.stroke();
       const label = isMMol ? (mg / 18.0182).toFixed(1) : Math.round(mg).toString();
-      ctx.fillText(label, this.PAD_LEFT - 6, y + 4);
+      ctx.fillText(label, this.PAD_LEFT - 6, y + 5);
     }
-    ctx.setLineDash([]);
 
     // Vertical time lines — adaptive density based on zoom level
     const stepMin = this.viewWindowMinutes <= 180 ? 30
@@ -546,20 +545,18 @@ export class CGMRenderer {
       const isMidnight = Math.round(simMin) % (24 * 60) === 0;
 
       ctx.strokeStyle = isMidnight ? COLORS.gridDay : COLORS.grid;
-      ctx.lineWidth = isMidnight ? 1.5 : 1;
-      ctx.setLineDash(isMidnight ? [] : [4, 4]);
+      ctx.lineWidth   = isMidnight ? 1.5 : 1;
+      ctx.setLineDash([]);                   // all solid
       ctx.beginPath();
       ctx.moveTo(x, this.PAD_TOP);
       ctx.lineTo(x, this.PAD_TOP + this.plotH);
       ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.lineWidth = 1;
 
       const totalMin = Math.round(simMin);
       const absHour = Math.floor(totalMin / 60) % 24;
       const absMin = totalMin % 60;
       const label = `${String(absHour).padStart(2, '0')}:${String(absMin).padStart(2, '0')}`;
-      ctx.fillStyle = isMidnight ? COLORS.trace : COLORS.gridLabel;
+      ctx.fillStyle = isMidnight ? COLORS.gridStrong : COLORS.gridLabel;
       ctx.fillText(label, x, this.PAD_TOP + this.plotH + 18);
     }
   }
