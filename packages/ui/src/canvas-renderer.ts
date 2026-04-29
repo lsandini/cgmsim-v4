@@ -767,41 +767,53 @@ export class CGMRenderer {
   private drawIOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
-    const maxIOB = 5, maxPx = this.plotH * 0.25;
+    const maxIOB = 5, maxPx = this.plotH * 0.28;
     const baseY = this.glucoseY(TIR_HIGH);
+    const peakY = baseY - maxPx;
 
-    let lastX = 0, hasPoints = false;
-
-    ctx.beginPath();
+    // Collect visible points once
+    const pts: { x: number; y: number }[] = [];
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.iob / maxIOB, 1) * maxPx;
-      if (!hasPoints) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
-      else ctx.lineTo(x, y);
-      lastX = x;
+      pts.push({
+        x: this.timeX(offsetMin),
+        y: baseY - Math.min(entry.iob / maxIOB, 1) * maxPx,
+      });
     });
-    if (!hasPoints) return;
+    if (pts.length === 0) return;
 
-    ctx.lineTo(lastX, baseY);
+    // Gradient fill: stronger teal near the peak, fading toward the baseline
+    const grad = ctx.createLinearGradient(0, peakY, 0, baseY);
+    grad.addColorStop(0, COLORS.iobFillTop);
+    grad.addColorStop(1, COLORS.iobFill);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, baseY);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
     ctx.closePath();
-    ctx.fillStyle = COLORS.iobFill;
+    ctx.fillStyle = grad;
     ctx.fill();
 
+    // Top edge stroke
     ctx.beginPath();
-    let first = true;
-    this.ring.forEach((entry) => {
-      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.iob / maxIOB, 1) * maxPx;
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
-    });
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
     ctx.strokeStyle = COLORS.iobLine;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.75;
+    ctx.setLineDash([]);
     ctx.stroke();
+
+    // Baseline reference line (subtle, helps anchor the eye)
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, baseY);
+    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
+    ctx.strokeStyle = COLORS.iobLine;
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.35;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   private drawCOBOverlay(winStartMin: number): void {
