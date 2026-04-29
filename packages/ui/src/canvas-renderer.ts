@@ -819,40 +819,39 @@ export class CGMRenderer {
   private drawCOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
-    const maxCOB = 80, maxPx = this.plotH * 0.20;
+    const maxCOB = 80, maxPx = this.plotH * 0.22;
     const baseY = this.glucoseY(TIR_HIGH);
+    const peakY = baseY - maxPx;
 
-    let lastX = 0, hasPoints = false;
-
-    ctx.beginPath();
+    const pts: { x: number; y: number }[] = [];
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.cob / maxCOB, 1) * maxPx;
-      if (!hasPoints) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
-      else ctx.lineTo(x, y);
-      lastX = x;
+      pts.push({
+        x: this.timeX(offsetMin),
+        y: baseY - Math.min(entry.cob / maxCOB, 1) * maxPx,
+      });
     });
-    if (!hasPoints) return;
+    if (pts.length === 0) return;
 
-    ctx.lineTo(lastX, baseY);
+    const grad = ctx.createLinearGradient(0, peakY, 0, baseY);
+    grad.addColorStop(0, COLORS.cobFillTop);
+    grad.addColorStop(1, COLORS.cobFill);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, baseY);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
     ctx.closePath();
-    ctx.fillStyle = COLORS.cobFill;
+    ctx.fillStyle = grad;
     ctx.fill();
 
     ctx.beginPath();
-    let first = true;
-    this.ring.forEach((entry) => {
-      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.cob / maxCOB, 1) * maxPx;
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
-    });
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
     ctx.strokeStyle = COLORS.cobLine;
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
     ctx.stroke();
   }
 
