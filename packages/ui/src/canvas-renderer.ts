@@ -31,35 +31,52 @@ const HYPO_L1 = 54;
 
 // Canvas colours
 const COLORS = {
-  bg: '#0d1117',
-  grid: 'rgba(48, 54, 61, 0.6)',
-  gridLabel: '#8b949e',
-  gridDay: 'rgba(88, 166, 255, 0.25)',
-  greenBand: 'rgba(38, 166, 65, 0.12)',
-  amberBand: 'rgba(210, 153, 34, 0.20)',
-  redBand: 'rgba(218, 54, 51, 0.20)',
-  trace: '#58a6ff',
-  traceGlow: 'rgba(88, 166, 255, 0.35)',
-  traceHypoL1: '#d29922',
-  traceHypoL2: '#da3633',
-  trueGlucose: 'rgba(255, 255, 255, 0.25)',
-  iobFill: 'rgba(88, 166, 255, 0.10)',
-  iobLine: 'rgba(88, 166, 255, 0.4)',
-  cobFill: 'rgba(210, 153, 34, 0.10)',
-  cobLine: 'rgba(210, 153, 34, 0.4)',
-  basalFill: 'rgba(63, 185, 80, 0.12)',
-  basalLine: 'rgba(63, 185, 80, 0.55)',
-  bolusMarker: '#58a6ff',
-  mealMarker: '#d29922',
-  smbMarker: '#bc8cff',
-  future: 'rgba(255, 255, 255, 0.03)',
+  bg: '#0a0f1c',
+  grid: 'rgba(80, 92, 118, 0.45)',
+  gridStrong: 'rgba(120, 134, 162, 0.65)',
+  gridLabel: 'rgba(148, 160, 184, 0.85)',
+  gridDay: 'rgba(122, 162, 255, 0.30)',
+
+  // Glycaemic zone bands (low opacity) + crisp threshold lines
+  greenBand: 'rgba(16, 185, 129, 0.18)',
+  amberBand: 'rgba(245, 158, 11, 0.20)',
+  redBand:   'rgba(239, 68, 68, 0.20)',
+  hypoLine:  '#ef4444',           // 70 mg/dL  (3.9 mmol/L)
+  hypoL2Line:'#dc2626',           // 54 mg/dL  (3.0 mmol/L)
+  hyperLine: '#f59e0b',           // 180 mg/dL (10  mmol/L)
+
+  // CGM trace identity
+  trace:        '#22d3ee',
+  traceGlow:    'rgba(34, 211, 238, 0.40)',
+  traceHypoL1:  '#f59e0b',
+  traceHypoL2:  '#ef4444',
+  trueGlucose:  'rgba(238, 242, 250, 0.28)',
+
+  // IOB / COB / basal — distinct identities
+  iobFill:    'rgba(20, 184, 166, 0.28)',
+  iobFillTop: 'rgba(20, 184, 166, 0.55)',   // gradient top end
+  iobLine:    'rgba(20, 184, 166, 0.95)',
+  cobFill:    'rgba(251, 191, 36, 0.22)',
+  cobFillTop: 'rgba(251, 191, 36, 0.50)',
+  cobLine:    'rgba(251, 191, 36, 0.90)',
+  basalFill:  'rgba(52, 211, 153, 0.22)',
+  basalLine:  'rgba(52, 211, 153, 0.85)',
+
+  // Event markers
+  bolusMarker: '#22d3ee',
+  mealMarker:  '#fbbf24',
+  smbMarker:   '#c084fc',
+
+  // "Future" region (right of the now-line)
+  future: 'rgba(8, 12, 22, 0.45)',
+  futureEdge: 'rgba(122, 162, 255, 0.35)',
 };
 
 const COMPARE_COLORS = {
-  trace:     '#ff7b54',
-  traceGlow: 'rgba(255, 123, 84, 0.30)',
-  hypoL1:    '#ff9f43',
-  hypoL2:    '#ee5a24',
+  trace:     '#fb7185',                    // rose — clearly distinct from cyan primary
+  traceGlow: 'rgba(251, 113, 133, 0.35)',
+  hypoL1:    '#fdba74',
+  hypoL2:    '#f87171',
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
