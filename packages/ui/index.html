@@ -299,19 +299,41 @@
     }
     #unit-toggle:hover { color: var(--text); }
 
-    /* IOB / COB overlay */
+    /* IOB / COB chips */
     #iob-cob {
       position: absolute;
-      top: 12px;
-      left: 12px;
+      top: 14px;
+      left: 16px;
       display: flex;
-      gap: 16px;
-      font-size: 15.6px;
-      color: var(--text-muted);
+      gap: 10px;
       pointer-events: none;
+      z-index: 5;
     }
 
-    #iob-cob span { color: var(--text); font-weight: 600; }
+    .stat-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: rgba(28, 34, 54, 0.75);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      backdrop-filter: blur(6px);
+    }
+    .stat-chip .val {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .stat-chip.iob .val { color: var(--iob); }
+    .stat-chip.cob .val { color: var(--cob); }
+    .stat-chip .unit { font-size: 11px; color: var(--text-muted); }
 
     /* Side panel inner */
     .panel-section {
@@ -396,11 +418,18 @@
     /* Scenario chip */
     #scenario-badge {
       position: absolute;
-      top: 28px;
-      left: 60px;
-      font-size: 13.2px;
-      color: var(--text-muted);
+      top: 58px;                     /* below the IOB/COB chip row */
+      left: 16px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);            /* full readable, not muted */
+      letter-spacing: 0.02em;
       pointer-events: none;
+      z-index: 5;
+    }
+    #scenario-badge .sep {
+      color: var(--text-muted);
+      margin: 0 8px;
     }
 
     /* View controls — zoom and live button */
@@ -492,11 +521,11 @@
       </div>
 
       <div id="iob-cob">
-        IOB <span id="iob-val">0.00</span> U &nbsp;
-        COB <span id="cob-val">0</span> g
+        <div class="stat-chip iob">IOB <span class="val" id="iob-val">0.00</span><span class="unit">U</span></div>
+        <div class="stat-chip cob">COB <span class="val" id="cob-val">0</span><span class="unit">g</span></div>
       </div>
 
-      <div id="scenario-badge">Default patient · AID mode</div>
+      <div id="scenario-badge">Default patient<span class="sep">·</span>Pump (open loop)</div>
 
       <!-- Collapsible side panel -->
       <div id="side-panel">
