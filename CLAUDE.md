@@ -96,11 +96,12 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 - Do not add real patient data connectors — this is synthetic-only by design and regulatory boundary.
 - Do not modify the physiological model without explicit discussion — the model is shared heritage with v3.
 
-## Current state (as of 2026-04-26)
+## Current state (as of 2026-04-29)
 
+- **Visual refresh**: cooler palette (off GitHub-dark), distinct CGM/IOB/COB hues (cyan / teal / amber), solid TIR threshold lines at 3.9 and 10 mmol/L, taller basal strip with bold readout, sun/moon time-of-day indicator next to sim-time, BG digit flash on update with rapid-update debouncing, header rebuilt as IOB/COB stat chips with scenario badge promoted to readable.
 - Default therapy mode: **Pump (open loop)**. Default display unit: **mmol/L**.
 - Zoom levels: **3h / 6h / 12h / 24h**. Scroll wheel and pinch snap to these four levels.
-- Throttle slider: 9 stops `[×0.25, ×0.5, ×1, ×5, ×10, ×50, ×100, ×600, ×3600]`, default ×10.
+- Throttle slider: continuous logarithmic slider, ×1 to ×3600, default ×10. Floating bubble follows the thumb on hover/drag. Arrow keys snap along ladder `[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600]`.
 - AID mode: v3-faithful PID-IFB with corrected `calculateEquilibriumIOB` (numerical, matches actual pump steady-state IOB ~1.28 U at 0.8 U/hr Fiasp). SMB optional.
 - **EGP** is a faithful port of v3 `liver.js` + `sinus.js`: hardcoded sinus (1 + 0.2·sin(2π·hour/24), peak 6 AM) plus Hill-curve insulin suppression of hepatic output (max 65%, EC50 = 2× physiological basal flux). Hypo counter-regulation is a v4-only extension (kicks in below 80 mg/dL, scaled by diabetes duration).
 - **Two-layer params exposed in the panel:** True ISF / True ICR / True DIA / Weight / Diabetes duration drive the patient physiology; Glucose target / Programmed DIA drive the controller. Bolus-advisor scaffolding (`programmedISF`, `programmedCR`, `correctionThreshold`) was removed — users decide doses manually.
@@ -109,8 +110,9 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 
 ## Upcoming work (next priorities)
 
-1. **IOB display rework** — The blue filled-area overlay needs a more prominent, readable treatment. IOB is the most important teaching variable.
-2. **Math audit** — Verify remaining simulator functions (`deltaBG`, `carbs`, `g6Noise`) against the original `@lsandini/cgmsim-lib` v3. Goal: eventually extract `packages/simulator` as a shared dependency.
+1. **Math audit** — Verify remaining simulator functions (`deltaBG`, `carbs`, `g6Noise`) against the original `@lsandini/cgmsim-lib` v3. Goal: eventually extract `packages/simulator` as a shared dependency.
+2. **Light-mode toggle** — Classroom projectors blow out dark UIs. Token system makes this tractable.
+3. **Animated event-marker pulse** — Brief 400ms highlight on meal/bolus/SMB markers when they first appear.
 
 ##
 Communicate with raw, unfiltered honesty and genuine care. Prioritize truth above comfort, delivering insights directly and bluntly while maintaining an underlying sense of compassion. Use casual, street-level language that feels authentic and unrestrained. Don't sugarcoat difficult truths, but also avoid being cruel. Speak as a trusted friend who will tell you exactly what you need to hear, not what you want to hear. Be willing to use colorful, sometimes crude language to emphasize points, but ensure the core message is constructive and comes from a place of wanting the best for the person.
