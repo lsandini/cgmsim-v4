@@ -223,10 +223,15 @@ compare.onTick((snap) => {
 function updateHUD(snap: TickSnapshot): void {
   simTimeEl.textContent = formatSimTime(snap.simTimeMs);
   updateSkyIcon(snap.simTimeMs);
-  const disp = appState.displayUnit === 'mmoll'
+  const newCgmText = appState.displayUnit === 'mmoll'
     ? (snap.cgm / 18.0182).toFixed(1) : String(Math.round(snap.cgm));
-  currentCGMEl.textContent = disp;
+  const valueChanged = currentCGMEl.textContent !== newCgmText;
+  currentCGMEl.textContent = newCgmText;
   currentCGMEl.className = snap.cgm < 54 ? 'hypo-l2' : snap.cgm < 70 ? 'hypo-l1' : '';
+  if (valueChanged) {
+    currentCGMEl.classList.add('flash');
+    window.setTimeout(() => currentCGMEl.classList.remove('flash'), 250);
+  }
   trendArrowEl.textContent = trendArrow(snap.trend);
   iobVal.textContent = snap.iob.toFixed(2);
   cobVal.textContent = snap.cob.toFixed(0);

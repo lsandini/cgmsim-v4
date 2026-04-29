@@ -112,8 +112,8 @@
     #control-strip {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 0 16px;
+      gap: 14px;
+      padding: 0 20px;
       background: var(--bg-panel);
       border-top: 1px solid var(--border);
       height: var(--control-height);
@@ -121,11 +121,11 @@
 
     /* Sim time display */
     #sim-time {
-      font-family: 'Courier New', monospace;
-      font-size: 20px;
+      font-family: var(--font-mono);
+      font-size: var(--fs-readout);
       font-weight: 600;
       color: var(--text);
-      min-width: 100px;
+      min-width: 110px;
       letter-spacing: 0.04em;
     }
 
@@ -166,18 +166,23 @@
 
     /* Current CGM */
     #current-cgm {
-      font-family: 'Courier New', monospace;
-      font-size: 32px;
+      font-family: var(--font-mono);
+      font-size: var(--fs-bg);
       font-weight: 700;
-      min-width: 90px;
+      min-width: 96px;
       color: var(--cgm);
+      transition: color 0.25s ease, text-shadow 0.25s ease;
     }
-
     #current-cgm.hypo-l1 { color: var(--amber); }
     #current-cgm.hypo-l2 { color: var(--red); }
+    #current-cgm.flash {
+      text-shadow: 0 0 14px var(--cgm-glow);
+    }
+    #current-cgm.flash.hypo-l1 { text-shadow: 0 0 14px rgba(245, 158, 11, 0.55); }
+    #current-cgm.flash.hypo-l2 { text-shadow: 0 0 14px rgba(239, 68, 68, 0.60); }
 
     #cgm-unit {
-      font-size: 12px;
+      font-size: 13px;
       color: var(--text-muted);
       margin-left: -8px;
       align-self: flex-end;
