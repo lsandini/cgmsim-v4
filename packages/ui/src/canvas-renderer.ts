@@ -464,17 +464,33 @@ export class CGMRenderer {
   private drawBands(winStartMin: number): void {
     void winStartMin;
     const ctx = this.ctx;
-    const yTop = this.glucoseY(TIR_HIGH);
-    const yBot = this.glucoseY(TIR_LOW);
+    const xL = this.PAD_LEFT;
+    const xR = this.PAD_LEFT + this.plotW;
+    const yTop      = this.glucoseY(TIR_HIGH);   // 180 mg/dL line
+    const yBot      = this.glucoseY(TIR_LOW);    //  70 mg/dL line
+    const yAmberBot = this.glucoseY(HYPO_L1);    //  54 mg/dL line
+    const yRedFloor = this.glucoseY(40);
+
+    // Translucent zone fills
     ctx.fillStyle = COLORS.greenBand;
-    ctx.fillRect(this.PAD_LEFT, yTop, this.plotW, yBot - yTop);
-
-    const yAmberBot = this.glucoseY(HYPO_L1);
+    ctx.fillRect(xL, yTop, this.plotW, yBot - yTop);
     ctx.fillStyle = COLORS.amberBand;
-    ctx.fillRect(this.PAD_LEFT, yBot, this.plotW, yAmberBot - yBot);
-
+    ctx.fillRect(xL, yBot, this.plotW, yAmberBot - yBot);
     ctx.fillStyle = COLORS.redBand;
-    ctx.fillRect(this.PAD_LEFT, yAmberBot, this.plotW, this.glucoseY(40) - yAmberBot);
+    ctx.fillRect(xL, yAmberBot, this.plotW, yRedFloor - yAmberBot);
+
+    // Crisp threshold lines on top of the bands
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = COLORS.hyperLine;
+    ctx.beginPath(); ctx.moveTo(xL, yTop); ctx.lineTo(xR, yTop); ctx.stroke();
+
+    ctx.strokeStyle = COLORS.hypoLine;
+    ctx.beginPath(); ctx.moveTo(xL, yBot); ctx.lineTo(xR, yBot); ctx.stroke();
+
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = COLORS.hypoL2Line;
+    ctx.beginPath(); ctx.moveTo(xL, yAmberBot); ctx.lineTo(xR, yAmberBot); ctx.stroke();
   }
 
   private drawFutureSpace(winStartMin: number, animSimMs: number): void {
