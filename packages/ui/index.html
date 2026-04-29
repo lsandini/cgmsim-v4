@@ -140,6 +140,7 @@
       transition: fill 0.6s ease;
     }
     #sky-icon .crescent {
+      fill: var(--bg);
       transition: opacity 0.6s ease, transform 0.6s ease;
       transform-origin: center;
     }
@@ -779,7 +780,7 @@
       <div id="time-block">
         <svg id="sky-icon" data-tod="day" viewBox="0 0 24 24" aria-hidden="true">
           <circle class="disc" cx="12" cy="12" r="7" />
-          <circle class="crescent" cx="15" cy="10" r="6" fill="var(--bg)" />
+          <circle class="crescent" cx="15" cy="10" r="6" />
         </svg>
         <div id="sim-time">D+00:00</div>
       </div>

@@ -112,10 +112,10 @@ const appState = {
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
-function getEl<T extends HTMLElement>(id: string): T {
+function getEl<T extends Element>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Element #${id} not found`);
-  return el as T;
+  return el as unknown as T;
 }
 
 const canvas           = getEl<HTMLCanvasElement>('cgm-canvas');
@@ -124,7 +124,7 @@ const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
 const throttleVal      = getEl<HTMLElement>('throttle-val');
 const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
-const skyIcon          = document.getElementById('sky-icon') as unknown as SVGSVGElement;
+const skyIcon          = getEl<SVGSVGElement>('sky-icon');
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
 const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
 const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
