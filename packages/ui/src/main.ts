@@ -220,6 +220,7 @@ compare.onTick((snap) => {
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
 
+let cgmFlashTimeout: number | undefined;
 function updateHUD(snap: TickSnapshot): void {
   simTimeEl.textContent = formatSimTime(snap.simTimeMs);
   updateSkyIcon(snap.simTimeMs);
@@ -230,7 +231,8 @@ function updateHUD(snap: TickSnapshot): void {
   currentCGMEl.className = snap.cgm < 54 ? 'hypo-l2' : snap.cgm < 70 ? 'hypo-l1' : '';
   if (valueChanged) {
     currentCGMEl.classList.add('flash');
-    window.setTimeout(() => currentCGMEl.classList.remove('flash'), 250);
+    if (cgmFlashTimeout !== undefined) window.clearTimeout(cgmFlashTimeout);
+    cgmFlashTimeout = window.setTimeout(() => currentCGMEl.classList.remove('flash'), 250);
   }
   trendArrowEl.textContent = trendArrow(snap.trend);
   iobVal.textContent = snap.iob.toFixed(2);
