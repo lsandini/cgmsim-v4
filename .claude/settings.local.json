@@ -12,7 +12,11 @@
       "Bash(git rm *)",
       "Bash(grep -E '\\\\.\\(js\\\\.map|tsbuildinfo\\)$')",
       "Bash(grep -E '\\\\.\\(js|map|tsbuildinfo\\)$')",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)"
     ]
   }
 }
