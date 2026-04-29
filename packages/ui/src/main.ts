@@ -164,6 +164,7 @@ const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
 const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
 const btnLive          = getEl<HTMLButtonElement>('btn-live');
 const scenarioBadge    = getEl<HTMLElement>('scenario-badge');
+const scenarioMode     = scenarioBadge.querySelector<HTMLElement>('.mode')!;
 const btnSnapshot      = getEl<HTMLButtonElement>('btn-snapshot');
 const btnRunCompare    = getEl<HTMLButtonElement>('btn-run-compare');
 const btnStopCompare   = getEl<HTMLButtonElement>('btn-stop-compare');
@@ -399,7 +400,7 @@ btnMeal.addEventListener('click', () => {
 function onTherapyChange(): void {
   const mode = therapyMode.value as 'AID' | 'PUMP' | 'MDI';
   const modeLabel = mode === 'AID' ? 'AID mode' : mode === 'PUMP' ? 'Pump (open loop)' : 'MDI';
-  scenarioBadge.textContent = `Default patient · ${modeLabel}`;
+  scenarioMode.textContent = modeLabel;
   bridge.setTherapyParam({
     mode,
     glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),

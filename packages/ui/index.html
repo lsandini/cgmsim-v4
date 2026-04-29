@@ -427,7 +427,8 @@
       pointer-events: none;
       z-index: 5;
     }
-    #scenario-badge .sep {
+    #scenario-badge .mode::before {
+      content: '·';
       color: var(--text-muted);
       margin: 0 8px;
     }
@@ -525,7 +526,7 @@
         <div class="stat-chip cob">COB <span class="val" id="cob-val">0</span><span class="unit">g</span></div>
       </div>
 
-      <div id="scenario-badge">Default patient<span class="sep">·</span>Pump (open loop)</div>
+      <div id="scenario-badge"><span class="who">Default patient</span><span class="mode">Pump (open loop)</span></div>
 
       <!-- Collapsible side panel -->
       <div id="side-panel">
