@@ -61,14 +61,14 @@ const DARK_PALETTE: ColorPalette = {
   traceHypoL1:  '#f59e0b',
   traceHypoL2:  '#ef4444',
   trueGlucose:  'rgba(238, 242, 250, 0.28)',
-  iobFill:    'rgba(59, 130, 246, 0.28)',
-  iobFillTop: 'rgba(59, 130, 246, 0.55)',
-  iobLine:    'rgba(59, 130, 246, 0.95)',
+  iobFill:    'rgba(96, 165, 250, 0.10)',
+  iobFillTop: 'rgba(96, 165, 250, 0.32)',
+  iobLine:    'rgba(96, 165, 250, 0.85)',
   cobFill:    'rgba(251, 191, 36, 0.22)',
   cobFillTop: 'rgba(251, 191, 36, 0.50)',
   cobLine:    'rgba(251, 191, 36, 0.90)',
-  basalFill:  'rgba(52, 211, 153, 0.22)',
-  basalLine:  'rgba(52, 211, 153, 0.85)',
+  basalFill:  'rgba(245, 158, 11, 0.18)',
+  basalLine:  'rgba(217, 119, 6, 0.85)',
   bolusMarker: '#3b82f6',
   mealMarker:  '#fbbf24',
   smbMarker:   '#c084fc',
@@ -94,12 +94,12 @@ const LIGHT_PALETTE: ColorPalette = {
   traceHypoL1:  '#d97706',
   traceHypoL2:  '#dc2626',
   trueGlucose:  'rgba(15, 23, 42, 0.22)',
-  iobFill:    'rgba(37, 99, 235, 0.22)',          // deep blue IOB
-  iobFillTop: 'rgba(37, 99, 235, 0.45)',
-  iobLine:    'rgba(37, 99, 235, 0.95)',
-  cobFill:    'rgba(245, 158, 11, 0.20)',         // amber carbs (distinct from CGM green)
-  cobFillTop: 'rgba(245, 158, 11, 0.45)',
-  cobLine:    'rgba(217, 119, 6, 0.90)',
+  iobFill:    'rgba(96, 165, 250, 0.10)',          // lighter sky-blue IOB
+  iobFillTop: 'rgba(96, 165, 250, 0.28)',
+  iobLine:    'rgba(96, 165, 250, 0.80)',
+  cobFill:    'rgba(251, 191, 36, 0.22)',         // amber-400 carbs — yellower than basal
+  cobFillTop: 'rgba(251, 191, 36, 0.50)',
+  cobLine:    'rgba(234, 179, 8, 0.90)',
   basalFill:  'rgba(245, 158, 11, 0.18)',
   basalLine:  'rgba(217, 119, 6, 0.85)',
   bolusMarker: '#2563eb',
@@ -884,24 +884,36 @@ export class CGMRenderer {
   private drawIOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
-    const maxIOB = 5, maxPx = this.plotH * 0.28;
-    const baseY = this.glucoseY(TIR_HIGH);
-    const peakY = baseY - maxPx;
+    const panelH = this.plotH * 0.25;
+    const baseY  = this.glucoseY(TIR_HIGH);   // 10 mmol/L line — panel floor
+    const topY   = baseY - panelH;            // panel ceiling
 
-    // Collect visible points once
-    const pts: { x: number; y: number }[] = [];
+    // Pass 1: collect visible (offset, iob) and find peak — auto-scale Y
+    const visible: { x: number; iob: number }[] = [];
+    let peakIOB = 0;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      pts.push({
-        x: this.timeX(offsetMin),
-        y: baseY - Math.min(entry.iob / maxIOB, 1) * maxPx,
-      });
+      visible.push({ x: this.timeX(offsetMin), iob: entry.iob });
+      if (entry.iob > peakIOB) peakIOB = entry.iob;
     });
-    if (pts.length === 0) return;
+    if (visible.length === 0) return;
 
-    // Gradient fill: stronger teal near the peak, fading toward the baseline
-    const grad = ctx.createLinearGradient(0, peakY, 0, baseY);
+    const niceCeil = (v: number): number => {
+      if (v <= 0) return 4;
+      const ladder = [4, 6, 8, 10, 15, 20, 30, 50, 75, 100];
+      for (const c of ladder) if (c >= v) return c;
+      return Math.ceil(v / 10) * 10;
+    };
+    const maxIOB = niceCeil(peakIOB * 1.10);
+
+    const yFor = (iob: number): number =>
+      baseY - Math.max(0, Math.min(iob / maxIOB, 1)) * panelH;
+
+    const pts = visible.map((v) => ({ x: v.x, y: yFor(v.iob) }));
+
+    // Gradient fill
+    const grad = ctx.createLinearGradient(0, topY, 0, baseY);
     grad.addColorStop(0, COLORS.iobFillTop);
     grad.addColorStop(1, COLORS.iobFill);
 
@@ -922,15 +934,36 @@ export class CGMRenderer {
     ctx.setLineDash([]);
     ctx.stroke();
 
-    // Baseline reference line (subtle, helps anchor the eye)
+    // Baseline reference line at the 10 mmol/L floor
     ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, baseY);
-    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
+    ctx.moveTo(this.PAD_LEFT, baseY);
+    ctx.lineTo(this.PAD_LEFT + this.plotW, baseY);
     ctx.strokeStyle = COLORS.iobLine;
     ctx.lineWidth = 0.5;
     ctx.globalAlpha = 0.35;
     ctx.stroke();
     ctx.globalAlpha = 1;
+
+    // Y-axis tick labels on the RIGHT margin: max at top, '0' at bottom
+    const xRight = this.PAD_LEFT + this.plotW;
+    ctx.font = '12px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.iobLine;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const maxLabel = maxIOB >= 10 ? maxIOB.toFixed(0) : maxIOB.toFixed(1);
+    ctx.fillText(maxLabel, xRight + 3, topY);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('0', xRight + 3, baseY);
+
+    // Rotated 'IOB' label on the right margin
+    ctx.save();
+    ctx.fillStyle = COLORS.iobLine;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(xRight + 22, topY + panelH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('IOB', 0, 0);
+    ctx.restore();
   }
 
   private drawCOBOverlay(winStartMin: number): void {
