@@ -29,55 +29,106 @@ const TIR_LOW = 70;
 const TIR_HIGH = 180;
 const HYPO_L1 = 54;
 
-// Canvas colours
-const COLORS = {
+// Canvas colour palettes — swapped wholesale on theme change.
+type ColorPalette = {
+  bg: string; grid: string; gridStrong: string; gridLabel: string; gridDay: string;
+  greenBand: string; amberBand: string; redBand: string;
+  hypoLine: string; hypoL2Line: string; hyperLine: string; lowLine: string;
+  trace: string; traceGlow: string; traceHypoL1: string; traceHypoL2: string; trueGlucose: string;
+  iobFill: string; iobFillTop: string; iobLine: string;
+  cobFill: string; cobFillTop: string; cobLine: string;
+  basalFill: string; basalLine: string;
+  bolusMarker: string; mealMarker: string; smbMarker: string;
+  future: string; futureEdge: string;
+};
+type ComparePalette = { trace: string; traceGlow: string; hypoL1: string; hypoL2: string; };
+
+const DARK_PALETTE: ColorPalette = {
   bg: '#0a0f1c',
   grid: 'rgba(80, 92, 118, 0.45)',
   gridStrong: 'rgba(120, 134, 162, 0.65)',
   gridLabel: 'rgba(148, 160, 184, 0.85)',
   gridDay: 'rgba(122, 162, 255, 0.30)',
-
-  // Glycaemic zone bands (low opacity) + crisp threshold lines
   greenBand: 'rgba(16, 185, 129, 0.18)',
   amberBand: 'rgba(245, 158, 11, 0.20)',
   redBand:   'rgba(239, 68, 68, 0.20)',
-  hypoLine:  '#ef4444',           // 70 mg/dL  (3.9 mmol/L)
-  hypoL2Line:'#dc2626',           // 54 mg/dL  (3.0 mmol/L)
-  hyperLine: '#f59e0b',           // 180 mg/dL (10  mmol/L)
-
-  // CGM trace identity
-  trace:        '#22d3ee',
-  traceGlow:    'rgba(34, 211, 238, 0.40)',
+  hypoLine:  '#ef4444',
+  hypoL2Line:'#dc2626',
+  hyperLine: '#f59e0b',
+  lowLine:   '#10b981',
+  trace:        '#22c55e',
+  traceGlow:    'rgba(34, 197, 94, 0.40)',
   traceHypoL1:  '#f59e0b',
   traceHypoL2:  '#ef4444',
   trueGlucose:  'rgba(238, 242, 250, 0.28)',
-
-  // IOB / COB / basal — distinct identities
-  iobFill:    'rgba(20, 184, 166, 0.28)',
-  iobFillTop: 'rgba(20, 184, 166, 0.55)',   // gradient top end
-  iobLine:    'rgba(20, 184, 166, 0.95)',
+  iobFill:    'rgba(59, 130, 246, 0.28)',
+  iobFillTop: 'rgba(59, 130, 246, 0.55)',
+  iobLine:    'rgba(59, 130, 246, 0.95)',
   cobFill:    'rgba(251, 191, 36, 0.22)',
   cobFillTop: 'rgba(251, 191, 36, 0.50)',
   cobLine:    'rgba(251, 191, 36, 0.90)',
   basalFill:  'rgba(52, 211, 153, 0.22)',
   basalLine:  'rgba(52, 211, 153, 0.85)',
-
-  // Event markers
-  bolusMarker: '#22d3ee',
+  bolusMarker: '#3b82f6',
   mealMarker:  '#fbbf24',
   smbMarker:   '#c084fc',
-
-  // "Future" region (right of the now-line)
   future: 'rgba(8, 12, 22, 0.45)',
   futureEdge: 'rgba(122, 162, 255, 0.35)',
 };
 
-const COMPARE_COLORS = {
-  trace:     '#fb7185',                    // rose — clearly distinct from cyan primary
+const LIGHT_PALETTE: ColorPalette = {
+  bg: '#ffffff',
+  grid: 'rgba(15, 23, 42, 0.10)',
+  gridStrong: 'rgba(15, 23, 42, 0.22)',
+  gridLabel: 'rgba(71, 85, 105, 0.85)',
+  gridDay: 'rgba(59, 130, 246, 0.35)',
+  greenBand: 'rgba(16, 185, 129, 0.10)',
+  amberBand: 'rgba(245, 158, 11, 0.12)',
+  redBand:   'rgba(239, 68, 68, 0.12)',
+  hypoLine:  '#dc2626',
+  hypoL2Line:'#b91c1c',
+  hyperLine: '#d97706',
+  lowLine:   '#16a34a',
+  trace:        '#16a34a',                       // Loop green CGM
+  traceGlow:    'rgba(22, 163, 74, 0.25)',
+  traceHypoL1:  '#d97706',
+  traceHypoL2:  '#dc2626',
+  trueGlucose:  'rgba(15, 23, 42, 0.22)',
+  iobFill:    'rgba(37, 99, 235, 0.22)',          // deep blue IOB
+  iobFillTop: 'rgba(37, 99, 235, 0.45)',
+  iobLine:    'rgba(37, 99, 235, 0.95)',
+  cobFill:    'rgba(245, 158, 11, 0.20)',         // amber carbs (distinct from CGM green)
+  cobFillTop: 'rgba(245, 158, 11, 0.45)',
+  cobLine:    'rgba(217, 119, 6, 0.90)',
+  basalFill:  'rgba(245, 158, 11, 0.18)',
+  basalLine:  'rgba(217, 119, 6, 0.85)',
+  bolusMarker: '#2563eb',
+  mealMarker:  '#d97706',
+  smbMarker:   '#9333ea',
+  future: 'rgba(15, 23, 42, 0.04)',
+  futureEdge: 'rgba(59, 130, 246, 0.30)',
+};
+
+const DARK_COMPARE: ComparePalette = {
+  trace:     '#fb7185',
   traceGlow: 'rgba(251, 113, 133, 0.35)',
   hypoL1:    '#fdba74',
   hypoL2:    '#f87171',
 };
+const LIGHT_COMPARE: ComparePalette = {
+  trace:     '#e11d48',
+  traceGlow: 'rgba(225, 29, 72, 0.25)',
+  hypoL1:    '#ea580c',
+  hypoL2:    '#dc2626',
+};
+
+let COLORS: ColorPalette = DARK_PALETTE;
+let COMPARE_COLORS: ComparePalette = DARK_COMPARE;
+
+export function setRendererTheme(theme: 'dark' | 'light'): void {
+  if (theme === 'light') { COLORS = LIGHT_PALETTE; COMPARE_COLORS = LIGHT_COMPARE; }
+  else { COLORS = DARK_PALETTE; COMPARE_COLORS = DARK_COMPARE; }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -326,13 +377,21 @@ export class CGMRenderer {
       this.dragStartX = e.clientX;
       this.dragStartOffset = this.viewOffsetMs;
       canvas.style.cursor = 'grabbing';
+      this.hideTooltip();
       e.preventDefault();
     });
 
     window.addEventListener('mousemove', (e) => {
-      if (!this.isDragging) return;
-      this.applyDrag(e.clientX);
+      if (this.isDragging) { this.applyDrag(e.clientX); return; }
     });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (this.isDragging) return;
+      const rect = canvas.getBoundingClientRect();
+      this.updateTooltip(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    canvas.addEventListener('mouseleave', () => this.hideTooltip());
 
     window.addEventListener('mouseup', () => {
       if (!this.isDragging) return;
@@ -420,6 +479,64 @@ export class CGMRenderer {
     for (const cb of this.viewChangeCallbacks) cb();
   }
 
+  // ── Hover tooltip ─────────────────────────────────────────────────────────
+
+  private tooltipEl: HTMLElement | null | undefined;
+
+  private getTooltipEl(): HTMLElement | null {
+    if (this.tooltipEl === undefined) {
+      this.tooltipEl = document.getElementById('cgm-tooltip');
+    }
+    return this.tooltipEl ?? null;
+  }
+
+  private hideTooltip(): void {
+    const el = this.getTooltipEl();
+    if (el) el.classList.remove('visible');
+  }
+
+  private updateTooltip(mouseX: number, mouseY: number): void {
+    const el = this.getTooltipEl();
+    if (!el) return;
+    const latest = this.ring.latest();
+    if (!latest) { this.hideTooltip(); return; }
+
+    const winStartMin = this.getWinStart(latest.simTimeMs);
+    const HIT_RADIUS = 14; // px
+
+    let bestDist = Infinity;
+    let bestX = 0, bestY = 0;
+    let bestEntry: RingEntry | null = null;
+
+    this.ring.forEach((entry) => {
+      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      const x = this.timeX(offsetMin);
+      const y = this.glucoseY(entry.cgm);
+      const d = Math.hypot(x - mouseX, y - mouseY);
+      if (d < bestDist) { bestDist = d; bestX = x; bestY = y; bestEntry = entry; }
+    });
+
+    if (!bestEntry || bestDist > HIT_RADIUS) { this.hideTooltip(); return; }
+    const e = bestEntry as RingEntry;
+
+    const isMmoll = this.options.displayUnit === 'mmoll';
+    const val = isMmoll ? (e.cgm / 18.0182).toFixed(1) : Math.round(e.cgm).toString();
+    const unit = isMmoll ? 'mmol/L' : 'mg/dL';
+
+    const totalMin = Math.round(e.simTimeMs / 60_000);
+    const days = Math.floor(totalMin / 1440);
+    const hours = Math.floor((totalMin % 1440) / 60);
+    const mins = totalMin % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const timeLabel = `D${days}+${pad(hours)}:${pad(mins)}`;
+
+    el.innerHTML = `<span class="time">${timeLabel}</span>${val} ${unit}`;
+    el.style.left = `${bestX}px`;
+    el.style.top = `${bestY}px`;
+    el.classList.add('visible');
+  }
+
   // ── Main render ───────────────────────────────────────────────────────────
 
   private render(): void {
@@ -466,31 +583,23 @@ export class CGMRenderer {
     const ctx = this.ctx;
     const xL = this.PAD_LEFT;
     const xR = this.PAD_LEFT + this.plotW;
-    const yTop      = this.glucoseY(TIR_HIGH);   // 180 mg/dL line
-    const yBot      = this.glucoseY(TIR_LOW);    //  70 mg/dL line
-    const yAmberBot = this.glucoseY(HYPO_L1);    //  54 mg/dL line
-    const yRedFloor = this.glucoseY(40);
+    const yHigh = this.glucoseY(TIR_HIGH);   // 180 mg/dL — dashed orange
+    const yLow  = this.glucoseY(TIR_LOW);    //  70 mg/dL — dashed green
+    const yVlow = this.glucoseY(HYPO_L1);    //  54 mg/dL — dashed red
 
-    // Translucent zone fills
-    ctx.fillStyle = COLORS.greenBand;
-    ctx.fillRect(xL, yTop, this.plotW, yBot - yTop);
-    ctx.fillStyle = COLORS.amberBand;
-    ctx.fillRect(xL, yBot, this.plotW, yAmberBot - yBot);
-    ctx.fillStyle = COLORS.redBand;
-    ctx.fillRect(xL, yAmberBot, this.plotW, yRedFloor - yAmberBot);
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([6, 5]);
 
-    // Crisp threshold lines on top of the bands
-    ctx.setLineDash([]);
-    ctx.lineWidth = 1.5;
     ctx.strokeStyle = COLORS.hyperLine;
-    ctx.beginPath(); ctx.moveTo(xL, yTop); ctx.lineTo(xR, yTop); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xL, yHigh); ctx.lineTo(xR, yHigh); ctx.stroke();
 
-    ctx.strokeStyle = COLORS.hypoLine;
-    ctx.beginPath(); ctx.moveTo(xL, yBot); ctx.lineTo(xR, yBot); ctx.stroke();
+    ctx.strokeStyle = COLORS.lowLine;
+    ctx.beginPath(); ctx.moveTo(xL, yLow); ctx.lineTo(xR, yLow); ctx.stroke();
 
-    ctx.lineWidth = 1;
     ctx.strokeStyle = COLORS.hypoL2Line;
-    ctx.beginPath(); ctx.moveTo(xL, yAmberBot); ctx.lineTo(xR, yAmberBot); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xL, yVlow); ctx.lineTo(xR, yVlow); ctx.stroke();
+
+    ctx.setLineDash([]);
   }
 
   private drawFutureSpace(winStartMin: number, animSimMs: number): void {

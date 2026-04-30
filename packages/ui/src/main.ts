@@ -5,7 +5,7 @@
 
 import type { TickSnapshot, DisplayUnit, WorkerState } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
-import { CGMRenderer } from './canvas-renderer.js';
+import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
 import { saveState, loadState, exportSession, importSession } from './storage.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
@@ -131,6 +131,7 @@ const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
 const iobVal           = getEl<HTMLElement>('iob-val');
 const cobVal           = getEl<HTMLElement>('cob-val');
 const unitToggle       = getEl<HTMLButtonElement>('unit-toggle');
+const themeToggle      = getEl<HTMLButtonElement>('theme-toggle');
 const btnPanel         = getEl<HTMLButtonElement>('btn-panel');
 const btnFullscreen    = getEl<HTMLButtonElement>('btn-fullscreen');
 const sidePanel        = getEl<HTMLElement>('side-panel');
@@ -362,6 +363,21 @@ unitToggle.addEventListener('click', () => {
   syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
+});
+
+// ── Theme toggle (light / dark) ─────────────────────────────────────────────
+function applyTheme(theme: 'dark' | 'light'): void {
+  document.documentElement.setAttribute('data-theme', theme);
+  setRendererTheme(theme);
+  themeToggle.textContent = theme === 'light' ? '☀' : '🌙';
+  renderer.markDirty();
+}
+const savedTheme = (localStorage.getItem('cgmsim.theme') as 'dark' | 'light' | null) ?? 'dark';
+applyTheme(savedTheme);
+themeToggle.addEventListener('click', () => {
+  const next: 'dark' | 'light' = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem('cgmsim.theme', next);
+  applyTheme(next);
 });
 
 // ── Panel and tabs ────────────────────────────────────────────────────────────
