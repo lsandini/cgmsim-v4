@@ -157,20 +157,79 @@
     .pill.cob .val { color: var(--cob); }
     .pill.scenario {
       text-transform: none;
-      color: var(--text);
-      font-weight: 500;
       letter-spacing: 0.02em;
+      gap: 8px;
     }
-    .pill.scenario .mode::before {
-      content: '·';
+    .pill.scenario .dot { opacity: 0.5; }
+
+    /* Custom dropdown — used inside the scenario pill */
+    .dropdown { position: relative; display: inline-flex; }
+    .dropdown-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      border: none;
       color: var(--text-muted);
-      margin: 0 8px;
+      font: inherit;
+      letter-spacing: inherit;
+      padding: 0;
+      cursor: pointer;
+      outline: none;
+    }
+    .dropdown-trigger:hover { color: var(--text); }
+    .dropdown-caret {
+      font-size: 18px;
+      line-height: 1;
+      opacity: 0.9;
+      transition: transform 0.12s ease;
+    }
+    .dropdown[data-open="true"] .dropdown-caret { transform: rotate(180deg); }
+
+    .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      min-width: 100%;
+      list-style: none;
+      margin: 0;
+      padding: 4px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      z-index: 20;
+    }
+    .dropdown-menu li {
+      padding: 2px 14px;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .dropdown-menu li:hover { background: var(--accent-soft); }
+    .dropdown-menu li[aria-selected="true"] {
+      color: var(--accent);
+      background: var(--accent-soft);
     }
     button.pill {
       cursor: pointer;
       transition: color 0.15s, border-color 0.15s;
     }
     button.pill:hover { color: var(--text); border-color: var(--accent); }
+
+    /* Icon-only pill: fixed square so emoji glyph variants don't shift width */
+    .pill-icon {
+      width: 36px;
+      padding: 0;
+      justify-content: center;
+      font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+      font-size: 16px;
+      line-height: 32px;
+      text-align: center;
+    }
 
     /* Canvas area */
     #canvas-area {
@@ -608,7 +667,21 @@
     <div id="top-strip">
       <div class="pill iob" id="iob-cob-iob">IOB <span class="val" id="iob-val">0.00</span><span class="unit">U</span></div>
       <div class="pill cob" id="iob-cob-cob">COB <span class="val" id="cob-val">0</span><span class="unit">g</span></div>
-      <div class="pill scenario" id="scenario-badge"><span class="who">Default patient</span><span class="mode">Pump (open loop)</span></div>
+      <div class="pill scenario" id="scenario-badge">
+        <span class="who">Default patient</span><span class="dot">·</span>
+        <div class="dropdown" id="scenario-mode-dd">
+          <button type="button" class="dropdown-trigger" id="scenario-mode-btn"
+                  aria-haspopup="listbox" aria-expanded="false" title="Therapy strategy">
+            <span class="dropdown-label">Pump (open loop)</span>
+            <span class="dropdown-caret" aria-hidden="true">▾</span>
+          </button>
+          <ul class="dropdown-menu" role="listbox" hidden>
+            <li role="option" data-value="AID">AID mode</li>
+            <li role="option" data-value="PUMP" aria-selected="true">Pump (open loop)</li>
+            <li role="option" data-value="MDI">MDI</li>
+          </ul>
+        </div>
+      </div>
       <div class="spacer"></div>
       <div id="view-controls">
         <button class="view-btn" id="btn-zoom-3h">3h</button>
@@ -618,7 +691,7 @@
         <button class="view-btn live-btn" id="btn-live" hidden>↩ Live</button>
       </div>
       <button class="pill" id="unit-toggle" title="Toggle display units">mmol/L</button>
-      <button class="pill" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
+      <button class="pill pill-icon" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
     </div>
 
     <div id="canvas-area">

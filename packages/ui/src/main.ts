@@ -177,7 +177,11 @@ const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
 const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
 const btnLive          = getEl<HTMLButtonElement>('btn-live');
 const scenarioBadge    = getEl<HTMLElement>('scenario-badge');
-const scenarioMode     = scenarioBadge.querySelector<HTMLElement>('.mode')!;
+const scenarioModeDD   = getEl<HTMLElement>('scenario-mode-dd');
+const scenarioModeBtn  = getEl<HTMLButtonElement>('scenario-mode-btn');
+const scenarioModeLbl  = scenarioModeBtn.querySelector<HTMLElement>('.dropdown-label')!;
+const scenarioModeMenu = scenarioModeDD.querySelector<HTMLElement>('.dropdown-menu')!;
+void scenarioBadge;
 const btnSnapshot      = getEl<HTMLButtonElement>('btn-snapshot');
 const btnRunCompare    = getEl<HTMLButtonElement>('btn-run-compare');
 const btnStopCompare   = getEl<HTMLButtonElement>('btn-stop-compare');
@@ -369,7 +373,7 @@ unitToggle.addEventListener('click', () => {
 function applyTheme(theme: 'dark' | 'light'): void {
   document.documentElement.setAttribute('data-theme', theme);
   setRendererTheme(theme);
-  themeToggle.textContent = theme === 'light' ? '☀' : '🌙';
+  themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
   renderer.markDirty();
 }
 const savedTheme = (localStorage.getItem('cgmsim.theme') as 'dark' | 'light' | null) ?? 'dark';
@@ -436,7 +440,10 @@ btnMeal.addEventListener('click', () => {
 function onTherapyChange(): void {
   const mode = therapyMode.value as 'AID' | 'PUMP' | 'MDI';
   const modeLabel = mode === 'AID' ? 'AID mode' : mode === 'PUMP' ? 'Pump (open loop)' : 'MDI';
-  scenarioMode.textContent = modeLabel;
+  scenarioModeLbl.textContent = modeLabel;
+  scenarioModeMenu.querySelectorAll<HTMLElement>('li[role="option"]').forEach((li) => {
+    li.setAttribute('aria-selected', li.dataset.value === mode ? 'true' : 'false');
+  });
   bridge.setTherapyParam({
     mode,
     glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),
@@ -457,6 +464,32 @@ function onTherapyChange(): void {
   el.addEventListener('change', onTherapyChange)
 );
 enableSMB.addEventListener('change', onTherapyChange);
+
+// Scenario mode dropdown — custom listbox (Edge ignores native <option> padding)
+function setScenarioMenuOpen(open: boolean): void {
+  scenarioModeDD.setAttribute('data-open', String(open));
+  scenarioModeBtn.setAttribute('aria-expanded', String(open));
+  scenarioModeMenu.hidden = !open;
+}
+scenarioModeBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setScenarioMenuOpen(scenarioModeMenu.hidden);
+});
+scenarioModeMenu.addEventListener('click', (e) => {
+  const li = (e.target as HTMLElement).closest<HTMLElement>('li[role="option"]');
+  if (!li) return;
+  const value = li.dataset.value!;
+  therapyMode.value = value;
+  setScenarioMenuOpen(false);
+  onTherapyChange();
+});
+document.addEventListener('click', (e) => {
+  if (scenarioModeMenu.hidden) return;
+  if (!scenarioModeDD.contains(e.target as Node)) setScenarioMenuOpen(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !scenarioModeMenu.hidden) setScenarioMenuOpen(false);
+});
 
 // ── Temp basal ────────────────────────────────────────────────────────────────
 
