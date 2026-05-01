@@ -192,6 +192,7 @@ const basalProfileRows = getEl<HTMLElement>('basal-profile-rows');
 const btnAddBasal      = getEl<HTMLButtonElement>('btn-add-basal');
 const sectionMDI       = getEl<HTMLElement>('section-mdi');
 const sectionBasal     = getEl<HTMLElement>('section-basal');
+const sectionTempBasal = getEl<HTMLElement>('section-temp-basal');
 
 // ── Simulators ────────────────────────────────────────────────────────────────
 
@@ -568,11 +569,12 @@ function onTherapyChange(): void {
     rapidDia:      parseFloat(progDIA.value),
     enableSMB:     enableSMB.checked,
   });
-  sectionMDI.style.display      = mode === 'MDI'  ? 'block' : 'none';
-  sectionBasal.style.display    = mode !== 'MDI'  ? 'block' : 'none';
-  rowSMB.style.display          = mode === 'AID'  ? 'flex'  : 'none';
-  rowOverlayBasal.style.display = mode !== 'MDI'  ? 'flex'  : 'none';
-  renderer.options.therapyMode  = mode;
+  sectionMDI.style.display       = mode === 'MDI'  ? 'block' : 'none';
+  sectionBasal.style.display     = mode !== 'MDI'  ? 'block' : 'none';
+  sectionTempBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
+  rowSMB.style.display           = mode === 'AID'  ? 'flex'  : 'none';
+  rowOverlayBasal.style.display  = mode !== 'MDI'  ? 'flex'  : 'none';
+  renderer.options.therapyMode   = mode;
   renderer.markDirty();
 }
 
