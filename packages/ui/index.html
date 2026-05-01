@@ -33,6 +33,7 @@
 
       /* Glycaemic zones — punchy hues, low band opacity */
       --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.08);
       --amber: #f59e0b;
       --red: #ef4444;
       --green-range: rgba(16, 185, 129, 0.18);
@@ -83,6 +84,7 @@
       --basal-soft: rgba(217, 119, 6, 0.18);
 
       --green: #16a34a;
+      --green-soft: rgba(22, 163, 74, 0.08);
       --amber: #d97706;
       --red:   #dc2626;
       --green-range: rgba(22, 163, 74, 0.10);
@@ -563,6 +565,24 @@
       border-color: var(--accent);
     }
 
+    .long-acting-row input[type="number"],
+    .long-acting-row input[type="time"],
+    .long-acting-row select {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 13px;
+      font-family: var(--font);
+    }
+    .long-acting-row input[type="number"]:focus,
+    .long-acting-row input[type="time"]:focus,
+    .long-acting-row select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
     .long-acting-row {
       display: grid;
       grid-template-columns: 60px 1fr 50px 80px auto;
@@ -577,7 +597,7 @@
     }
     .long-acting-row.active {
       border-color: var(--green);
-      background: rgba(16, 185, 129, 0.08);
+      background: var(--green-soft);
     }
     .long-acting-row .la-row-label {
       font-size: 12px;
@@ -615,6 +635,9 @@
       0%, 100% { transform: translateX(0); }
       25% { transform: translateX(-3px); }
       75% { transform: translateX(3px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .long-acting-row.invalid { animation: none; }
     }
 
     .bolus-row {
