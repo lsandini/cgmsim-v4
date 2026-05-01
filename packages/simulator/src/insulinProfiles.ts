@@ -16,6 +16,18 @@ export interface InsulinProfile {
   dia: number;
 }
 
+/**
+ * Long-acting PK profile: dose- and weight-dependent.
+ * `duration(units, weight)` returns total activity duration in minutes.
+ * `peak(duration)` returns time to peak activity in minutes (often a fixed ratio of duration).
+ *
+ * Formulas ported verbatim from v3 cgmsim-lib drug.js:14-44.
+ */
+export interface LongActingPKProfile {
+  duration: (units: number, weightKg: number) => number;
+  peak: (durationMin: number) => number;
+}
+
 // ── Rapid-acting analogues ───────────────────────────────────────────────────
 
 export const RAPID_PROFILES: Record<RapidAnalogueType, InsulinProfile> = {
@@ -27,13 +39,27 @@ export const RAPID_PROFILES: Record<RapidAnalogueType, InsulinProfile> = {
   Aspart: { peak: 75, dia: 5 },
 };
 
-// ── Long-acting analogues ────────────────────────────────────────────────────
+// ── Long-acting analogues (v3-faithful, dose- and weight-dependent) ──────────
 
-export const LONG_ACTING_PROFILES: Record<LongActingType, InsulinProfile> = {
-  /** Glargine U100 (Lantus/Basaglar): very flat, peak ~5–8 h, DIA 24 h */
-  Glargine: { peak: 360, dia: 24 },
-  /** Degludec (Tresiba): near-peakless, DIA ~42 h */
-  Degludec: { peak: 600, dia: 42 },
-  /** Detemir (Levemir): mild peak ~6–8 h, DIA 20 h */
-  Detemir: { peak: 420, dia: 20 },
+export const LONG_ACTING_PROFILES: Record<LongActingType, LongActingPKProfile> = {
+  /** Glargine U100 (Lantus). v3 GLA: dur = (22 + 12·U/wt)·60 min; peak = dur/2.5 */
+  GlargineU100: {
+    duration: (units, weightKg) => (22 + 12 * units / weightKg) * 60,
+    peak: (dur) => dur / 2.5,
+  },
+  /** Glargine U300 (Toujeo). v3 TOU: dur = (24 + 14·U/wt)·60 min; peak = dur/2.5 — longer & flatter than Lantus. */
+  GlargineU300: {
+    duration: (units, weightKg) => (24 + 14 * units / weightKg) * 60,
+    peak: (dur) => dur / 2.5,
+  },
+  /** Detemir (Levemir). v3 DET: dur = (14 + 24·U/wt)·60 min; peak = dur/3 — strongly dose-dependent. */
+  Detemir: {
+    duration: (units, weightKg) => (14 + 24 * units / weightKg) * 60,
+    peak: (dur) => dur / 3,
+  },
+  /** Degludec (Tresiba). v3 DEG: dur = 42·60 min (dose-independent); peak = dur/3. */
+  Degludec: {
+    duration: () => 42 * 60,
+    peak: (dur) => dur / 3,
+  },
 };
