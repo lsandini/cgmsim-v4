@@ -102,7 +102,7 @@ export interface TherapyProfile {
 }
 
 export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
-  mode: 'PUMP',
+  mode: 'MDI',
   basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
   rapidAnalogue: 'Fiasp',
   rapidDia: 5,

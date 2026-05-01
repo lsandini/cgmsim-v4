@@ -743,7 +743,7 @@ btnReset.addEventListener('click', () => {
     simTimeMs:0, trueGlucose:100, lastCGM:100,
     patient:{weight:75,diabetesDuration:10,trueISF:40,trueCR:12,
              dia:6,carbsAbsTime:360,gastricEmptyingRate:1},
-    therapy:{mode:'PUMP',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
+    therapy:{mode:'MDI',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
              rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
              glucoseTarget:100,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
