@@ -10,9 +10,6 @@ export default defineConfig({
       '@cgmsim/simulator': resolve(__dirname, '../simulator/src/index.ts'),
     },
   },
-  worker: {
-    format: 'es',
-  },
   build: {
     target: 'es2022',
     outDir: 'dist',

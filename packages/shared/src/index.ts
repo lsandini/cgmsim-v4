@@ -161,7 +161,8 @@ export interface ActiveLongActing {
 }
 
 // ------------------------------------------------------------
-// WebWorker State (complete, serialisable)
+// Simulation state — complete, serialisable snapshot used for
+// save/restore and comparison-run snapshots.
 // ------------------------------------------------------------
 
 export interface WorkerState {
@@ -199,85 +200,12 @@ export interface WorkerState {
   /** Throttle factor (1 = real time, 100 = max). */
   throttle: number;
 
-  /** Whether the worker is currently running. */
+  /** Whether the simulator is currently running. */
   running: boolean;
 }
 
 // ------------------------------------------------------------
-// WebWorker Inbound Messages (main thread → worker)
-// ------------------------------------------------------------
-
-export interface MsgBolus {
-  type: 'BOLUS';
-  units: number;
-  analogue?: RapidAnalogueType;
-}
-
-export interface MsgMeal {
-  type: 'MEAL';
-  carbsG: number;
-  gastricEmptyingRate?: number;
-}
-
-export interface MsgSetBasal {
-  type: 'SET_BASAL';
-  rateUPerHour: number;
-  /** Duration in simulated minutes; omit to persist indefinitely. */
-  durationMinutes?: number;
-}
-
-export interface MsgSetTarget {
-  type: 'SET_TARGET';
-  targetMgdL: MgdL;
-}
-
-export interface MsgSetPatientParam {
-  type: 'SET_PATIENT_PARAM';
-  patch: Partial<VirtualPatient>;
-}
-
-export interface MsgSetTherapyParam {
-  type: 'SET_THERAPY_PARAM';
-  patch: Partial<TherapyProfile>;
-}
-
-export interface MsgSetThrottle {
-  type: 'SET_THROTTLE';
-  throttle: number;
-}
-
-export interface MsgPause {
-  type: 'PAUSE';
-}
-
-export interface MsgResume {
-  type: 'RESUME';
-}
-
-export interface MsgSaveState {
-  type: 'SAVE_STATE';
-}
-
-export interface MsgReset {
-  type: 'RESET';
-  state: WorkerState;
-}
-
-export type WorkerInboundMessage =
-  | MsgBolus
-  | MsgMeal
-  | MsgSetBasal
-  | MsgSetTarget
-  | MsgSetPatientParam
-  | MsgSetTherapyParam
-  | MsgSetThrottle
-  | MsgPause
-  | MsgResume
-  | MsgSaveState
-  | MsgReset;
-
-// ------------------------------------------------------------
-// WebWorker Outbound Messages (worker → main thread)
+// Tick snapshot — emitted by the simulator each tick to UI handlers.
 // ------------------------------------------------------------
 
 /** Posted every tick. Deliberately minimal — only what the UI needs. */
@@ -295,13 +223,6 @@ export interface TickSnapshot {
   /** AID basal delivery this tick (U/hr equivalent). */
   basalRate: number;
 }
-
-export interface StateSavedMessage {
-  type: 'STATE_SAVED';
-  state: WorkerState;
-}
-
-export type WorkerOutboundMessage = TickSnapshot | StateSavedMessage;
 
 // ------------------------------------------------------------
 // Session History Record

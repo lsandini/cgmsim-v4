@@ -1,6 +1,6 @@
 // packages/simulator public API
-// The worker file is imported directly by packages/ui via Vite's ?worker syntax.
-// This index exports utilities useful for unit testing outside the browser.
+// Exports the physics-engine utilities consumed by the UI package
+// (InlineSimulator) and by the Vitest unit tests.
 export { computeDeltaBG } from './deltaBG.js';
 export { calculateCarbEffect, calculateCOB, resolveMealSplit } from './carbs.js';
 export { calculateEGP } from './egp.js';
