@@ -143,6 +143,8 @@ export interface RendererOptions {
   displayUnit: DisplayUnit;
   primaryLabel: string;
   compareLabel: string;
+  /** Therapy mode — used to suppress mode-irrelevant overlays (e.g. basal in MDI). */
+  therapyMode: 'AID' | 'PUMP' | 'MDI';
 }
 
 interface RingEntry {
@@ -230,6 +232,7 @@ export class CGMRenderer {
     displayUnit: 'mmoll',
     primaryLabel: 'Run A',
     compareLabel: 'Run B',
+    therapyMode: 'PUMP',
   };
 
   private readonly PAD_LEFT        = 56;
@@ -562,7 +565,7 @@ export class CGMRenderer {
     this.drawFutureSpace(winStartMin, animSimMs);
     this.drawGrid(winStartMin);
 
-    if (this.options.showBasal) this.drawBasalOverlay(winStartMin);
+    if (this.options.showBasal && this.options.therapyMode !== 'MDI') this.drawBasalOverlay(winStartMin);
     if (this.options.showCOB) this.drawCOBOverlay(winStartMin);
     if (this.options.showIOB) this.drawIOBOverlay(winStartMin);
     if (this.options.showTrueGlucose) this.drawTrueLine(winStartMin);

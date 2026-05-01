@@ -160,6 +160,7 @@ const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
 const enableSMB        = getEl<HTMLInputElement>('enable-smb');
 const rowSMB           = getEl<HTMLElement>('row-smb');
+const rowOverlayBasal  = getEl<HTMLElement>('row-overlay-basal');
 const overlayBasal     = getEl<HTMLInputElement>('overlay-basal');
 const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
 const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
@@ -567,9 +568,12 @@ function onTherapyChange(): void {
     rapidDia:      parseFloat(progDIA.value),
     enableSMB:     enableSMB.checked,
   });
-  sectionMDI.style.display   = mode === 'MDI'  ? 'block' : 'none';
-  sectionBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
-  rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
+  sectionMDI.style.display      = mode === 'MDI'  ? 'block' : 'none';
+  sectionBasal.style.display    = mode !== 'MDI'  ? 'block' : 'none';
+  rowSMB.style.display          = mode === 'AID'  ? 'flex'  : 'none';
+  rowOverlayBasal.style.display = mode !== 'MDI'  ? 'flex'  : 'none';
+  renderer.options.therapyMode  = mode;
+  renderer.markDirty();
 }
 
 [therapyMode, glucoseTarget, rapidAnalogue, progDIA].forEach(el =>
