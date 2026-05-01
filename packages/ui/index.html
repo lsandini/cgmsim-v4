@@ -253,9 +253,12 @@
       right: 0;
       bottom: var(--control-height);
       width: var(--panel-width);
-      /* Frosted glass: slightly translucent so backdrop-filter can blur the
-         canvas behind. Reads unambiguously as a floating overlay layer. */
-      background: rgba(18, 24, 41, 0.88);
+      /* Frosted glass: translucent so backdrop-filter can blur the canvas
+         behind. Inner left-edge gradient gives a visible "edge glow" even
+         in dark mode where blurring a near-empty dark canvas reveals little. */
+      background:
+        linear-gradient(to right, rgba(122, 162, 255, 0.10) 0, rgba(122, 162, 255, 0) 24px),
+        rgba(18, 24, 41, 0.72);
       backdrop-filter: blur(28px) saturate(140%);
       -webkit-backdrop-filter: blur(28px) saturate(140%);
       border-left: 1px solid var(--border);
@@ -266,7 +269,9 @@
       z-index: 10;
     }
     html[data-theme="light"] #side-panel {
-      background: rgba(245, 247, 250, 0.82);
+      background:
+        linear-gradient(to right, rgba(15, 23, 42, 0.06) 0, rgba(15, 23, 42, 0) 24px),
+        rgba(245, 247, 250, 0.78);
       box-shadow: -18px 0 48px rgba(15, 23, 42, 0.15);
     }
 
