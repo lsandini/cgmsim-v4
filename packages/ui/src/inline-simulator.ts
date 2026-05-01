@@ -344,6 +344,8 @@ export class InlineSimulator {
       g6State: this.s.g6.getState(),
       activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
       activeLongActing: [...this.s.activeLongActing],
+      lastMorningDay: this.s.lastMorningDay,
+      lastEveningDay: this.s.lastEveningDay,
       pidCGMHistory: [...this.s.pidCGMHistory],
       pidPrevRate: this.s.pidPrevRate,
       pidTicksSinceLastMB: this.s.pidTicksSinceLastMB,
@@ -365,7 +367,10 @@ export class InlineSimulator {
       pidTicksSinceLastMB: state.pidTicksSinceLastMB ?? 999,
       throttle: state.throttle, running: false,
       g6: createG6NoiseGenerator(1, state.g6State),
-      rngState: randomSeed(), lastMorningDay: -1, lastEveningDay: -1, tempBasal: null, events: [],
+      rngState: randomSeed(),
+      lastMorningDay: state.lastMorningDay ?? -1,
+      lastEveningDay: state.lastEveningDay ?? -1,
+      tempBasal: null, events: [],
     });
   }
 

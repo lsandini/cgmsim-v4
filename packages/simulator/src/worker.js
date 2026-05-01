@@ -46,6 +46,8 @@ function createInitialCoreState() {
         activeBoluses: [],
         activeMeals: [],
         activeLongActing: [],
+        lastMorningDay: -1,
+        lastEveningDay: -1,
         pidCGMHistory: [],
         pidPrevRate: 0.8,
         pidTicksSinceLastMB: 999,

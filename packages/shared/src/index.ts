@@ -183,6 +183,12 @@ export interface WorkerState {
   activeMeals: ActiveMeal[];
   activeLongActing: ActiveLongActing[];
 
+  /** Last sim-day on which the morning long-acting slot fired (-1 = never).
+   *  Persisted so save/restore mid-day doesn't re-fire today's morning dose. */
+  lastMorningDay: number;
+  /** Same for the evening slot. */
+  lastEveningDay: number;
+
   /** PID controller: last ≤24 CGM readings for integral term (oldest first). */
   pidCGMHistory: number[];
   /** PID controller: last delivered basal rate for rate-of-change limiting. */

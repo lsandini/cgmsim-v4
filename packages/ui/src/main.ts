@@ -748,6 +748,7 @@ btnReset.addEventListener('click', () => {
              glucoseTarget:100,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
+    lastMorningDay:-1,lastEveningDay:-1,
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
   setSlot('morning', null);
