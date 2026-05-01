@@ -585,7 +585,7 @@
 
     .long-acting-row {
       display: grid;
-      grid-template-columns: 48px 1fr 44px 78px auto;
+      grid-template-columns: 60px 1fr 38px 78px auto;
       gap: 4px;
       align-items: center;
       padding: 6px 8px;
@@ -623,6 +623,8 @@
       color: var(--text);
       cursor: pointer;
       font-size: 13px;
+      min-width: 64px;       /* fits the wider "Unset" label so the dropdown column doesn't shrink on Set */
+      text-align: center;
     }
     .long-acting-row.active .la-set-btn {
       border-color: var(--green);
