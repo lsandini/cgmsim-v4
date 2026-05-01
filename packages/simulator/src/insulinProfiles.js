@@ -24,4 +24,3 @@ export const LONG_ACTING_PROFILES = {
     /** Detemir (Levemir): mild peak ~6–8 h, DIA 20 h */
     Detemir: { peak: 420, dia: 20 },
 };
-//# sourceMappingURL=insulinProfiles.js.map

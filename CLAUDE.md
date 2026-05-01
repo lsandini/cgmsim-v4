@@ -20,17 +20,18 @@ npm run test         # Vitest unit tests (packages/simulator)
 npm run typecheck    # TypeScript strict check across all packages
 ```
 
-Within packages/ui:
 ```bash
-npm run build:standalone   # Produces the single-file HTML via inline.mjs
+npm run build:standalone   # Produces the single-file HTML (root shortcut, forwards to packages/ui)
 ```
+
+The standalone is built by `vite-plugin-singlefile` (configured in `packages/ui/vite.config.ts`), which inlines the JS bundle into `dist/index.html`. The script then renames it to `dist/cgmsim-v4-standalone.html`.
 
 ## After every code change
 
 Always rebuild the standalone file before reporting work as done:
 
 ```bash
-cd packages/ui && npm run build:standalone
+npm run build:standalone
 ```
 
 This is the primary deliverable — the `.ts` sources alone are not sufficient.
@@ -47,7 +48,8 @@ This is the primary deliverable — the `.ts` sources alone are not sufficient.
 - **Two-layer DIA**: `patient.dia` (true physiology) drives the actual physical decay of bolus and pump-microbolus insulin — `ActiveBolus.dia` and `pumpMicroBoluses[].dia` are stamped from it at injection time. `therapy.rapidDia` (the controller's programmed belief) is read **only** by `pid.ts` for the equilibrium-IOB calculation. The mismatch is the v4 teaching scenario.
 - The `.js` files in `packages/simulator/src/` are the live runtime files resolved directly by Vite. They must be kept manually in sync with the `.ts` sources. `TICK_MINUTES` in all simulator `.js` files is **5**.
 - The `.js` files in `packages/ui/src/` are **NOT** used at runtime — Vite bundles directly from `main.ts`. They are gitignored. UI `tsconfig.json` has `noEmit: true` so `tsc --build` does not regenerate them. Only edit `.ts` for UI code.
-- Sourcemaps (`*.js.map`) are gitignored; they are debug aids only and not part of the runtime contract.
+- Sourcemaps (`*.js.map`) are gitignored; they are debug aids only and not part of the runtime contract. `packages/simulator/tsconfig.json` has `sourceMap: false` so `tsc --build` no longer emits `.js.map` files into `dist/` — this prevents stale `//# sourceMappingURL` comments from appearing in `src/*.js` if someone copies output back.
+- Build toolchain: **Vite 8.0.x** (UI workspace) + **vite-plugin-singlefile 2.3.x** for standalone inlining. Dev server resolves TS on the fly; production build inlines the JS bundle into `dist/index.html`, then the npm script renames it to `dist/cgmsim-v4-standalone.html`. There is no separate `inline.mjs` — the plugin replaced it.
 
 ## AID / PID-IFB controller
 
@@ -106,7 +108,7 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 - **EGP** is a faithful port of v3 `liver.js` + `sinus.js`: hardcoded sinus (1 + 0.2·sin(2π·hour/24), peak 6 AM) plus Hill-curve insulin suppression of hepatic output (max 65%, EC50 = 2× physiological basal flux). Hypo counter-regulation is a v4-only extension (kicks in below 80 mg/dL, scaled by diabetes duration).
 - **Two-layer params exposed in the panel:** True ISF / True ICR / True DIA / Weight / Diabetes duration drive the patient physiology; Glucose target / Programmed DIA drive the controller. Bolus-advisor scaffolding (`programmedISF`, `programmedCR`, `correctionThreshold`) was removed — users decide doses manually.
 - Vestigial fields removed: `patient.tp`, `patient.age`, `patient.gender`, `GenderType`.
-- 68 unit tests passing (`packages/simulator/src/physics.test.ts` and `.js`).
+- 102 unit tests passing (`packages/simulator/src/physics.test.ts` and `.js`) under Vitest 4.
 
 ## Upcoming work (next priorities)
 

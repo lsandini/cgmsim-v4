@@ -73,4 +73,3 @@ export function calculateEGP(patient, simTimeMs, isf, insulinActivity = 0, curre
     }
     return egpPerMin * TICK_MINUTES;
 }
-//# sourceMappingURL=egp.js.map

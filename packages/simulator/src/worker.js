@@ -283,4 +283,3 @@ self.addEventListener('message', (event) => {
 });
 // ── Auto-start ────────────────────────────────────────────────────────────────
 // Worker starts paused; the main thread sends RESUME to begin.
-//# sourceMappingURL=worker.js.map

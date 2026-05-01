@@ -8,4 +8,3 @@ export { DexcomG6Noise, createG6NoiseGenerator } from './g6Noise.js';
 export { runPID, rateToMicroBolus } from './pid.js';
 export { RAPID_PROFILES, LONG_ACTING_PROFILES } from './insulinProfiles.js';
 export { getExpTreatmentActivity, getExpTreatmentIOB } from './utils.js';
-//# sourceMappingURL=index.js.map

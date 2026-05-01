@@ -61,4 +61,3 @@ export function roundTo8Decimals(n) {
 export function getDeltaMinutes(eventSimTimeMs, nowSimTimeMs) {
     return (nowSimTimeMs - eventSimTimeMs) / 60_000;
 }
-//# sourceMappingURL=utils.js.map

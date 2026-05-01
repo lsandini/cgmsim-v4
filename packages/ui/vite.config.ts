@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 
 export default defineConfig({
+  plugins: [viteSingleFile()],
   resolve: {
     alias: {
       '@cgmsim/shared': resolve(__dirname, '../shared/src/index.ts'),
@@ -14,6 +16,6 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
-    minify: false
+    minify: false,
   },
 });

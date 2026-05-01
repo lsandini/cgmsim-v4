@@ -10,7 +10,7 @@ CGMSIM v4 is an npm-workspaces monorepo with three packages:
 
 ## Prerequisites
 
-- Node.js 20+ (works on 22)
+- Node.js **20.19+** or **22.12+** (Vite 8 minimum). Tested on Node 22.
 - npm 10+ (ships with Node 20)
 
 ## Setup (once after cloning)
@@ -38,10 +38,12 @@ Starts Vite at `http://localhost:5173`. Edit any `.ts` file in any package and t
 ### B. Build the standalone HTML (the teaching deliverable)
 
 ```bash
-cd packages/ui && npm run build:standalone
+npm run build:standalone
 ```
 
-Output: **`packages/ui/dist/cgmsim-v4-standalone.html`** — a single self-contained HTML file with all CSS, JS, and assets inlined. Open it directly in any browser; no server, no install. This is the file you ship to teachers.
+Run from the repo root — there's a workspace shortcut that forwards to `packages/ui`. Output: **`packages/ui/dist/cgmsim-v4-standalone.html`** — a single self-contained HTML file with all CSS, JS, and assets inlined. Open it directly in any browser; no server, no install. This is the file you ship to teachers.
+
+Inlining is done by the [`vite-plugin-singlefile`](https://www.npmjs.com/package/vite-plugin-singlefile) plugin (configured in `packages/ui/vite.config.ts`). The plugin produces `dist/index.html` with the JS bundle inlined; the npm script then renames it to `cgmsim-v4-standalone.html`.
 
 > Always rebuild this after every change before reporting work as done.
 
@@ -51,23 +53,23 @@ Output: **`packages/ui/dist/cgmsim-v4-standalone.html`** — a single self-conta
 
 ```bash
 npm run typecheck   # tsc --build across all packages — catches type errors
-npm run test        # Vitest unit tests in packages/simulator (68 tests)
+npm run test        # Vitest 4 unit tests in packages/simulator (102 tests)
 ```
 
 These run from the repo root and cover all packages.
 
 ---
 
-## What `npm run build` does (and why you usually don't need it)
+## `npm run build` vs `npm run build:standalone`
 
-There are two confusingly-named build commands:
+Both produce the same single-file standalone — the plugin always inlines. The only difference is what runs around the Vite step:
 
-| Command | Where to run | Output |
+| Command | Where | What it does |
 |---|---|---|
-| `npm run build` | repo root | Type-checked split bundle: declarations in `packages/{shared,simulator}/dist/`, multi-file Vite output in `packages/ui/dist/` |
-| `npm run build:standalone` | `packages/ui/` | The single-file HTML that gets shipped |
+| `npm run build` | repo root | `tsc --noEmit` → `vite build` → rename. Type-checks everything first. Also builds `packages/shared` and `packages/simulator` declaration files into their `dist/` directories. |
+| `npm run build:standalone` | repo root | `vite build` → rename. Skips typecheck and the other workspaces. Faster iteration. |
 
-**You almost never want `npm run build`.** It exists for CI type-validation and for downstream packages that want to consume `@cgmsim/simulator` as a typed library. For day-to-day work and for shipping the simulator, use `dev` or `build:standalone`.
+For day-to-day shipping use `build:standalone`. Use `build` (or `npm run typecheck` separately) when you want type validation — e.g., before committing.
 
 ---
 
@@ -87,7 +89,7 @@ The `ui/tsconfig.json` has `"noEmit": true` so `tsc --build` does not generate `
 This is the one place where you must edit *both* `.ts` and `.js` for the same change.
 
 **4. Sourcemaps and `tsbuildinfo` are gitignored.**
-`*.js.map` files for simulator runtime, all UI `.js` and `.map`, and `*.tsbuildinfo` are ignored. Don't commit them.
+`*.js.map` files for simulator runtime, all UI `.js` and `.map`, and `*.tsbuildinfo` are ignored. Don't commit them. `packages/simulator/tsconfig.json` has `sourceMap: false` so `tsc --build` no longer emits `.js.map` into `dist/` — the simulator `.js` files in `src/` are hand-maintained and shouldn't carry trailing `//# sourceMappingURL` comments. If you ever copy `dist/*.js` back into `src/`, strip those comments.
 
 ---
 
@@ -109,8 +111,8 @@ This is the one place where you must edit *both* `.ts` and `.js` for the same ch
 **`npm run dev` fails with module-resolution errors.**
 You probably ran `npm install` inside a sub-package. From the repo root: `rm -rf node_modules packages/*/node_modules && npm install`.
 
-**`npm run build:standalone` succeeds but the file is huge / chunked.**
-Make sure you ran `npm run build:standalone` (not `npm run build`). Check the output ends with `OK: ...cgmsim-v4-standalone.html`.
+**`npm run build:standalone` succeeds but `dist/` is empty / has multiple files.**
+Confirm `vite-plugin-singlefile` is loaded — `packages/ui/vite.config.ts` should `import { viteSingleFile } from 'vite-plugin-singlefile'` and include `viteSingleFile()` in `plugins`. Without the plugin, Vite will produce a split `index.html` + `assets/index-XXXX.js` instead of one inlined file.
 
 **Tests pass via `npm run test` but the standalone behaves differently.**
 You probably edited a simulator `.ts` without updating its `.js` sibling. Diff them and align — see Architecture note 3.
