@@ -43,7 +43,7 @@ const INITIAL_BG   = 100;
 export type SimEvent =
   | { kind: 'bolus';      simTimeMs: number; units: number }
   | { kind: 'meal';       simTimeMs: number; carbsG: number }
-  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: string }
+  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: import('@cgmsim/shared').LongActingType; slot: 'morning' | 'evening' }
   | { kind: 'smb';        simTimeMs: number; units: number };
 
 interface TempBasal {
@@ -69,7 +69,8 @@ interface SimState {
   running:           boolean;
   g6:                DexcomG6Noise;
   rngState:          number;
-  lastLongActingDay: number;
+  lastMorningDay: number;
+  lastEveningDay: number;
   tempBasal:         TempBasal | null;
   events:            SimEvent[];
 }
@@ -93,7 +94,8 @@ function createInitialState(): SimState {
     running:           false,
     g6:                createG6NoiseGenerator(randomSeed(), null),
     rngState:          randomSeed(),
-    lastLongActingDay: -1,
+    lastMorningDay: -1,
+    lastEveningDay: -1,
     tempBasal:         null,
     events:            [],
   };
@@ -136,22 +138,50 @@ export class InlineSimulator {
   private checkLongActingDose(): void {
     const s = this.s;
     if (s.therapy.mode !== 'MDI') return;
-    const minuteOfDay     = (s.simTimeMs / 60_000) % (24 * 60);
-    const simDay          = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
-    const injectionMinute = s.therapy.longActingInjectionTime;
-    if (minuteOfDay >= injectionMinute && simDay !== s.lastLongActingDay) {
-      s.lastLongActingDay = simDay;
-      s.activeLongActing.push({
-        id: `la-${s.simTimeMs}`, simTimeMs: s.simTimeMs,
-        units: s.therapy.longActingDose, type: s.therapy.longActingType,
-      });
-      const ev: SimEvent = {
-        kind: 'longActing', simTimeMs: s.simTimeMs,
-        units: s.therapy.longActingDose, insulinType: s.therapy.longActingType,
-      };
-      s.events.push(ev);
-      for (const h of this.eventHandlers) h([ev]);
-    }
+    const minuteOfDay = (s.simTimeMs / 60_000) % (24 * 60);
+    const simDay      = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
+
+    this.fireSlotIfDue('morning', s.therapy.longActingMorning, minuteOfDay, simDay);
+    this.fireSlotIfDue('evening', s.therapy.longActingEvening, minuteOfDay, simDay);
+  }
+
+  private fireSlotIfDue(
+    slot: 'morning' | 'evening',
+    schedule: import('@cgmsim/shared').LongActingSchedule | null,
+    minuteOfDay: number,
+    simDay: number,
+  ): void {
+    if (schedule === null) return;
+    const s = this.s;
+    const lastDayKey = slot === 'morning' ? 'lastMorningDay' : 'lastEveningDay';
+    if (minuteOfDay < schedule.injectionMinute) return;
+    if (simDay === s[lastDayKey]) return;
+
+    s[lastDayKey] = simDay;
+
+    // Stamp PK params at injection time from current patient.weight
+    const pk = LONG_ACTING_PROFILES[schedule.type];
+    const duration = pk.duration(schedule.units, s.patient.weight);
+    const peak = pk.peak(duration);
+
+    s.activeLongActing.push({
+      id: `la-${slot}-${s.simTimeMs}`,
+      simTimeMs: s.simTimeMs,
+      units: schedule.units,
+      type: schedule.type,
+      peak,
+      duration,
+    });
+
+    const ev: SimEvent = {
+      kind: 'longActing',
+      simTimeMs: s.simTimeMs,
+      units: schedule.units,
+      insulinType: schedule.type,
+      slot,
+    };
+    s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
   }
 
   private tick(): void {
@@ -163,10 +193,9 @@ export class InlineSimulator {
 
     // Purge expired
     s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60);
-    s.activeLongActing = s.activeLongActing.filter(d => {
-      const p = LONG_ACTING_PROFILES[d.type];
-      return p !== undefined && (nowMs - d.simTimeMs) / 60_000 <= p.dia * 60;
-    });
+    s.activeLongActing = s.activeLongActing.filter(d =>
+      (nowMs - d.simTimeMs) / 60_000 <= d.duration,
+    );
     s.resolvedMeals    = purgeAbsorbedMeals(s.resolvedMeals, s.patient.carbsAbsTime, nowMs);
     s.pumpMicroBoluses = s.pumpMicroBoluses.filter(mb => (nowMs - mb.simTimeMs) / 60_000 <= mb.dia * 60);
 
@@ -335,7 +364,7 @@ export class InlineSimulator {
       pidTicksSinceLastMB: state.pidTicksSinceLastMB ?? 999,
       throttle: state.throttle, running: false,
       g6: createG6NoiseGenerator(1, state.g6State),
-      rngState: randomSeed(), lastLongActingDay: -1, tempBasal: null, events: [],
+      rngState: randomSeed(), lastMorningDay: -1, lastEveningDay: -1, tempBasal: null, events: [],
     });
   }
 
