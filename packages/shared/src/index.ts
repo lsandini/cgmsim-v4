@@ -18,7 +18,11 @@ export type TherapyMode = 'MDI' | 'PUMP' | 'AID';
 
 export type RapidAnalogueType = 'Fiasp' | 'Lispro' | 'Aspart';
 
-export type LongActingType = 'Glargine' | 'Degludec' | 'Detemir';
+export type LongActingType =
+  | 'GlargineU100'   // Lantus (U100)
+  | 'GlargineU300'   // Toujeo (U300)
+  | 'Detemir'        // Levemir
+  | 'Degludec';      // Tresiba
 
 export type DisplayUnit = 'mgdl' | 'mmoll';
 
@@ -68,6 +72,14 @@ export interface BasalEntry {
   rateUPerHour: number;
 }
 
+export interface LongActingSchedule {
+  type: LongActingType;
+  /** Dose in units. */
+  units: number;
+  /** Minute of day (0..1439). Morning slot: 0..719. Evening slot: 720..1439. */
+  injectionMinute: number;
+}
+
 export interface TherapyProfile {
   mode: TherapyMode;
 
@@ -78,12 +90,10 @@ export interface TherapyProfile {
   /** DIA in hours used by the controller / PID for IOB math (programmed belief, may differ from patient.dia). */
   rapidDia: number;
 
-  /** MDI long-acting insulin type. */
-  longActingType: LongActingType;
-  /** MDI long-acting dose in units. */
-  longActingDose: number;
-  /** MDI injection time as minutes since midnight. */
-  longActingInjectionTime: number;
+  /** MDI long-acting morning slot (00:00–11:59). null = unset. */
+  longActingMorning: LongActingSchedule | null;
+  /** MDI long-acting evening slot (12:00–23:59). null = unset. */
+  longActingEvening: LongActingSchedule | null;
 
   /** AID PID glucose target (mg/dL). */
   glucoseTarget: MgdL;
@@ -96,9 +106,8 @@ export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
   basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
   rapidAnalogue: 'Fiasp',
   rapidDia: 5,
-  longActingType: 'Glargine',
-  longActingDose: 20,
-  longActingInjectionTime: 22 * 60,
+  longActingMorning: null,
+  longActingEvening: null,
   glucoseTarget: 100,
   enableSMB: false,
 };
@@ -145,6 +154,10 @@ export interface ActiveLongActing {
   simTimeMs: SimTimeMs;
   units: number;
   type: LongActingType;
+  /** Stamped at injection time from v3 PK formulas + patient.weight. Minutes. */
+  peak: number;
+  /** Stamped at injection time. Total duration of action in minutes. */
+  duration: number;
 }
 
 // ------------------------------------------------------------
