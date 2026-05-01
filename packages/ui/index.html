@@ -17,6 +17,10 @@
       --bg-panel: #1a2238;
       --bg-surface: #1c2236;
       --border: #2a3247;
+      /* Stronger boundary for chrome edges (top-strip bottom, control-strip
+         top, side-panel left). In dark mode, lighter than bg-panel; in light
+         mode, darker than bg-panel — the line should always pop. */
+      --border-strong: #3d4a6b;
       --text: #eef2fa;
       --text-muted: #94a0b8;
       --text-faint: rgba(238, 242, 250, 0.55);
@@ -71,6 +75,7 @@
       --bg-panel: #e8edf3;
       --bg-surface: #ffffff;
       --border: #e2e8f0;
+      --border-strong: #94a3b8;
       --text: #0f172a;
       --text-muted: #64748b;
       --text-faint: rgba(15, 23, 42, 0.55);
@@ -124,7 +129,7 @@
       gap: 10px;
       padding: 0 16px;
       background: var(--bg-panel);
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--border-strong);
       height: var(--top-strip-height);
     }
     #top-strip .spacer { flex: 1; }
@@ -258,7 +263,7 @@
       bottom: 0;
       width: var(--panel-width);
       background: var(--bg-panel);
-      border-left: 1px solid var(--border);
+      border-left: 1px solid var(--border-strong);
       transform: translateX(100%);
       transition: transform 0.2s ease;
       overflow-y: auto;
@@ -276,7 +281,7 @@
       gap: 14px;
       padding: 0 20px;
       background: var(--bg-panel);
-      border-top: 1px solid var(--border);
+      border-top: 1px solid var(--border-strong);
       height: var(--control-height);
     }
 
