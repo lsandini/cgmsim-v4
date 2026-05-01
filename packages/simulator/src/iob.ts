@@ -10,7 +10,7 @@
  */
 
 import type { ActiveBolus, ActiveLongActing } from '@cgmsim/shared';
-import { RAPID_PROFILES, LONG_ACTING_PROFILES } from './insulinProfiles.js';
+import { RAPID_PROFILES } from './insulinProfiles.js';
 import { getExpTreatmentActivity, getExpTreatmentIOB, getDeltaMinutes, roundTo8Decimals } from './utils.js';
 
 export interface PumpBasalBolus {
@@ -61,12 +61,10 @@ export function calculateBolusIOB(boluses: ActiveBolus[], nowSimTimeMs: number):
 export function calculateLongActingActivity(doses: ActiveLongActing[], nowSimTimeMs: number): number {
   return roundTo8Decimals(
     doses.reduce((sum, d) => {
-      const profile = LONG_ACTING_PROFILES[d.type];
-      if (!profile) return sum;
       const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
       return sum + getExpTreatmentActivity({
-        peak: profile.peak,
-        duration: profile.dia * 60,
+        peak: d.peak,
+        duration: d.duration,
         minutesAgo: minAgo,
         units: d.units,
       });
@@ -77,12 +75,10 @@ export function calculateLongActingActivity(doses: ActiveLongActing[], nowSimTim
 export function calculateLongActingIOB(doses: ActiveLongActing[], nowSimTimeMs: number): number {
   return roundTo8Decimals(
     doses.reduce((sum, d) => {
-      const profile = LONG_ACTING_PROFILES[d.type];
-      if (!profile) return sum;
       const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
       return sum + getExpTreatmentIOB({
-        peak: profile.peak,
-        duration: profile.dia * 60,
+        peak: d.peak,
+        duration: d.duration,
         minutesAgo: minAgo,
         units: d.units,
       });
