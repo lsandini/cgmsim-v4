@@ -6,6 +6,10 @@
   <title>CGMSIM v4</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Force native form controls to inherit the page font (browsers fall
+       back to OS defaults otherwise — selects, time pickers, number inputs
+       and buttons end up with mismatched typography). */
+    input, select, button, textarea { font-family: inherit; }
 
     :root {
       /* Surfaces — slightly cooler, less GitHub */
