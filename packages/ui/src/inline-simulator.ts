@@ -1,12 +1,11 @@
 /**
  * InlineSimulator — simulation engine running on the main thread.
  *
- * Phase 2 additions over Phase 1:
- *   - activeLongActing properly typed and populated (MDI depot)
- *   - MDI: long-acting dose auto-injected at configured time each simulated day
- *   - Temp basal: timed override with automatic expiry
- *   - Proper IOB accounting for all therapy modes
- *   - Event log for canvas markers (bolus/meal events)
+ * MDI long-acting injections fire from morning + evening slots when each slot's
+ * configured time-of-day is reached (one fire per slot per simulated day). The
+ * PK profile (peak, duration) is evaluated at injection time against the dose
+ * and current patient.weight, then stamped onto the ActiveLongActing record so
+ * the depot decays from those values regardless of any later weight change.
  */
 
 import type {
@@ -18,6 +17,8 @@ import type {
   ActiveBolus,
   ActiveMeal,
   ActiveLongActing,
+  LongActingType,
+  LongActingSchedule,
 } from '@cgmsim/shared';
 import { DEFAULT_PATIENT, DEFAULT_THERAPY_PROFILE } from '@cgmsim/shared';
 
@@ -43,7 +44,7 @@ const INITIAL_BG   = 100;
 export type SimEvent =
   | { kind: 'bolus';      simTimeMs: number; units: number }
   | { kind: 'meal';       simTimeMs: number; carbsG: number }
-  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: import('@cgmsim/shared').LongActingType; slot: 'morning' | 'evening' }
+  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: LongActingType; slot: 'morning' | 'evening' }
   | { kind: 'smb';        simTimeMs: number; units: number };
 
 interface TempBasal {
@@ -147,7 +148,7 @@ export class InlineSimulator {
 
   private fireSlotIfDue(
     slot: 'morning' | 'evening',
-    schedule: import('@cgmsim/shared').LongActingSchedule | null,
+    schedule: LongActingSchedule | null,
     minuteOfDay: number,
     simDay: number,
   ): void {

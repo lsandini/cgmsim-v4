@@ -3,7 +3,7 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
 import { saveState, loadState, exportSession, importSession } from './storage.js';
@@ -458,8 +458,9 @@ function getSlotRowRefs(row: HTMLDivElement): SlotRowRefs {
 
 function readSlotSchedule(refs: SlotRowRefs, slot: SlotName): LongActingSchedule | null {
   const dose = parseFloat(refs.dose.value);
+  if (!Number.isFinite(dose) || dose < 1 || dose > 80) return null;
   const minute = timeStringToMinutes(refs.time.value);
-  if (!Number.isFinite(dose) || dose < 1) return null;
+  if (!Number.isFinite(minute)) return null;
   const lo = slot === 'morning' ? 0 : 12 * 60;
   const hi = slot === 'morning' ? 12 * 60 - 1 : 24 * 60 - 1;
   if (minute < lo || minute > hi) return null;
@@ -528,6 +529,27 @@ function onSetUnsetClick(slot: SlotName): void {
 
 morningRefs.setBtn.addEventListener('click', () => onSetUnsetClick('morning'));
 eveningRefs.setBtn.addEventListener('click', () => onSetUnsetClick('evening'));
+
+/**
+ * Re-hydrate the UI rows from a therapy snapshot (e.g. after btnLoad / btnImport / btnReset).
+ * Updates the form input values, the cached activeSchedule, and the visual state.
+ * Does NOT call bridge.setTherapyParam — the caller is expected to have already
+ * pushed the new therapy state via bridge.reset(...).
+ */
+function syncSlotsFromTherapy(therapy: TherapyProfile): void {
+  const apply = (slot: SlotName, schedule: LongActingSchedule | null): void => {
+    const refs = slotRefs[slot];
+    if (schedule !== null) {
+      refs.type.value = schedule.type;
+      refs.dose.value = String(schedule.units);
+      refs.time.value = minutesToTimeString(schedule.injectionMinute);
+    }
+    activeSchedule[slot] = schedule;
+    setSlotActiveState(refs, schedule);
+  };
+  apply('morning', therapy.longActingMorning);
+  apply('evening', therapy.longActingEvening);
+}
 
 // ── Therapy changes ───────────────────────────────────────────────────────────
 
@@ -685,6 +707,7 @@ btnLoad.addEventListener('click', async () => {
     if (!s) { setStatus('No saved session found.'); return; }
     bridge.pause(); setRunning(false);
     bridge.reset(s); renderer.clearHistory();
+    syncSlotsFromTherapy(s.therapy);
     setStatus(`Loaded at ${formatSimTime(s.simTimeMs)}`);
   } catch (e) { setStatus(`Load failed: ${e}`); }
 });
@@ -701,6 +724,7 @@ btnImport.addEventListener('click', async () => {
     const s = await importSession();
     bridge.pause(); setRunning(false);
     bridge.reset(s); renderer.clearHistory();
+    syncSlotsFromTherapy(s.therapy);
     setStatus(`Imported at ${formatSimTime(s.simTimeMs)}`);
   } catch (e) { setStatus(`Import failed: ${e}`); }
 });

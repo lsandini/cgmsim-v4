@@ -38,7 +38,7 @@ type ColorPalette = {
   iobFill: string; iobFillTop: string; iobLine: string;
   cobFill: string; cobFillTop: string; cobLine: string;
   basalFill: string; basalLine: string;
-  bolusMarker: string; mealMarker: string; smbMarker: string;
+  bolusMarker: string; mealMarker: string; smbMarker: string; longActingMarker: string;
   future: string; futureEdge: string;
 };
 type ComparePalette = { trace: string; traceGlow: string; hypoL1: string; hypoL2: string; };
@@ -72,6 +72,7 @@ const DARK_PALETTE: ColorPalette = {
   bolusMarker: '#3b82f6',
   mealMarker:  '#fbbf24',
   smbMarker:   '#c084fc',
+  longActingMarker: '#14b8a6',                   // teal — distinct from bolus blue / SMB purple
   future: 'rgba(8, 12, 22, 0.45)',
   futureEdge: 'rgba(122, 162, 255, 0.35)',
 };
@@ -105,6 +106,7 @@ const LIGHT_PALETTE: ColorPalette = {
   bolusMarker: '#2563eb',
   mealMarker:  '#d97706',
   smbMarker:   '#9333ea',
+  longActingMarker: '#0d9488',                   // darker teal for light theme
   future: 'rgba(15, 23, 42, 0.04)',
   futureEdge: 'rgba(59, 130, 246, 0.30)',
 };
@@ -1094,6 +1096,15 @@ export class CGMRenderer {
         ctx.font = '9.6px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${ev.units}U`, x, y + 16);
+      } else if (ev.kind === 'longActing') {
+        // Filled square at the top — distinct shape from triangles, signals "sustained" basal-style effect
+        const y = this.PAD_TOP + 4;
+        const sz = 7;
+        ctx.fillStyle = COLORS.longActingMarker;
+        ctx.fillRect(x - sz / 2, y, sz, sz);
+        ctx.font = '9.6px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.units}U`, x, y + sz + 11);
       }
     }
     ctx.textAlign = 'left';

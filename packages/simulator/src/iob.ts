@@ -3,7 +3,7 @@
  *
  * Handles all active insulin delivery types:
  *   - Rapid-acting boluses (meal / correction)
- *   - Long-acting MDI doses (Glargine, Degludec, Detemir)
+ *   - Long-acting MDI doses (GlargineU100, GlargineU300, Detemir, Degludec)
  *   - Pump basal micro-boluses
  *
  * All times in simulated ms. All amounts in units.
