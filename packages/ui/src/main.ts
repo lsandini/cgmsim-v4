@@ -3,7 +3,7 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
 import { saveState, loadState, exportSession, importSession } from './storage.js';
@@ -145,9 +145,8 @@ const therapyMode      = getEl<HTMLSelectElement>('therapy-mode');
 const glucoseTarget    = getEl<HTMLInputElement>('glucose-target');
 const rapidAnalogue    = getEl<HTMLSelectElement>('rapid-analogue');
 const progDIA          = getEl<HTMLInputElement>('prog-dia');
-const longActingType   = getEl<HTMLSelectElement>('long-acting-type');
-const longActingDose   = getEl<HTMLInputElement>('long-acting-dose');
-const longActingTime   = getEl<HTMLInputElement>('long-acting-time');
+const laRowMorning = getEl<HTMLDivElement>('la-row-morning');
+const laRowEvening = getEl<HTMLDivElement>('la-row-evening');
 const tempBasalRate    = getEl<HTMLInputElement>('temp-basal-rate');
 const tempBasalDur     = getEl<HTMLInputElement>('temp-basal-duration');
 const btnSetTemp       = getEl<HTMLButtonElement>('btn-set-temp');
@@ -435,6 +434,101 @@ btnMeal.addEventListener('click', () => {
   const c = parseFloat(mealCarbs.value); if (c > 0) bridge.meal(c);
 });
 
+// ── Long-acting slot helpers ──────────────────────────────────────────────────
+
+type SlotName = 'morning' | 'evening';
+
+interface SlotRowRefs {
+  row:    HTMLDivElement;
+  type:   HTMLSelectElement;
+  dose:   HTMLInputElement;
+  time:   HTMLInputElement;
+  setBtn: HTMLButtonElement;
+}
+
+function getSlotRowRefs(row: HTMLDivElement): SlotRowRefs {
+  return {
+    row,
+    type:   row.querySelector<HTMLSelectElement>('.la-type')!,
+    dose:   row.querySelector<HTMLInputElement>('.la-dose')!,
+    time:   row.querySelector<HTMLInputElement>('.la-time')!,
+    setBtn: row.querySelector<HTMLButtonElement>('.la-set-btn')!,
+  };
+}
+
+function readSlotSchedule(refs: SlotRowRefs, slot: SlotName): LongActingSchedule | null {
+  const dose = parseFloat(refs.dose.value);
+  const minute = timeStringToMinutes(refs.time.value);
+  if (!Number.isFinite(dose) || dose < 1) return null;
+  const lo = slot === 'morning' ? 0 : 12 * 60;
+  const hi = slot === 'morning' ? 12 * 60 - 1 : 24 * 60 - 1;
+  if (minute < lo || minute > hi) return null;
+  return {
+    type: refs.type.value as LongActingType,
+    units: dose,
+    injectionMinute: minute,
+  };
+}
+
+/** Apply visual + control state for a slot. `schedule` non-null = Active (green, locked). */
+function setSlotActiveState(refs: SlotRowRefs, schedule: LongActingSchedule | null): void {
+  const isActive = schedule !== null;
+  refs.row.classList.toggle('active', isActive);
+  refs.type.disabled = isActive;
+  refs.dose.disabled = isActive;
+  refs.time.disabled = isActive;
+  refs.setBtn.textContent = isActive ? 'Unset' : 'Set';
+}
+
+function shakeRow(refs: SlotRowRefs): void {
+  refs.row.classList.remove('invalid');
+  // Force reflow so the animation re-triggers on the next add
+  void refs.row.offsetWidth;
+  refs.row.classList.add('invalid');
+}
+
+const morningRefs = getSlotRowRefs(laRowMorning);
+const eveningRefs = getSlotRowRefs(laRowEvening);
+const slotRefs: Record<SlotName, SlotRowRefs> = {
+  morning: morningRefs,
+  evening: eveningRefs,
+};
+
+// Track active schedule per slot — null = unset
+const activeSchedule: Record<SlotName, LongActingSchedule | null> = {
+  morning: null,
+  evening: null,
+};
+
+function setSlot(slot: SlotName, schedule: LongActingSchedule | null): void {
+  activeSchedule[slot] = schedule;
+  setSlotActiveState(slotRefs[slot], schedule);
+  // Push the full pair into therapy each time
+  bridge.setTherapyParam({
+    longActingMorning: activeSchedule.morning,
+    longActingEvening: activeSchedule.evening,
+  });
+}
+
+function onSetUnsetClick(slot: SlotName): void {
+  const refs = slotRefs[slot];
+  if (activeSchedule[slot] !== null) {
+    // Currently Active → Unset
+    setSlot(slot, null);
+    return;
+  }
+  // Currently Unset → validate and Set
+  const schedule = readSlotSchedule(refs, slot);
+  if (schedule === null) {
+    shakeRow(refs);
+    return;
+  }
+  setSlot(slot, schedule);
+}
+
+morningRefs.setBtn.addEventListener('click', () => onSetUnsetClick('morning'));
+eveningRefs.setBtn.addEventListener('click', () => onSetUnsetClick('evening'));
+
 // ── Therapy changes ───────────────────────────────────────────────────────────
 
 function onTherapyChange(): void {
@@ -446,21 +540,17 @@ function onTherapyChange(): void {
   });
   bridge.setTherapyParam({
     mode,
-    glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),
-    rapidAnalogue:           rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
-    rapidDia:                parseFloat(progDIA.value),
-    longActingType:          longActingType.value as 'Glargine' | 'Degludec' | 'Detemir',
-    longActingDose:          parseFloat(longActingDose.value),
-    longActingInjectionTime: timeStringToMinutes(longActingTime.value),
-    enableSMB:               enableSMB.checked,
+    glucoseTarget: fromDisplay(parseFloat(glucoseTarget.value)),
+    rapidAnalogue: rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
+    rapidDia:      parseFloat(progDIA.value),
+    enableSMB:     enableSMB.checked,
   });
   sectionMDI.style.display   = mode === 'MDI'  ? 'block' : 'none';
   sectionBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
   rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
 }
 
-[therapyMode, glucoseTarget, rapidAnalogue, progDIA,
- longActingType, longActingDose, longActingTime].forEach(el =>
+[therapyMode, glucoseTarget, rapidAnalogue, progDIA].forEach(el =>
   el.addEventListener('change', onTherapyChange)
 );
 enableSMB.addEventListener('change', onTherapyChange);
@@ -624,12 +714,14 @@ btnReset.addEventListener('click', () => {
     patient:{weight:75,diabetesDuration:10,trueISF:40,trueCR:12,
              dia:6,carbsAbsTime:360,gastricEmptyingRate:1},
     therapy:{mode:'PUMP',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
-             rapidAnalogue:'Fiasp',rapidDia:5,longActingType:'Glargine',longActingDose:20,
-             longActingInjectionTime:22*60,glucoseTarget:100,enableSMB:false},
+             rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
+             glucoseTarget:100,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
+  setSlot('morning', null);
+  setSlot('evening', null);
   renderer.clearHistory();
   setStatus('Simulation reset.');
 });
