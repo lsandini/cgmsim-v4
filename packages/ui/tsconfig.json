@@ -14,6 +14,5 @@
   "references": [
     { "path": "../shared" }
   ],
-  "include": ["src", "../simulator/src"],
-  "exclude": ["src/worker-bridge.ts", "src/worker-bridge.ts.bak", "src/worker-entry.ts", "src/worker-entry.ts.bak"]
+  "include": ["src", "../simulator/src"]
 }
