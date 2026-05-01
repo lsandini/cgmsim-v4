@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "visual improvements"
+git commit -m "therapy selector on top strip"
 git push -u origin visuals
