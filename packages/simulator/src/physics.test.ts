@@ -395,8 +395,8 @@ describe('LONG_ACTING_PROFILES (v3-faithful PK)', () => {
     expect(activity).toBeGreaterThan(0);
 
     // Sum of two activities should equal the activity of an array containing both
-    const a1 = calculateLongActingActivity([doses[0]], nowMs);
-    const a2 = calculateLongActingActivity([doses[1]], nowMs);
+    const a1 = calculateLongActingActivity([doses[0]!], nowMs);
+    const a2 = calculateLongActingActivity([doses[1]!], nowMs);
     expect(activity).toBeCloseTo(a1 + a2, 6);
 
     // IOB sanity: both depots should still hold most of their units after 1h
