@@ -631,7 +631,7 @@ function renderBasalRows(): void {
     row.style.marginBottom = '4px';
     row.innerHTML = `
       <input type="time" value="${minutesToTimeString(seg.timeMinutes)}"
-        style="width:80px;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;"
+        style="width:104px;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;"
         ${i === 0 ? 'disabled' : ''} />
       <input type="number" value="${seg.rateUPerHour}" min="0" max="5" step="0.05"
         style="flex:1;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;" />
