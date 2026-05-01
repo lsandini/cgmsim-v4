@@ -563,6 +563,60 @@
       border-color: var(--accent);
     }
 
+    .long-acting-row {
+      display: grid;
+      grid-template-columns: 60px 1fr 50px 80px auto;
+      gap: 6px;
+      align-items: center;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-surface);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .long-acting-row.active {
+      border-color: var(--green);
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .long-acting-row .la-row-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .long-acting-row select,
+    .long-acting-row input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .long-acting-row select:disabled,
+    .long-acting-row input:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .long-acting-row .la-set-btn {
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .long-acting-row.active .la-set-btn {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .long-acting-row.invalid {
+      animation: la-shake 0.25s;
+    }
+    @keyframes la-shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-3px); }
+      75% { transform: translateX(3px); }
+    }
+
     .bolus-row {
       display: flex;
       gap: 8px;
@@ -787,21 +841,29 @@
           </div>
           <div class="panel-section" id="section-mdi">
             <h3>Long-acting (MDI)</h3>
-            <div class="panel-row">
-              <label>Insulin type</label>
-              <select id="long-acting-type">
-                <option value="Glargine">Glargine</option>
-                <option value="Degludec">Degludec</option>
-                <option value="Detemir">Detemir</option>
+            <div class="long-acting-row" id="la-row-morning" data-slot="morning">
+              <span class="la-row-label">Morning</span>
+              <select class="la-type" data-default="GlargineU300">
+                <option value="GlargineU300">Glargine U300 (Toujeo)</option>
+                <option value="GlargineU100">Glargine U100 (Lantus)</option>
+                <option value="Detemir">Detemir (Levemir)</option>
+                <option value="Degludec">Degludec (Tresiba)</option>
               </select>
+              <input type="number" class="la-dose" min="1" max="80" step="1" value="20" title="Dose (U)" />
+              <input type="time" class="la-time" min="00:00" max="11:59" value="08:00" />
+              <button type="button" class="la-set-btn">Set</button>
             </div>
-            <div class="panel-row">
-              <label>Dose (U)</label>
-              <input type="number" id="long-acting-dose" min="1" max="80" step="1" value="20" />
-            </div>
-            <div class="panel-row">
-              <label>Injection time</label>
-              <input type="time" id="long-acting-time" value="22:00" />
+            <div class="long-acting-row" id="la-row-evening" data-slot="evening">
+              <span class="la-row-label">Evening</span>
+              <select class="la-type" data-default="GlargineU300">
+                <option value="GlargineU300">Glargine U300 (Toujeo)</option>
+                <option value="GlargineU100">Glargine U100 (Lantus)</option>
+                <option value="Detemir">Detemir (Levemir)</option>
+                <option value="Degludec">Degludec (Tresiba)</option>
+              </select>
+              <input type="number" class="la-dose" min="1" max="80" step="1" value="20" title="Dose (U)" />
+              <input type="time" class="la-time" min="12:00" max="23:59" value="22:00" />
+              <button type="button" class="la-set-btn">Set</button>
             </div>
           </div>
           <div class="panel-section" id="section-basal">
