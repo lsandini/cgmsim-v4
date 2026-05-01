@@ -17,7 +17,7 @@ import { computeDeltaBG } from './deltaBG.js';
 import { calculateBolusIOB, calculateLongActingIOB, calculatePumpBasalIOB } from './iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from './carbs.js';
 import { runPID, rateToMicroBolus } from './pid.js';
-import { RAPID_PROFILES, LONG_ACTING_PROFILES } from './insulinProfiles.js';
+import { RAPID_PROFILES } from './insulinProfiles.js';
 // ── Constants ────────────────────────────────────────────────────────────────
 const TICK_SIM_MINUTES = 5;
 const TICK_SIM_MS = TICK_SIM_MINUTES * 60_000;
@@ -81,12 +81,9 @@ function tick() {
     const isPump = s.therapy.mode === 'PUMP' || s.therapy.mode === 'AID';
     // 1. Purge expired treatments
     s.activeBoluses = s.activeBoluses.filter((b) => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60);
-    s.activeLongActing = s.activeLongActing.filter((d) => {
-        const profile = LONG_ACTING_PROFILES[d.type];
-        if (!profile)
-            return false;
-        return (nowMs - d.simTimeMs) / 60_000 <= profile.dia * 60;
-    });
+    s.activeLongActing = s.activeLongActing.filter((d) =>
+        (nowMs - d.simTimeMs) / 60_000 <= d.duration
+    );
     internal.resolvedMeals = purgeAbsorbedMeals(internal.resolvedMeals, s.patient.carbsAbsTime, nowMs);
     internal.pumpMicroBoluses = internal.pumpMicroBoluses.filter((mb) => (nowMs - mb.simTimeMs) / 60_000 <= mb.dia * 60);
     // 2. AID controller fires on current CGM (noisy), not true glucose

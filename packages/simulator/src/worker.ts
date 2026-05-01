@@ -35,7 +35,7 @@ import type { ResolvedMeal } from './carbs.js';
 import { runPID, rateToMicroBolus } from './pid.js';
 import type { PIDState } from './pid.js';
 import type { PumpBasalBolus } from './iob.js';
-import { RAPID_PROFILES, LONG_ACTING_PROFILES } from './insulinProfiles.js';
+import { RAPID_PROFILES } from './insulinProfiles.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -127,11 +127,9 @@ function tick(): void {
   s.activeBoluses = s.activeBoluses.filter(
     (b) => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60,
   );
-  s.activeLongActing = s.activeLongActing.filter((d) => {
-    const profile = LONG_ACTING_PROFILES[d.type];
-    if (!profile) return false;
-    return (nowMs - d.simTimeMs) / 60_000 <= profile.dia * 60;
-  });
+  s.activeLongActing = s.activeLongActing.filter((d) =>
+    (nowMs - d.simTimeMs) / 60_000 <= d.duration
+  );
   internal.resolvedMeals = purgeAbsorbedMeals(
     internal.resolvedMeals, s.patient.carbsAbsTime, nowMs,
   );
