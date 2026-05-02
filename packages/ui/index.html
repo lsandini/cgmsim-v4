@@ -6,29 +6,103 @@
   <title>CGMSIM v4</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Force native form controls to inherit the page font (browsers fall
+       back to OS defaults otherwise — selects, time pickers, number inputs
+       and buttons end up with mismatched typography). */
+    input, select, button, textarea { font-family: inherit; }
 
     :root {
-      --bg: #0d1117;
-      --bg-panel: #161b22;
-      --bg-surface: #21262d;
-      --border: #30363d;
-      --text: #e6edf3;
-      --text-muted: #8b949e;
-      --accent: #58a6ff;
+      /* Surfaces — slightly cooler, less GitHub */
+      --bg: #0a0f1c;
+      --bg-panel: #1a2238;
+      --bg-surface: #1c2236;
+      --border: #2a3247;
+      /* Stronger boundary for chrome edges (top-strip bottom, control-strip
+         top, side-panel left). In dark mode, lighter than bg-panel; in light
+         mode, darker than bg-panel — the line should always pop. */
+      --border-strong: #3d4a6b;
+      --text: #eef2fa;
+      --text-muted: #94a0b8;
+      --text-faint: rgba(238, 242, 250, 0.55);
 
-      --green: #26a641;
-      --amber: #d29922;
-      --red: #da3633;
-      --green-range: rgba(38, 166, 65, 0.15);
-      --amber-range: rgba(210, 153, 34, 0.25);
-      --red-range: rgba(218, 54, 51, 0.25);
+      /* UI chrome accent (buttons, focus, slider thumb) */
+      --accent: #7aa2ff;
+      --accent-soft: rgba(122, 162, 255, 0.18);
 
-      --trace-color: #58a6ff;
-      --trace-glow: rgba(88, 166, 255, 0.4);
+      /* Data identity — each role has a distinct hue */
+      --cgm: #22c55e;                              /* CGM trace: bright green */
+      --cgm-glow: rgba(34, 197, 94, 0.35);
+      --iob: #3b82f6;                              /* IOB: blue */
+      --iob-soft: rgba(59, 130, 246, 0.22);
+      --cob: #fbbf24;                              /* COB: warm amber */
+      --cob-soft: rgba(251, 191, 36, 0.22);
+      --basal: #d97706;                            /* Basal: amber (matches canvas) */
+      --basal-soft: rgba(217, 119, 6, 0.22);
 
-      --panel-width: 340px;
-      --control-height: 80px;
+      /* Glycaemic zones — punchy hues, low band opacity */
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.08);
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --green-range: rgba(16, 185, 129, 0.18);
+      --amber-range: rgba(245, 158, 11, 0.20);
+      --red-range: rgba(239, 68, 68, 0.20);
+
+      /* Event markers */
+      --marker-bolus: #22d3ee;
+      --marker-meal:  #fbbf24;
+      --marker-smb:   #c084fc;
+
+      /* Type scale (px). Bumped by ~6-12% for projector legibility. */
+      --fs-base:   20px;
+      --fs-small:  14px;
+      --fs-axis:   14px;
+      --fs-label:  16px;
+      --fs-readout: 22px;
+      --fs-bg:     34px;       /* the big current BG number */
+
+      /* Layout */
+      --panel-width: 480px;
+      --control-height: 84px;
+      --top-strip-height: 52px;
       --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
+    }
+
+    /* Light theme — Loop-inspired: white surfaces, soft blues, warm IOB/carb hues */
+    html[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-panel: #e8edf3;
+      --bg-surface: #ffffff;
+      --border: #e2e8f0;
+      --border-strong: #94a3b8;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-faint: rgba(15, 23, 42, 0.55);
+
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.15);
+
+      --cgm: #16a34a;                              /* Loop green */
+      --cgm-glow: rgba(22, 163, 74, 0.30);
+      --iob: #2563eb;                              /* deep blue */
+      --iob-soft: rgba(37, 99, 235, 0.18);
+      --cob: #ca8a04;                              /* yellow-amber, distinct from basal orange */
+      --cob-soft: rgba(202, 138, 4, 0.18);
+      --basal: #d97706;
+      --basal-soft: rgba(217, 119, 6, 0.18);
+
+      --green: #16a34a;
+      --green-soft: rgba(22, 163, 74, 0.08);
+      --amber: #d97706;
+      --red:   #dc2626;
+      --green-range: rgba(22, 163, 74, 0.10);
+      --amber-range: rgba(217, 119, 6, 0.12);
+      --red-range:   rgba(220, 38, 38, 0.12);
+
+      --marker-bolus: #3b82f6;
+      --marker-meal:  #16a34a;
+      --marker-smb:   #9333ea;
     }
 
     html, body {
@@ -42,10 +116,130 @@
 
     #app {
       display: grid;
-      grid-template-rows: 1fr var(--control-height);
+      grid-template-rows: var(--top-strip-height) 1fr var(--control-height);
       grid-template-columns: 1fr;
       height: 100vh;
       width: 100vw;
+    }
+
+    /* Top strip — pillboxes for IOB / COB / scenario / units */
+    #top-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-strong);
+      height: var(--top-strip-height);
+    }
+    #top-strip .spacer { flex: 1; }
+
+    /* Unified pillbox style (used in top strip) */
+    .pill {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      line-height: 32px;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .pill .val {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0;
+      color: var(--text);
+    }
+    .pill .unit {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .pill.iob { text-transform: uppercase; }
+    .pill.cob { text-transform: uppercase; }
+    .pill.iob .val { color: var(--iob); }
+    .pill.cob .val { color: var(--cob); }
+    .pill.scenario {
+      text-transform: none;
+      letter-spacing: 0.02em;
+      gap: 8px;
+    }
+    .pill.scenario .dot { opacity: 0.5; }
+
+    /* Custom dropdown — used inside the scenario pill */
+    .dropdown { position: relative; display: inline-flex; }
+    .dropdown-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font: inherit;
+      letter-spacing: inherit;
+      padding: 0;
+      cursor: pointer;
+      outline: none;
+    }
+    .dropdown-trigger:hover { color: var(--text); }
+    .dropdown-caret {
+      font-size: 18px;
+      line-height: 1;
+      opacity: 0.9;
+      transition: transform 0.12s ease;
+    }
+    .dropdown[data-open="true"] .dropdown-caret { transform: rotate(180deg); }
+
+    .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      min-width: 100%;
+      list-style: none;
+      margin: 0;
+      padding: 4px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      z-index: 20;
+    }
+    .dropdown-menu li {
+      padding: 2px 14px;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .dropdown-menu li:hover { background: var(--accent-soft); }
+    .dropdown-menu li[aria-selected="true"] {
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    button.pill {
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    button.pill:hover { color: var(--text); border-color: var(--accent); }
+
+    /* Icon-only pill: fixed square so emoji glyph variants don't shift width */
+    .pill-icon {
+      width: 36px;
+      padding: 0;
+      justify-content: center;
+      font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+      font-size: 16px;
+      line-height: 32px;
+      text-align: center;
     }
 
     /* Canvas area */
@@ -66,10 +260,10 @@
       position: absolute;
       top: 0;
       right: 0;
-      bottom: var(--control-height);
+      bottom: 0;
       width: var(--panel-width);
       background: var(--bg-panel);
-      border-left: 1px solid var(--border);
+      border-left: 1px solid var(--border-strong);
       transform: translateX(100%);
       transition: transform 0.2s ease;
       overflow-y: auto;
@@ -84,37 +278,77 @@
     #control-strip {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 0 16px;
+      gap: 14px;
+      padding: 0 20px;
       background: var(--bg-panel);
-      border-top: 1px solid var(--border);
+      border-top: 1px solid var(--border-strong);
       height: var(--control-height);
     }
 
     /* Sim time display */
     #sim-time {
-      font-family: 'Courier New', monospace;
-      font-size: 20px;
+      font-family: var(--font-mono);
+      font-size: var(--fs-readout);
       font-weight: 600;
       color: var(--text);
-      min-width: 100px;
+      min-width: 110px;
       letter-spacing: 0.04em;
+    }
+
+    /* Sun / moon time-of-day indicator */
+    #sky-icon {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      transition: filter 0.6s ease, transform 0.6s ease;
+    }
+    #sky-icon .disc {
+      transition: fill 0.6s ease;
+    }
+    #sky-icon .crescent {
+      fill: var(--bg);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+      transform-origin: center;
+    }
+    /* Day → bright yellow disc, crescent hidden */
+    #sky-icon[data-tod="day"]   .disc      { fill: #fbbf24; filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.55)); }
+    #sky-icon[data-tod="day"]   .crescent  { opacity: 0; }
+    /* Dawn → soft orange disc, low crescent */
+    #sky-icon[data-tod="dawn"]  .disc      { fill: #fb923c; }
+    #sky-icon[data-tod="dawn"]  .crescent  { opacity: 0.25; }
+    /* Dusk → warm pink disc */
+    #sky-icon[data-tod="dusk"]  .disc      { fill: #f472b6; }
+    #sky-icon[data-tod="dusk"]  .crescent  { opacity: 0.35; }
+    /* Night → cool moon disc, crescent shadow */
+    #sky-icon[data-tod="night"] .disc      { fill: #cbd5e1; filter: drop-shadow(0 0 3px rgba(203, 213, 225, 0.45)); }
+    #sky-icon[data-tod="night"] .crescent  { opacity: 1; }
+
+    /* Group sim-time + sky icon together */
+    #time-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
     /* Current CGM */
     #current-cgm {
-      font-family: 'Courier New', monospace;
-      font-size: 32px;
+      font-family: var(--font-mono);
+      font-size: var(--fs-bg);
       font-weight: 700;
-      min-width: 90px;
-      color: var(--trace-color);
+      min-width: 96px;
+      color: var(--cgm);
+      transition: color 0.25s ease, text-shadow 0.25s ease;
     }
-
     #current-cgm.hypo-l1 { color: var(--amber); }
     #current-cgm.hypo-l2 { color: var(--red); }
+    #current-cgm.flash {
+      text-shadow: 0 0 14px var(--cgm-glow);
+    }
+    #current-cgm.flash.hypo-l1 { text-shadow: 0 0 14px rgba(245, 158, 11, 0.55); }
+    #current-cgm.flash.hypo-l2 { text-shadow: 0 0 14px rgba(239, 68, 68, 0.60); }
 
     #cgm-unit {
-      font-size: 12px;
+      font-size: 13px;
       color: var(--text-muted);
       margin-left: -8px;
       align-self: flex-end;
@@ -255,35 +489,38 @@
     }
     #btn-panel:hover { color: var(--text); border-color: var(--accent); }
 
-    /* Display unit toggle */
-    #unit-toggle {
+    /* (IOB / COB / scenario / unit-toggle now live in #top-strip as .pill) */
+
+    /* CGM hover tooltip */
+    #cgm-tooltip {
       position: absolute;
-      top: 12px;
-      right: 12px;
+      pointer-events: none;
+      transform: translate(-50%, calc(-100% - 10px));
+      padding: 4px 8px;
+      border-radius: 6px;
       background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text-muted);
-      font-size: 14.4px;
-      padding: 4px 10px;
-      cursor: pointer;
-      z-index: 5;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.08s ease;
+      z-index: 6;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
     }
-    #unit-toggle:hover { color: var(--text); }
-
-    /* IOB / COB overlay */
-    #iob-cob {
+    #cgm-tooltip::after {
+      content: '';
       position: absolute;
-      top: 12px;
-      left: 12px;
-      display: flex;
-      gap: 16px;
-      font-size: 15.6px;
-      color: var(--text-muted);
-      pointer-events: none;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--border);
     }
-
-    #iob-cob span { color: var(--text); font-weight: 600; }
+    #cgm-tooltip.visible { opacity: 1; }
+    #cgm-tooltip .time { color: var(--text-muted); margin-right: 6px; font-size: 12px; }
 
     /* Side panel inner */
     .panel-section {
@@ -330,11 +567,89 @@
       width: 100px;
       text-align: right;
     }
+    .panel-row select { width: 160px; }
 
     .panel-row input[type="number"]:focus,
     .panel-row select:focus {
       outline: none;
       border-color: var(--accent);
+    }
+
+    .long-acting-row input[type="number"],
+    .long-acting-row input[type="time"],
+    .long-acting-row select {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 13px;
+      font-family: var(--font);
+    }
+    .long-acting-row input[type="number"]:focus,
+    .long-acting-row input[type="time"]:focus,
+    .long-acting-row select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .long-acting-row {
+      display: grid;
+      grid-template-columns: 60px 1fr 38px 78px auto;
+      gap: 4px;
+      align-items: center;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-surface);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .long-acting-row.active {
+      border-color: var(--green);
+      background: var(--green-soft);
+    }
+    .long-acting-row .la-row-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .long-acting-row select,
+    .long-acting-row input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .long-acting-row select:disabled,
+    .long-acting-row input:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .long-acting-row .la-set-btn {
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      min-width: 64px;       /* fits the wider "Unset" label so the dropdown column doesn't shrink on Set */
+      text-align: center;
+    }
+    .long-acting-row.active .la-set-btn {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .long-acting-row.invalid {
+      animation: la-shake 0.25s;
+    }
+    @keyframes la-shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-3px); }
+      75% { transform: translateX(3px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .long-acting-row.invalid { animation: none; }
     }
 
     .bolus-row {
@@ -350,7 +665,7 @@
       color: var(--text);
       border-radius: 6px;
       padding: 8px 10px;
-      font-size: 18px;
+      font-size: 15.6px;
     }
 
     .bolus-row button {
@@ -365,36 +680,23 @@
     }
     .bolus-row button:hover { background: rgba(88, 166, 255, 0.15); }
 
-    /* Scenario chip */
-    #scenario-badge {
-      position: absolute;
-      top: 28px;
-      left: 60px;
-      font-size: 13.2px;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-
-    /* View controls — zoom and live button */
+    /* View controls — zoom and live button (in top strip) */
     #view-controls {
-      position: absolute;
-      top: 48px;
-      right: 12px;
       display: flex;
       gap: 4px;
-      z-index: 5;
     }
 
     .view-btn {
-      padding: 3px 9px;
+      height: 32px;
+      padding: 0 12px;
       font-size: 13.2px;
       font-weight: 600;
-      border-radius: 4px;
+      border-radius: 6px;
       border: 1px solid var(--border);
       background: var(--bg-surface);
       color: var(--text-muted);
       cursor: pointer;
-      opacity: 0.75;
+      opacity: 0.85;
       transition: opacity 0.12s, border-color 0.12s, color 0.12s;
     }
     .view-btn:hover { opacity: 1; color: var(--text); }
@@ -450,11 +752,26 @@
 </head>
 <body>
   <div id="app">
-    <div id="canvas-area">
-      <canvas id="cgm-canvas"></canvas>
-
-      <button id="unit-toggle" title="Toggle display units">mmol/L</button>
-
+    <!-- Top strip — IOB / COB / scenario / unit toggle pillboxes -->
+    <div id="top-strip">
+      <div class="pill iob" id="iob-cob-iob">IOB <span class="val" id="iob-val">0.00</span><span class="unit">U</span></div>
+      <div class="pill cob" id="iob-cob-cob">COB <span class="val" id="cob-val">0</span><span class="unit">g</span></div>
+      <div class="pill scenario" id="scenario-badge">
+        <span class="who">Default patient</span><span class="dot">·</span>
+        <div class="dropdown" id="scenario-mode-dd">
+          <button type="button" class="dropdown-trigger" id="scenario-mode-btn"
+                  aria-haspopup="listbox" aria-expanded="false" title="Therapy strategy">
+            <span class="dropdown-label">Pump (open loop)</span>
+            <span class="dropdown-caret" aria-hidden="true">▾</span>
+          </button>
+          <ul class="dropdown-menu" role="listbox" hidden>
+            <li role="option" data-value="AID">AID mode</li>
+            <li role="option" data-value="PUMP" aria-selected="true">Pump (open loop)</li>
+            <li role="option" data-value="MDI">MDI</li>
+          </ul>
+        </div>
+      </div>
+      <div class="spacer"></div>
       <div id="view-controls">
         <button class="view-btn" id="btn-zoom-3h">3h</button>
         <button class="view-btn" id="btn-zoom-6h">6h</button>
@@ -462,13 +779,14 @@
         <button class="view-btn active" id="btn-zoom-24h">24h</button>
         <button class="view-btn live-btn" id="btn-live" hidden>↩ Live</button>
       </div>
+      <button class="pill" id="unit-toggle" title="Toggle display units">mmol/L</button>
+      <button class="pill pill-icon" id="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
+    </div>
 
-      <div id="iob-cob">
-        IOB <span id="iob-val">0.00</span> U &nbsp;
-        COB <span id="cob-val">0</span> g
-      </div>
+    <div id="canvas-area">
+      <canvas id="cgm-canvas"></canvas>
 
-      <div id="scenario-badge">Default patient · AID mode</div>
+      <div id="cgm-tooltip"></div>
 
       <!-- Collapsible side panel -->
       <div id="side-panel">
@@ -496,7 +814,7 @@
           </div>
           <div class="panel-section">
             <h3>Overlays</h3>
-            <div class="panel-row">
+            <div class="panel-row" id="row-overlay-basal">
               <label>Basal rate</label>
               <input type="checkbox" id="overlay-basal" checked />
             </div>
@@ -527,8 +845,8 @@
               <label>Mode</label>
               <select id="therapy-mode">
                 <option value="AID">AID (PID)</option>
-                <option value="PUMP" selected>Pump (open loop)</option>
-                <option value="MDI">MDI</option>
+                <option value="PUMP">Pump (open loop)</option>
+                <option value="MDI" selected>MDI</option>
               </select>
             </div>
             <div class="panel-row" id="row-target">
@@ -558,21 +876,29 @@
           </div>
           <div class="panel-section" id="section-mdi">
             <h3>Long-acting (MDI)</h3>
-            <div class="panel-row">
-              <label>Insulin type</label>
-              <select id="long-acting-type">
-                <option value="Glargine">Glargine</option>
-                <option value="Degludec">Degludec</option>
-                <option value="Detemir">Detemir</option>
+            <div class="long-acting-row" id="la-row-morning" data-slot="morning">
+              <span class="la-row-label">Morning</span>
+              <select class="la-type" data-default="GlargineU300">
+                <option value="GlargineU300">Glargine U300 (Toujeo)</option>
+                <option value="GlargineU100">Glargine U100 (Lantus)</option>
+                <option value="Detemir">Detemir (Levemir)</option>
+                <option value="Degludec">Degludec (Tresiba)</option>
               </select>
+              <input type="number" class="la-dose" min="1" max="80" step="1" value="8" title="Dose (U)" />
+              <input type="time" class="la-time" min="00:00" max="11:59" value="08:00" />
+              <button type="button" class="la-set-btn">Set</button>
             </div>
-            <div class="panel-row">
-              <label>Dose (U)</label>
-              <input type="number" id="long-acting-dose" min="1" max="80" step="1" value="20" />
-            </div>
-            <div class="panel-row">
-              <label>Injection time</label>
-              <input type="time" id="long-acting-time" value="22:00" />
+            <div class="long-acting-row" id="la-row-evening" data-slot="evening">
+              <span class="la-row-label">Evening</span>
+              <select class="la-type" data-default="GlargineU300">
+                <option value="GlargineU300">Glargine U300 (Toujeo)</option>
+                <option value="GlargineU100">Glargine U100 (Lantus)</option>
+                <option value="Detemir">Detemir (Levemir)</option>
+                <option value="Degludec">Degludec (Tresiba)</option>
+              </select>
+              <input type="number" class="la-dose" min="1" max="80" step="1" value="8" title="Dose (U)" />
+              <input type="time" class="la-time" min="12:00" max="23:59" value="20:00" />
+              <button type="button" class="la-set-btn">Set</button>
             </div>
           </div>
           <div class="panel-section" id="section-basal">
@@ -684,7 +1010,13 @@
         <div id="throttle-bubble">×10</div>
       </div>
 
-      <div id="sim-time">D+00:00</div>
+      <div id="time-block">
+        <svg id="sky-icon" data-tod="day" viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="disc" cx="12" cy="12" r="7" />
+          <circle class="crescent" cx="15" cy="10" r="6" />
+        </svg>
+        <div id="sim-time">D+00:00</div>
+      </div>
 
       <div style="display:flex; align-items:baseline; gap:2px;">
         <div id="current-cgm">---</div>

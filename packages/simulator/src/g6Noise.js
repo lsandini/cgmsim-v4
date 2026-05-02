@@ -198,4 +198,3 @@ export class DexcomG6Noise {
 export function createG6NoiseGenerator(seed, state = null) {
     return new DexcomG6Noise(seed, state);
 }
-//# sourceMappingURL=g6Noise.js.map

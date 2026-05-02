@@ -114,4 +114,3 @@ export function purgeAbsorbedMeals(meals, carbsAbsTime, nowSimTimeMs) {
         return minAgo < carbsAbsTime * 1.1 * meal.gastricEmptyingRate;
     });
 }
-//# sourceMappingURL=carbs.js.map

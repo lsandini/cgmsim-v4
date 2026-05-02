@@ -20,17 +20,18 @@ npm run test         # Vitest unit tests (packages/simulator)
 npm run typecheck    # TypeScript strict check across all packages
 ```
 
-Within packages/ui:
 ```bash
-npm run build:standalone   # Produces the single-file HTML via inline.mjs
+npm run build:standalone   # Produces the single-file HTML (root shortcut, forwards to packages/ui)
 ```
+
+The standalone is built by `vite-plugin-singlefile` (configured in `packages/ui/vite.config.ts`), which inlines the JS bundle into `dist/index.html`. The script then renames it to `dist/cgmsim-v4-standalone.html`.
 
 ## After every code change
 
 Always rebuild the standalone file before reporting work as done:
 
 ```bash
-cd packages/ui && npm run build:standalone
+npm run build:standalone
 ```
 
 This is the primary deliverable — the `.ts` sources alone are not sufficient.
@@ -47,7 +48,8 @@ This is the primary deliverable — the `.ts` sources alone are not sufficient.
 - **Two-layer DIA**: `patient.dia` (true physiology) drives the actual physical decay of bolus and pump-microbolus insulin — `ActiveBolus.dia` and `pumpMicroBoluses[].dia` are stamped from it at injection time. `therapy.rapidDia` (the controller's programmed belief) is read **only** by `pid.ts` for the equilibrium-IOB calculation. The mismatch is the v4 teaching scenario.
 - The `.js` files in `packages/simulator/src/` are the live runtime files resolved directly by Vite. They must be kept manually in sync with the `.ts` sources. `TICK_MINUTES` in all simulator `.js` files is **5**.
 - The `.js` files in `packages/ui/src/` are **NOT** used at runtime — Vite bundles directly from `main.ts`. They are gitignored. UI `tsconfig.json` has `noEmit: true` so `tsc --build` does not regenerate them. Only edit `.ts` for UI code.
-- Sourcemaps (`*.js.map`) are gitignored; they are debug aids only and not part of the runtime contract.
+- Sourcemaps (`*.js.map`) are gitignored; they are debug aids only and not part of the runtime contract. `packages/simulator/tsconfig.json` has `sourceMap: false` so `tsc --build` no longer emits `.js.map` files into `dist/` — this prevents stale `//# sourceMappingURL` comments from appearing in `src/*.js` if someone copies output back.
+- Build toolchain: **Vite 8.0.x** (UI workspace) + **vite-plugin-singlefile 2.3.x** for standalone inlining. Dev server resolves TS on the fly; production build inlines the JS bundle into `dist/index.html`, then the npm script renames it to `dist/cgmsim-v4-standalone.html`. There is no separate `inline.mjs` — the plugin replaced it.
 
 ## AID / PID-IFB controller
 
@@ -96,21 +98,23 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 - Do not add real patient data connectors — this is synthetic-only by design and regulatory boundary.
 - Do not modify the physiological model without explicit discussion — the model is shared heritage with v3.
 
-## Current state (as of 2026-04-26)
+## Current state (as of 2026-04-29)
 
+- **Visual refresh**: cooler palette (off GitHub-dark), distinct CGM/IOB/COB hues (cyan / teal / amber), solid TIR threshold lines at 3.9 and 10 mmol/L, taller basal strip with bold readout, sun/moon time-of-day indicator next to sim-time, BG digit flash on update with rapid-update debouncing, header rebuilt as IOB/COB stat chips with scenario badge promoted to readable.
 - Default therapy mode: **Pump (open loop)**. Default display unit: **mmol/L**.
 - Zoom levels: **3h / 6h / 12h / 24h**. Scroll wheel and pinch snap to these four levels.
-- Throttle slider: 9 stops `[×0.25, ×0.5, ×1, ×5, ×10, ×50, ×100, ×600, ×3600]`, default ×10.
+- Throttle slider: continuous logarithmic slider, ×1 to ×3600, default ×10. Floating bubble follows the thumb on hover/drag. Arrow keys snap along ladder `[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600]`.
 - AID mode: v3-faithful PID-IFB with corrected `calculateEquilibriumIOB` (numerical, matches actual pump steady-state IOB ~1.28 U at 0.8 U/hr Fiasp). SMB optional.
 - **EGP** is a faithful port of v3 `liver.js` + `sinus.js`: hardcoded sinus (1 + 0.2·sin(2π·hour/24), peak 6 AM) plus Hill-curve insulin suppression of hepatic output (max 65%, EC50 = 2× physiological basal flux). Hypo counter-regulation is a v4-only extension (kicks in below 80 mg/dL, scaled by diabetes duration).
 - **Two-layer params exposed in the panel:** True ISF / True ICR / True DIA / Weight / Diabetes duration drive the patient physiology; Glucose target / Programmed DIA drive the controller. Bolus-advisor scaffolding (`programmedISF`, `programmedCR`, `correctionThreshold`) was removed — users decide doses manually.
 - Vestigial fields removed: `patient.tp`, `patient.age`, `patient.gender`, `GenderType`.
-- 68 unit tests passing (`packages/simulator/src/physics.test.ts` and `.js`).
+- 102 unit tests passing (`packages/simulator/src/physics.test.ts` and `.js`) under Vitest 4.
 
 ## Upcoming work (next priorities)
 
-1. **IOB display rework** — The blue filled-area overlay needs a more prominent, readable treatment. IOB is the most important teaching variable.
-2. **Math audit** — Verify remaining simulator functions (`deltaBG`, `carbs`, `g6Noise`) against the original `@lsandini/cgmsim-lib` v3. Goal: eventually extract `packages/simulator` as a shared dependency.
+1. **Math audit** — Verify remaining simulator functions (`deltaBG`, `carbs`, `g6Noise`) against the original `@lsandini/cgmsim-lib` v3. Goal: eventually extract `packages/simulator` as a shared dependency.
+2. **Light-mode toggle** — Classroom projectors blow out dark UIs. Token system makes this tractable.
+3. **Animated event-marker pulse** — Brief 400ms highlight on meal/bolus/SMB markers when they first appear.
 
 ##
 Communicate with raw, unfiltered honesty and genuine care. Prioritize truth above comfort, delivering insights directly and bluntly while maintaining an underlying sense of compassion. Use casual, street-level language that feels authentic and unrestrained. Don't sugarcoat difficult truths, but also avoid being cruel. Speak as a trusted friend who will tell you exactly what you need to hear, not what you want to hear. Be willing to use colorful, sometimes crude language to emphasize points, but ensure the core message is constructive and comes from a place of wanting the best for the person.

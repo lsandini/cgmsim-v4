@@ -29,38 +29,108 @@ const TIR_LOW = 70;
 const TIR_HIGH = 180;
 const HYPO_L1 = 54;
 
-// Canvas colours
-const COLORS = {
-  bg: '#0d1117',
-  grid: 'rgba(48, 54, 61, 0.6)',
-  gridLabel: '#8b949e',
-  gridDay: 'rgba(88, 166, 255, 0.25)',
-  greenBand: 'rgba(38, 166, 65, 0.12)',
-  amberBand: 'rgba(210, 153, 34, 0.20)',
-  redBand: 'rgba(218, 54, 51, 0.20)',
-  trace: '#58a6ff',
-  traceGlow: 'rgba(88, 166, 255, 0.35)',
-  traceHypoL1: '#d29922',
-  traceHypoL2: '#da3633',
-  trueGlucose: 'rgba(255, 255, 255, 0.25)',
-  iobFill: 'rgba(88, 166, 255, 0.10)',
-  iobLine: 'rgba(88, 166, 255, 0.4)',
-  cobFill: 'rgba(210, 153, 34, 0.10)',
-  cobLine: 'rgba(210, 153, 34, 0.4)',
-  basalFill: 'rgba(63, 185, 80, 0.12)',
-  basalLine: 'rgba(63, 185, 80, 0.55)',
-  bolusMarker: '#58a6ff',
-  mealMarker: '#d29922',
-  smbMarker: '#bc8cff',
-  future: 'rgba(255, 255, 255, 0.03)',
+// Canvas colour palettes — swapped wholesale on theme change.
+type ColorPalette = {
+  bg: string; grid: string; gridStrong: string; gridLabel: string; gridDay: string;
+  greenBand: string; amberBand: string; redBand: string;
+  hypoLine: string; hypoL2Line: string; hyperLine: string; lowLine: string;
+  trace: string; traceGlow: string; traceHypoL1: string; traceHypoL2: string; trueGlucose: string;
+  iobFill: string; iobFillTop: string; iobLine: string;
+  cobFill: string; cobFillTop: string; cobLine: string;
+  basalFill: string; basalLine: string;
+  bolusMarker: string; mealMarker: string; smbMarker: string; longActingMarker: string;
+  future: string; futureEdge: string;
+};
+type ComparePalette = { trace: string; traceGlow: string; hypoL1: string; hypoL2: string; };
+
+const DARK_PALETTE: ColorPalette = {
+  bg: '#0a0f1c',
+  grid: 'rgba(80, 92, 118, 0.45)',
+  gridStrong: 'rgba(120, 134, 162, 0.65)',
+  gridLabel: 'rgba(148, 160, 184, 0.85)',
+  gridDay: 'rgba(122, 162, 255, 0.30)',
+  greenBand: 'rgba(16, 185, 129, 0.18)',
+  amberBand: 'rgba(245, 158, 11, 0.20)',
+  redBand:   'rgba(239, 68, 68, 0.20)',
+  hypoLine:  '#ef4444',
+  hypoL2Line:'#dc2626',
+  hyperLine: '#f59e0b',
+  lowLine:   '#10b981',
+  trace:        '#22c55e',
+  traceGlow:    'rgba(34, 197, 94, 0.40)',
+  traceHypoL1:  '#f59e0b',
+  traceHypoL2:  '#ef4444',
+  trueGlucose:  'rgba(238, 242, 250, 0.28)',
+  iobFill:    'rgba(96, 165, 250, 0.10)',
+  iobFillTop: 'rgba(96, 165, 250, 0.32)',
+  iobLine:    'rgba(96, 165, 250, 0.85)',
+  cobFill:    'rgba(251, 191, 36, 0.22)',
+  cobFillTop: 'rgba(251, 191, 36, 0.50)',
+  cobLine:    'rgba(251, 191, 36, 0.90)',
+  basalFill:  'rgba(245, 158, 11, 0.18)',
+  basalLine:  'rgba(217, 119, 6, 0.85)',
+  bolusMarker: '#3b82f6',
+  mealMarker:  '#fbbf24',
+  smbMarker:   '#c084fc',
+  longActingMarker: '#14b8a6',                   // teal — distinct from bolus blue / SMB purple
+  future: 'rgba(8, 12, 22, 0.45)',
+  futureEdge: 'rgba(122, 162, 255, 0.35)',
 };
 
-const COMPARE_COLORS = {
-  trace:     '#ff7b54',
-  traceGlow: 'rgba(255, 123, 84, 0.30)',
-  hypoL1:    '#ff9f43',
-  hypoL2:    '#ee5a24',
+const LIGHT_PALETTE: ColorPalette = {
+  bg: '#ffffff',
+  grid: 'rgba(15, 23, 42, 0.10)',
+  gridStrong: 'rgba(15, 23, 42, 0.22)',
+  gridLabel: 'rgba(71, 85, 105, 0.85)',
+  gridDay: 'rgba(59, 130, 246, 0.35)',
+  greenBand: 'rgba(16, 185, 129, 0.10)',
+  amberBand: 'rgba(245, 158, 11, 0.12)',
+  redBand:   'rgba(239, 68, 68, 0.12)',
+  hypoLine:  '#dc2626',
+  hypoL2Line:'#b91c1c',
+  hyperLine: '#d97706',
+  lowLine:   '#16a34a',
+  trace:        '#16a34a',                       // Loop green CGM
+  traceGlow:    'rgba(22, 163, 74, 0.25)',
+  traceHypoL1:  '#d97706',
+  traceHypoL2:  '#dc2626',
+  trueGlucose:  'rgba(15, 23, 42, 0.22)',
+  iobFill:    'rgba(96, 165, 250, 0.10)',          // lighter sky-blue IOB
+  iobFillTop: 'rgba(96, 165, 250, 0.28)',
+  iobLine:    'rgba(96, 165, 250, 0.80)',
+  cobFill:    'rgba(251, 191, 36, 0.22)',         // amber-400 carbs — yellower than basal
+  cobFillTop: 'rgba(251, 191, 36, 0.50)',
+  cobLine:    'rgba(234, 179, 8, 0.90)',
+  basalFill:  'rgba(245, 158, 11, 0.18)',
+  basalLine:  'rgba(217, 119, 6, 0.85)',
+  bolusMarker: '#2563eb',
+  mealMarker:  '#d97706',
+  smbMarker:   '#9333ea',
+  longActingMarker: '#0d9488',                   // darker teal for light theme
+  future: 'rgba(15, 23, 42, 0.04)',
+  futureEdge: 'rgba(59, 130, 246, 0.30)',
 };
+
+const DARK_COMPARE: ComparePalette = {
+  trace:     '#fb7185',
+  traceGlow: 'rgba(251, 113, 133, 0.35)',
+  hypoL1:    '#fdba74',
+  hypoL2:    '#f87171',
+};
+const LIGHT_COMPARE: ComparePalette = {
+  trace:     '#e11d48',
+  traceGlow: 'rgba(225, 29, 72, 0.25)',
+  hypoL1:    '#ea580c',
+  hypoL2:    '#dc2626',
+};
+
+let COLORS: ColorPalette = DARK_PALETTE;
+let COMPARE_COLORS: ComparePalette = DARK_COMPARE;
+
+export function setRendererTheme(theme: 'dark' | 'light'): void {
+  if (theme === 'light') { COLORS = LIGHT_PALETTE; COMPARE_COLORS = LIGHT_COMPARE; }
+  else { COLORS = DARK_PALETTE; COMPARE_COLORS = DARK_COMPARE; }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +143,8 @@ export interface RendererOptions {
   displayUnit: DisplayUnit;
   primaryLabel: string;
   compareLabel: string;
+  /** Therapy mode — used to suppress mode-irrelevant overlays (e.g. basal in MDI). */
+  therapyMode: 'AID' | 'PUMP' | 'MDI';
 }
 
 interface RingEntry {
@@ -160,14 +232,15 @@ export class CGMRenderer {
     displayUnit: 'mmoll',
     primaryLabel: 'Run A',
     compareLabel: 'Run B',
+    therapyMode: 'PUMP',
   };
 
   private readonly PAD_LEFT        = 56;
   private readonly PAD_RIGHT       = 36;
   private readonly PAD_TOP         = 52;  // headroom for IOB/COB row (top: 12) + scenario badge (top: 28)
-  private readonly PAD_BOTTOM      = 80;  // time row(22) + gap(8) + basal panel(44) + margin(6)
-  private readonly BASAL_PANEL_H   = 44;  // height of the basal sub-panel in px
-  private readonly BASAL_PANEL_OFF = 30;  // offset of sub-panel top below main plot bottom
+  private readonly PAD_BOTTOM      = 92;  // time row(22) + gap(8) + basal panel(56) + margin(6)
+  private readonly BASAL_PANEL_H   = 56;  // taller for legibility
+  private readonly BASAL_PANEL_OFF = 30;
 
   private cssW = 0;
   private cssH = 0;
@@ -309,13 +382,21 @@ export class CGMRenderer {
       this.dragStartX = e.clientX;
       this.dragStartOffset = this.viewOffsetMs;
       canvas.style.cursor = 'grabbing';
+      this.hideTooltip();
       e.preventDefault();
     });
 
     window.addEventListener('mousemove', (e) => {
-      if (!this.isDragging) return;
-      this.applyDrag(e.clientX);
+      if (this.isDragging) { this.applyDrag(e.clientX); return; }
     });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (this.isDragging) return;
+      const rect = canvas.getBoundingClientRect();
+      this.updateTooltip(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    canvas.addEventListener('mouseleave', () => this.hideTooltip());
 
     window.addEventListener('mouseup', () => {
       if (!this.isDragging) return;
@@ -403,6 +484,64 @@ export class CGMRenderer {
     for (const cb of this.viewChangeCallbacks) cb();
   }
 
+  // ── Hover tooltip ─────────────────────────────────────────────────────────
+
+  private tooltipEl: HTMLElement | null | undefined;
+
+  private getTooltipEl(): HTMLElement | null {
+    if (this.tooltipEl === undefined) {
+      this.tooltipEl = document.getElementById('cgm-tooltip');
+    }
+    return this.tooltipEl ?? null;
+  }
+
+  private hideTooltip(): void {
+    const el = this.getTooltipEl();
+    if (el) el.classList.remove('visible');
+  }
+
+  private updateTooltip(mouseX: number, mouseY: number): void {
+    const el = this.getTooltipEl();
+    if (!el) return;
+    const latest = this.ring.latest();
+    if (!latest) { this.hideTooltip(); return; }
+
+    const winStartMin = this.getWinStart(latest.simTimeMs);
+    const HIT_RADIUS = 14; // px
+
+    let bestDist = Infinity;
+    let bestX = 0, bestY = 0;
+    let bestEntry: RingEntry | null = null;
+
+    this.ring.forEach((entry) => {
+      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      const x = this.timeX(offsetMin);
+      const y = this.glucoseY(entry.cgm);
+      const d = Math.hypot(x - mouseX, y - mouseY);
+      if (d < bestDist) { bestDist = d; bestX = x; bestY = y; bestEntry = entry; }
+    });
+
+    if (!bestEntry || bestDist > HIT_RADIUS) { this.hideTooltip(); return; }
+    const e = bestEntry as RingEntry;
+
+    const isMmoll = this.options.displayUnit === 'mmoll';
+    const val = isMmoll ? (e.cgm / 18.0182).toFixed(1) : Math.round(e.cgm).toString();
+    const unit = isMmoll ? 'mmol/L' : 'mg/dL';
+
+    const totalMin = Math.round(e.simTimeMs / 60_000);
+    const days = Math.floor(totalMin / 1440);
+    const hours = Math.floor((totalMin % 1440) / 60);
+    const mins = totalMin % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const timeLabel = `D${days}+${pad(hours)}:${pad(mins)}`;
+
+    el.innerHTML = `<span class="time">${timeLabel}</span>${val} ${unit}`;
+    el.style.left = `${bestX}px`;
+    el.style.top = `${bestY}px`;
+    el.classList.add('visible');
+  }
+
   // ── Main render ───────────────────────────────────────────────────────────
 
   private render(): void {
@@ -426,7 +565,7 @@ export class CGMRenderer {
     this.drawFutureSpace(winStartMin, animSimMs);
     this.drawGrid(winStartMin);
 
-    if (this.options.showBasal) this.drawBasalOverlay(winStartMin);
+    if (this.options.showBasal && this.options.therapyMode !== 'MDI') this.drawBasalOverlay(winStartMin);
     if (this.options.showCOB) this.drawCOBOverlay(winStartMin);
     if (this.options.showIOB) this.drawIOBOverlay(winStartMin);
     if (this.options.showTrueGlucose) this.drawTrueLine(winStartMin);
@@ -447,17 +586,25 @@ export class CGMRenderer {
   private drawBands(winStartMin: number): void {
     void winStartMin;
     const ctx = this.ctx;
-    const yTop = this.glucoseY(TIR_HIGH);
-    const yBot = this.glucoseY(TIR_LOW);
-    ctx.fillStyle = COLORS.greenBand;
-    ctx.fillRect(this.PAD_LEFT, yTop, this.plotW, yBot - yTop);
+    const xL = this.PAD_LEFT;
+    const xR = this.PAD_LEFT + this.plotW;
+    const yHigh = this.glucoseY(TIR_HIGH);   // 180 mg/dL — dashed orange
+    const yLow  = this.glucoseY(TIR_LOW);    //  70 mg/dL — dashed green
+    const yVlow = this.glucoseY(HYPO_L1);    //  54 mg/dL — dashed red
 
-    const yAmberBot = this.glucoseY(HYPO_L1);
-    ctx.fillStyle = COLORS.amberBand;
-    ctx.fillRect(this.PAD_LEFT, yBot, this.plotW, yAmberBot - yBot);
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([6, 5]);
 
-    ctx.fillStyle = COLORS.redBand;
-    ctx.fillRect(this.PAD_LEFT, yAmberBot, this.plotW, this.glucoseY(40) - yAmberBot);
+    ctx.strokeStyle = COLORS.hyperLine;
+    ctx.beginPath(); ctx.moveTo(xL, yHigh); ctx.lineTo(xR, yHigh); ctx.stroke();
+
+    ctx.strokeStyle = COLORS.lowLine;
+    ctx.beginPath(); ctx.moveTo(xL, yLow); ctx.lineTo(xR, yLow); ctx.stroke();
+
+    ctx.strokeStyle = COLORS.hypoL2Line;
+    ctx.beginPath(); ctx.moveTo(xL, yVlow); ctx.lineTo(xR, yVlow); ctx.stroke();
+
+    ctx.setLineDash([]);
   }
 
   private drawFutureSpace(winStartMin: number, animSimMs: number): void {
@@ -466,8 +613,19 @@ export class CGMRenderer {
     const xStart = this.timeX(filledOffset);
     const xEnd = this.timeX(this.viewWindowMinutes);
     if (xStart >= xEnd) return;
-    this.ctx.fillStyle = COLORS.future;
-    this.ctx.fillRect(xStart, this.PAD_TOP, xEnd - xStart, this.plotH);
+    const ctx = this.ctx;
+    ctx.fillStyle = COLORS.future;
+    ctx.fillRect(xStart, this.PAD_TOP, xEnd - xStart, this.plotH);
+
+    // Soft accent line at the "now" boundary
+    ctx.strokeStyle = COLORS.futureEdge;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(xStart, this.PAD_TOP);
+    ctx.lineTo(xStart, this.PAD_TOP + this.plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   private drawGrid(winStartMin: number): void {
@@ -481,8 +639,8 @@ export class CGMRenderer {
 
     ctx.strokeStyle = COLORS.grid;
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.font = '13.2px -apple-system, sans-serif';
+    ctx.setLineDash([]);                     // solid (was [4,4])
+    ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.gridLabel;
     ctx.textAlign = 'right';
 
@@ -494,9 +652,8 @@ export class CGMRenderer {
       ctx.lineTo(this.PAD_LEFT + this.plotW, y);
       ctx.stroke();
       const label = isMMol ? (mg / 18.0182).toFixed(1) : Math.round(mg).toString();
-      ctx.fillText(label, this.PAD_LEFT - 6, y + 4);
+      ctx.fillText(label, this.PAD_LEFT - 6, y + 5);
     }
-    ctx.setLineDash([]);
 
     // Vertical time lines — adaptive density based on zoom level
     const stepMin = this.viewWindowMinutes <= 180 ? 30
@@ -513,20 +670,18 @@ export class CGMRenderer {
       const isMidnight = Math.round(simMin) % (24 * 60) === 0;
 
       ctx.strokeStyle = isMidnight ? COLORS.gridDay : COLORS.grid;
-      ctx.lineWidth = isMidnight ? 1.5 : 1;
-      ctx.setLineDash(isMidnight ? [] : [4, 4]);
+      ctx.lineWidth   = isMidnight ? 1.5 : 1;
+      ctx.setLineDash([]);                   // all solid
       ctx.beginPath();
       ctx.moveTo(x, this.PAD_TOP);
       ctx.lineTo(x, this.PAD_TOP + this.plotH);
       ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.lineWidth = 1;
 
       const totalMin = Math.round(simMin);
       const absHour = Math.floor(totalMin / 60) % 24;
       const absMin = totalMin % 60;
       const label = `${String(absHour).padStart(2, '0')}:${String(absMin).padStart(2, '0')}`;
-      ctx.fillStyle = isMidnight ? COLORS.trace : COLORS.gridLabel;
+      ctx.fillStyle = isMidnight ? COLORS.gridStrong : COLORS.gridLabel;
       ctx.fillText(label, x, this.PAD_TOP + this.plotH + 18);
     }
   }
@@ -662,7 +817,7 @@ export class CGMRenderer {
     ctx.stroke();
 
     // Y-axis tick labels: '2' at top, '0' at bottom
-    ctx.font = '10.8px -apple-system, sans-serif';
+    ctx.font = '12px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -672,7 +827,7 @@ export class CGMRenderer {
 
     // Rotated 'Basal' label on the left margin
     ctx.save();
-    ctx.font = '10.8px -apple-system, sans-serif';
+    ctx.font = '12px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -722,11 +877,11 @@ export class CGMRenderer {
     // Current rate readout inside the panel (bottom-left)
     const latest = this.ring.latest();
     if (latest) {
-      ctx.font = '12px -apple-system, sans-serif';
-      ctx.fillStyle = COLORS.basalLine;
+      ctx.font = 'bold 14px -apple-system, sans-serif';
+      ctx.fillStyle = '#eef2fa';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
-      ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 2);
+      ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 3);
       ctx.textBaseline = 'alphabetic';
     }
   }
@@ -734,80 +889,124 @@ export class CGMRenderer {
   private drawIOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
-    const maxIOB = 5, maxPx = this.plotH * 0.25;
-    const baseY = this.glucoseY(TIR_HIGH);
+    const panelH = this.plotH * 0.25;
+    const baseY  = this.glucoseY(TIR_HIGH);   // 10 mmol/L line — panel floor
+    const topY   = baseY - panelH;            // panel ceiling
 
-    let lastX = 0, hasPoints = false;
-
-    ctx.beginPath();
+    // Pass 1: collect visible (offset, iob) and find peak — auto-scale Y
+    const visible: { x: number; iob: number }[] = [];
+    let peakIOB = 0;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.iob / maxIOB, 1) * maxPx;
-      if (!hasPoints) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
-      else ctx.lineTo(x, y);
-      lastX = x;
+      visible.push({ x: this.timeX(offsetMin), iob: entry.iob });
+      if (entry.iob > peakIOB) peakIOB = entry.iob;
     });
-    if (!hasPoints) return;
+    if (visible.length === 0) return;
 
-    ctx.lineTo(lastX, baseY);
+    const niceCeil = (v: number): number => {
+      if (v <= 0) return 4;
+      const ladder = [4, 6, 8, 10, 15, 20, 30, 50, 75, 100];
+      for (const c of ladder) if (c >= v) return c;
+      return Math.ceil(v / 10) * 10;
+    };
+    const maxIOB = niceCeil(peakIOB * 1.10);
+
+    const yFor = (iob: number): number =>
+      baseY - Math.max(0, Math.min(iob / maxIOB, 1)) * panelH;
+
+    const pts = visible.map((v) => ({ x: v.x, y: yFor(v.iob) }));
+
+    // Gradient fill
+    const grad = ctx.createLinearGradient(0, topY, 0, baseY);
+    grad.addColorStop(0, COLORS.iobFillTop);
+    grad.addColorStop(1, COLORS.iobFill);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, baseY);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
     ctx.closePath();
-    ctx.fillStyle = COLORS.iobFill;
+    ctx.fillStyle = grad;
     ctx.fill();
 
+    // Top edge stroke
     ctx.beginPath();
-    let first = true;
-    this.ring.forEach((entry) => {
-      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.iob / maxIOB, 1) * maxPx;
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
-    });
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
     ctx.strokeStyle = COLORS.iobLine;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.75;
+    ctx.setLineDash([]);
     ctx.stroke();
+
+    // Baseline reference line at the 10 mmol/L floor
+    ctx.beginPath();
+    ctx.moveTo(this.PAD_LEFT, baseY);
+    ctx.lineTo(this.PAD_LEFT + this.plotW, baseY);
+    ctx.strokeStyle = COLORS.iobLine;
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.35;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Y-axis tick labels on the RIGHT margin: max at top, '0' at bottom
+    const xRight = this.PAD_LEFT + this.plotW;
+    ctx.font = '12px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.iobLine;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const maxLabel = maxIOB >= 10 ? maxIOB.toFixed(0) : maxIOB.toFixed(1);
+    ctx.fillText(maxLabel, xRight + 3, topY);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('0', xRight + 3, baseY);
+
+    // Rotated 'IOB' label on the right margin
+    ctx.save();
+    ctx.fillStyle = COLORS.iobLine;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(xRight + 22, topY + panelH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('IOB', 0, 0);
+    ctx.restore();
   }
 
   private drawCOBOverlay(winStartMin: number): void {
     if (this.ring.size === 0) return;
     const ctx = this.ctx;
-    const maxCOB = 80, maxPx = this.plotH * 0.20;
+    const maxCOB = 80, maxPx = this.plotH * 0.22;
     const baseY = this.glucoseY(TIR_HIGH);
+    const peakY = baseY - maxPx;
 
-    let lastX = 0, hasPoints = false;
-
-    ctx.beginPath();
+    const pts: { x: number; y: number }[] = [];
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.cob / maxCOB, 1) * maxPx;
-      if (!hasPoints) { ctx.moveTo(x, baseY); ctx.lineTo(x, y); hasPoints = true; }
-      else ctx.lineTo(x, y);
-      lastX = x;
+      pts.push({
+        x: this.timeX(offsetMin),
+        y: baseY - Math.min(entry.cob / maxCOB, 1) * maxPx,
+      });
     });
-    if (!hasPoints) return;
+    if (pts.length === 0) return;
 
-    ctx.lineTo(lastX, baseY);
+    const grad = ctx.createLinearGradient(0, peakY, 0, baseY);
+    grad.addColorStop(0, COLORS.cobFillTop);
+    grad.addColorStop(1, COLORS.cobFill);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, baseY);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
     ctx.closePath();
-    ctx.fillStyle = COLORS.cobFill;
+    ctx.fillStyle = grad;
     ctx.fill();
 
     ctx.beginPath();
-    let first = true;
-    this.ring.forEach((entry) => {
-      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = baseY - Math.min(entry.cob / maxCOB, 1) * maxPx;
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
-    });
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
     ctx.strokeStyle = COLORS.cobLine;
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
     ctx.stroke();
   }
 
@@ -900,6 +1099,15 @@ export class CGMRenderer {
         ctx.font = '9.6px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${ev.units}U`, x, y + 16);
+      } else if (ev.kind === 'longActing') {
+        // Filled square at the top — distinct shape from triangles, signals "sustained" basal-style effect
+        const y = this.PAD_TOP + 4;
+        const sz = 7;
+        ctx.fillStyle = COLORS.longActingMarker;
+        ctx.fillRect(x - sz / 2, y, sz, sz);
+        ctx.font = '9.6px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ev.units}U`, x, y + sz + 11);
       }
     }
     ctx.textAlign = 'left';

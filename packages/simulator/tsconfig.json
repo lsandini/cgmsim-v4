@@ -8,12 +8,12 @@
     "exactOptionalPropertyTypes": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
+    "sourceMap": false,
     "outDir": "./dist",
     "rootDir": "./src",
     "composite": true,
     "skipLibCheck": true,
-    "lib": ["ES2022", "WebWorker"]
+    "lib": ["ES2022"]
   },
   "references": [
     { "path": "../shared" }

@@ -18,7 +18,11 @@ export type TherapyMode = 'MDI' | 'PUMP' | 'AID';
 
 export type RapidAnalogueType = 'Fiasp' | 'Lispro' | 'Aspart';
 
-export type LongActingType = 'Glargine' | 'Degludec' | 'Detemir';
+export type LongActingType =
+  | 'GlargineU100'   // Lantus (U100)
+  | 'GlargineU300'   // Toujeo (U300)
+  | 'Detemir'        // Levemir
+  | 'Degludec';      // Tresiba
 
 export type DisplayUnit = 'mgdl' | 'mmoll';
 
@@ -68,6 +72,14 @@ export interface BasalEntry {
   rateUPerHour: number;
 }
 
+export interface LongActingSchedule {
+  type: LongActingType;
+  /** Dose in units. */
+  units: number;
+  /** Minute of day (0..1439). Morning slot: 0..719. Evening slot: 720..1439. */
+  injectionMinute: number;
+}
+
 export interface TherapyProfile {
   mode: TherapyMode;
 
@@ -78,12 +90,10 @@ export interface TherapyProfile {
   /** DIA in hours used by the controller / PID for IOB math (programmed belief, may differ from patient.dia). */
   rapidDia: number;
 
-  /** MDI long-acting insulin type. */
-  longActingType: LongActingType;
-  /** MDI long-acting dose in units. */
-  longActingDose: number;
-  /** MDI injection time as minutes since midnight. */
-  longActingInjectionTime: number;
+  /** MDI long-acting morning slot (00:00–11:59). null = unset. */
+  longActingMorning: LongActingSchedule | null;
+  /** MDI long-acting evening slot (12:00–23:59). null = unset. */
+  longActingEvening: LongActingSchedule | null;
 
   /** AID PID glucose target (mg/dL). */
   glucoseTarget: MgdL;
@@ -92,13 +102,12 @@ export interface TherapyProfile {
 }
 
 export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
-  mode: 'PUMP',
+  mode: 'MDI',
   basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
   rapidAnalogue: 'Fiasp',
   rapidDia: 5,
-  longActingType: 'Glargine',
-  longActingDose: 20,
-  longActingInjectionTime: 22 * 60,
+  longActingMorning: null,
+  longActingEvening: null,
   glucoseTarget: 100,
   enableSMB: false,
 };
@@ -145,10 +154,15 @@ export interface ActiveLongActing {
   simTimeMs: SimTimeMs;
   units: number;
   type: LongActingType;
+  /** Stamped at injection time from v3 PK formulas + patient.weight. Minutes. */
+  peak: number;
+  /** Stamped at injection time. Total duration of action in minutes. */
+  duration: number;
 }
 
 // ------------------------------------------------------------
-// WebWorker State (complete, serialisable)
+// Simulation state — complete, serialisable snapshot used for
+// save/restore and comparison-run snapshots.
 // ------------------------------------------------------------
 
 export interface WorkerState {
@@ -170,6 +184,12 @@ export interface WorkerState {
   activeMeals: ActiveMeal[];
   activeLongActing: ActiveLongActing[];
 
+  /** Last sim-day on which the morning long-acting slot fired (-1 = never).
+   *  Persisted so save/restore mid-day doesn't re-fire today's morning dose. */
+  lastMorningDay: number;
+  /** Same for the evening slot. */
+  lastEveningDay: number;
+
   /** PID controller: last ≤24 CGM readings for integral term (oldest first). */
   pidCGMHistory: number[];
   /** PID controller: last delivered basal rate for rate-of-change limiting. */
@@ -180,85 +200,12 @@ export interface WorkerState {
   /** Throttle factor (1 = real time, 100 = max). */
   throttle: number;
 
-  /** Whether the worker is currently running. */
+  /** Whether the simulator is currently running. */
   running: boolean;
 }
 
 // ------------------------------------------------------------
-// WebWorker Inbound Messages (main thread → worker)
-// ------------------------------------------------------------
-
-export interface MsgBolus {
-  type: 'BOLUS';
-  units: number;
-  analogue?: RapidAnalogueType;
-}
-
-export interface MsgMeal {
-  type: 'MEAL';
-  carbsG: number;
-  gastricEmptyingRate?: number;
-}
-
-export interface MsgSetBasal {
-  type: 'SET_BASAL';
-  rateUPerHour: number;
-  /** Duration in simulated minutes; omit to persist indefinitely. */
-  durationMinutes?: number;
-}
-
-export interface MsgSetTarget {
-  type: 'SET_TARGET';
-  targetMgdL: MgdL;
-}
-
-export interface MsgSetPatientParam {
-  type: 'SET_PATIENT_PARAM';
-  patch: Partial<VirtualPatient>;
-}
-
-export interface MsgSetTherapyParam {
-  type: 'SET_THERAPY_PARAM';
-  patch: Partial<TherapyProfile>;
-}
-
-export interface MsgSetThrottle {
-  type: 'SET_THROTTLE';
-  throttle: number;
-}
-
-export interface MsgPause {
-  type: 'PAUSE';
-}
-
-export interface MsgResume {
-  type: 'RESUME';
-}
-
-export interface MsgSaveState {
-  type: 'SAVE_STATE';
-}
-
-export interface MsgReset {
-  type: 'RESET';
-  state: WorkerState;
-}
-
-export type WorkerInboundMessage =
-  | MsgBolus
-  | MsgMeal
-  | MsgSetBasal
-  | MsgSetTarget
-  | MsgSetPatientParam
-  | MsgSetTherapyParam
-  | MsgSetThrottle
-  | MsgPause
-  | MsgResume
-  | MsgSaveState
-  | MsgReset;
-
-// ------------------------------------------------------------
-// WebWorker Outbound Messages (worker → main thread)
+// Tick snapshot — emitted by the simulator each tick to UI handlers.
 // ------------------------------------------------------------
 
 /** Posted every tick. Deliberately minimal — only what the UI needs. */
@@ -276,13 +223,6 @@ export interface TickSnapshot {
   /** AID basal delivery this tick (U/hr equivalent). */
   basalRate: number;
 }
-
-export interface StateSavedMessage {
-  type: 'STATE_SAVED';
-  state: WorkerState;
-}
-
-export type WorkerOutboundMessage = TickSnapshot | StateSavedMessage;
 
 // ------------------------------------------------------------
 // Session History Record

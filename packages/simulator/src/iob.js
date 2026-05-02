@@ -3,12 +3,12 @@
  *
  * Handles all active insulin delivery types:
  *   - Rapid-acting boluses (meal / correction)
- *   - Long-acting MDI doses (Glargine, Degludec, Detemir)
+ *   - Long-acting MDI doses (GlargineU100, GlargineU300, Detemir, Degludec)
  *   - Pump basal micro-boluses
  *
  * All times in simulated ms. All amounts in units.
  */
-import { RAPID_PROFILES, LONG_ACTING_PROFILES } from './insulinProfiles.js';
+import { RAPID_PROFILES } from './insulinProfiles.js';
 import { getExpTreatmentActivity, getExpTreatmentIOB, getDeltaMinutes, roundTo8Decimals } from './utils.js';
 // ── Bolus IOB ────────────────────────────────────────────────────────────────
 export function calculateBolusActivity(boluses, nowSimTimeMs) {
@@ -42,13 +42,10 @@ export function calculateBolusIOB(boluses, nowSimTimeMs) {
 // ── Long-acting MDI IOB ──────────────────────────────────────────────────────
 export function calculateLongActingActivity(doses, nowSimTimeMs) {
     return roundTo8Decimals(doses.reduce((sum, d) => {
-        const profile = LONG_ACTING_PROFILES[d.type];
-        if (!profile)
-            return sum;
         const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
         return sum + getExpTreatmentActivity({
-            peak: profile.peak,
-            duration: profile.dia * 60,
+            peak: d.peak,
+            duration: d.duration,
             minutesAgo: minAgo,
             units: d.units,
         });
@@ -56,13 +53,10 @@ export function calculateLongActingActivity(doses, nowSimTimeMs) {
 }
 export function calculateLongActingIOB(doses, nowSimTimeMs) {
     return roundTo8Decimals(doses.reduce((sum, d) => {
-        const profile = LONG_ACTING_PROFILES[d.type];
-        if (!profile)
-            return sum;
         const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
         return sum + getExpTreatmentIOB({
-            peak: profile.peak,
-            duration: profile.dia * 60,
+            peak: d.peak,
+            duration: d.duration,
             minutesAgo: minAgo,
             units: d.units,
         });
@@ -91,4 +85,3 @@ export function calculatePumpBasalIOB(microBoluses, nowSimTimeMs) {
         });
     }, 0));
 }
-//# sourceMappingURL=iob.js.map

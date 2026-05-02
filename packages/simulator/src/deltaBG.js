@@ -33,4 +33,3 @@ export function computeDeltaBG(inputs) {
     const deltaBG = insulinEffect + carbEffect + egpEffect;
     return { deltaBG, insulinEffect, carbEffect, egpEffect };
 }
-//# sourceMappingURL=deltaBG.js.map

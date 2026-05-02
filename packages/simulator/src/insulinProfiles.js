@@ -15,13 +15,26 @@ export const RAPID_PROFILES = {
     /** Aspart (NovoRapid): peak ~75 min, DIA ~5 h */
     Aspart: { peak: 75, dia: 5 },
 };
-// ── Long-acting analogues ────────────────────────────────────────────────────
+// ── Long-acting analogues (v3-faithful, dose- and weight-dependent) ──────────
 export const LONG_ACTING_PROFILES = {
-    /** Glargine U100 (Lantus/Basaglar): very flat, peak ~5–8 h, DIA 24 h */
-    Glargine: { peak: 360, dia: 24 },
-    /** Degludec (Tresiba): near-peakless, DIA ~42 h */
-    Degludec: { peak: 600, dia: 42 },
-    /** Detemir (Levemir): mild peak ~6–8 h, DIA 20 h */
-    Detemir: { peak: 420, dia: 20 },
+    /** Glargine U100 (Lantus). v3 GLA: dur = (22 + 12·U/wt)·60 min; peak = dur/2.5 */
+    GlargineU100: {
+        duration: (units, weightKg) => (22 + 12 * units / weightKg) * 60,
+        peak: (dur) => dur / 2.5,
+    },
+    /** Glargine U300 (Toujeo). v3 TOU: dur = (24 + 14·U/wt)·60 min; peak = dur/2.5 */
+    GlargineU300: {
+        duration: (units, weightKg) => (24 + 14 * units / weightKg) * 60,
+        peak: (dur) => dur / 2.5,
+    },
+    /** Detemir (Levemir). v3 DET: dur = (14 + 24·U/wt)·60 min; peak = dur/3 */
+    Detemir: {
+        duration: (units, weightKg) => (14 + 24 * units / weightKg) * 60,
+        peak: (dur) => dur / 3,
+    },
+    /** Degludec (Tresiba). v3 DEG: dur = 42·60 min (dose-independent); peak = dur/3. */
+    Degludec: {
+        duration: () => 42 * 60,
+        peak: (dur) => dur / 3,
+    },
 };
-//# sourceMappingURL=insulinProfiles.js.map

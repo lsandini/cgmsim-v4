@@ -14,6 +14,8 @@ import { computeDeltaBG } from './deltaBG.js';
 import { getExpTreatmentActivity, getExpTreatmentIOB } from './utils.js';
 import { calculatePumpBasalIOB, calculateBolusIOB } from './iob.js';
 import { RAPID_PROFILES } from './insulinProfiles.js';
+import { LONG_ACTING_PROFILES } from './insulinProfiles.js';
+import { calculateLongActingActivity, calculateLongActingIOB } from './iob.js';
 // Midnight in simulation time (simTimeMs=0 → minuteOfDay=0 → hour=0)
 const MIDNIGHT_MS = 0;
 describe('EGP model — v3 liver parity', () => {
@@ -302,4 +304,44 @@ describe('deltaBG steady state — pump at ~0.75 U/h', () => {
         expect(Math.abs(result.deltaBG)).toBeLessThan(0.5);
     });
 });
-//# sourceMappingURL=physics.test.js.map
+describe('LONG_ACTING_PROFILES (v3-faithful PK)', () => {
+    it('GlargineU300 (Toujeo) duration & peak for 20U / 70kg', () => {
+        const dur = LONG_ACTING_PROFILES.GlargineU300.duration(20, 70);
+        expect(dur).toBeCloseTo(1680, 6);
+        expect(LONG_ACTING_PROFILES.GlargineU300.peak(dur)).toBeCloseTo(672, 6);
+    });
+    it('Toujeo lasts longer than Lantus for the same dose+weight', () => {
+        const lantus = LONG_ACTING_PROFILES.GlargineU100.duration(20, 70);
+        const toujeo = LONG_ACTING_PROFILES.GlargineU300.duration(20, 70);
+        expect(toujeo).toBeGreaterThan(lantus);
+    });
+    it('Detemir duration grows with dose (Levemir clinical behavior)', () => {
+        const small = LONG_ACTING_PROFILES.Detemir.duration(10, 70);
+        const large = LONG_ACTING_PROFILES.Detemir.duration(40, 70);
+        expect(large).toBeGreaterThan(small);
+    });
+    it('Degludec duration is dose-independent (always 42h)', () => {
+        expect(LONG_ACTING_PROFILES.Degludec.duration(10, 70))
+            .toBe(LONG_ACTING_PROFILES.Degludec.duration(40, 70));
+        expect(LONG_ACTING_PROFILES.Degludec.duration(20, 70)).toBe(2520);
+    });
+    it('calculateLongActingActivity sums activity from mixed insulins', () => {
+        const nowMs = 60 * 60_000;
+        const toujeoDur = LONG_ACTING_PROFILES.GlargineU300.duration(20, 70);
+        const tresibaDur = LONG_ACTING_PROFILES.Degludec.duration(15, 70);
+        const doses = [
+            { id: 'la-1', simTimeMs: 0, units: 20, type: 'GlargineU300',
+              peak: LONG_ACTING_PROFILES.GlargineU300.peak(toujeoDur), duration: toujeoDur },
+            { id: 'la-2', simTimeMs: 0, units: 15, type: 'Degludec',
+              peak: LONG_ACTING_PROFILES.Degludec.peak(tresibaDur), duration: tresibaDur },
+        ];
+        const activity = calculateLongActingActivity(doses, nowMs);
+        expect(activity).toBeGreaterThan(0);
+        const a1 = calculateLongActingActivity([doses[0]], nowMs);
+        const a2 = calculateLongActingActivity([doses[1]], nowMs);
+        expect(activity).toBeCloseTo(a1 + a2, 6);
+        const iob = calculateLongActingIOB(doses, nowMs);
+        expect(iob).toBeGreaterThan(20);
+        expect(iob).toBeLessThan(35);
+    });
+});

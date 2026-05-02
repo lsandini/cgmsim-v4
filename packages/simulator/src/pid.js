@@ -153,4 +153,3 @@ function pushHistory(history, value) {
 export function rateToMicroBolus(rateUPerHour) {
     return rateUPerHour * (TICK_MINUTES / 60);
 }
-//# sourceMappingURL=pid.js.map

@@ -12,7 +12,31 @@
       "Bash(git rm *)",
       "Bash(grep -E '\\\\.\\(js\\\\.map|tsbuildinfo\\)$')",
       "Bash(grep -E '\\\\.\\(js|map|tsbuildinfo\\)$')",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(npm install *)",
+      "Bash(npm uninstall *)",
+      "Bash(rm -rf dist)",
+      "Bash(npx vite *)",
+      "Bash(npm view *)",
+      "Bash(pkill -f vite)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npm audit *)",
+      "Bash(echo \"---exit=$?---\")",
+      "Bash(npm ls *)",
+      "Bash(npm prune *)",
+      "Bash(git -C /home/lorenzo/cgmsim-v4 add docs/superpowers/specs/2026-05-01-long-acting-insulins-design.md)",
+      "Bash(git -C /home/lorenzo/cgmsim-v4 commit -m ' *)",
+      "Bash(git -C /home/lorenzo/cgmsim-v4 add docs/superpowers/plans/2026-05-01-long-acting-insulins.md)",
+      "Bash(git *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm -w @cgmsim/simulator test -- --run physics.test.ts)",
+      "Bash(npm -w @cgmsim/simulator test -- --run)",
+      "Bash(npx tsc *)",
+      "Bash(npm -w @cgmsim/ui exec -- tsc --noEmit -p tsconfig.json)"
     ]
   }
 }

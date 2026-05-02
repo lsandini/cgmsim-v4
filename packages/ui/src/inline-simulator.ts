@@ -1,12 +1,11 @@
 /**
  * InlineSimulator — simulation engine running on the main thread.
  *
- * Phase 2 additions over Phase 1:
- *   - activeLongActing properly typed and populated (MDI depot)
- *   - MDI: long-acting dose auto-injected at configured time each simulated day
- *   - Temp basal: timed override with automatic expiry
- *   - Proper IOB accounting for all therapy modes
- *   - Event log for canvas markers (bolus/meal events)
+ * MDI long-acting injections fire from morning + evening slots when each slot's
+ * configured time-of-day is reached (one fire per slot per simulated day). The
+ * PK profile (peak, duration) is evaluated at injection time against the dose
+ * and current patient.weight, then stamped onto the ActiveLongActing record so
+ * the depot decays from those values regardless of any later weight change.
  */
 
 import type {
@@ -18,6 +17,8 @@ import type {
   ActiveBolus,
   ActiveMeal,
   ActiveLongActing,
+  LongActingType,
+  LongActingSchedule,
 } from '@cgmsim/shared';
 import { DEFAULT_PATIENT, DEFAULT_THERAPY_PROFILE } from '@cgmsim/shared';
 
@@ -43,7 +44,7 @@ const INITIAL_BG   = 100;
 export type SimEvent =
   | { kind: 'bolus';      simTimeMs: number; units: number }
   | { kind: 'meal';       simTimeMs: number; carbsG: number }
-  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: string }
+  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: LongActingType; slot: 'morning' | 'evening' }
   | { kind: 'smb';        simTimeMs: number; units: number };
 
 interface TempBasal {
@@ -69,7 +70,8 @@ interface SimState {
   running:           boolean;
   g6:                DexcomG6Noise;
   rngState:          number;
-  lastLongActingDay: number;
+  lastMorningDay: number;
+  lastEveningDay: number;
   tempBasal:         TempBasal | null;
   events:            SimEvent[];
 }
@@ -93,7 +95,8 @@ function createInitialState(): SimState {
     running:           false,
     g6:                createG6NoiseGenerator(randomSeed(), null),
     rngState:          randomSeed(),
-    lastLongActingDay: -1,
+    lastMorningDay: -1,
+    lastEveningDay: -1,
     tempBasal:         null,
     events:            [],
   };
@@ -136,22 +139,50 @@ export class InlineSimulator {
   private checkLongActingDose(): void {
     const s = this.s;
     if (s.therapy.mode !== 'MDI') return;
-    const minuteOfDay     = (s.simTimeMs / 60_000) % (24 * 60);
-    const simDay          = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
-    const injectionMinute = s.therapy.longActingInjectionTime;
-    if (minuteOfDay >= injectionMinute && simDay !== s.lastLongActingDay) {
-      s.lastLongActingDay = simDay;
-      s.activeLongActing.push({
-        id: `la-${s.simTimeMs}`, simTimeMs: s.simTimeMs,
-        units: s.therapy.longActingDose, type: s.therapy.longActingType,
-      });
-      const ev: SimEvent = {
-        kind: 'longActing', simTimeMs: s.simTimeMs,
-        units: s.therapy.longActingDose, insulinType: s.therapy.longActingType,
-      };
-      s.events.push(ev);
-      for (const h of this.eventHandlers) h([ev]);
-    }
+    const minuteOfDay = (s.simTimeMs / 60_000) % (24 * 60);
+    const simDay      = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
+
+    this.fireSlotIfDue('morning', s.therapy.longActingMorning, minuteOfDay, simDay);
+    this.fireSlotIfDue('evening', s.therapy.longActingEvening, minuteOfDay, simDay);
+  }
+
+  private fireSlotIfDue(
+    slot: 'morning' | 'evening',
+    schedule: LongActingSchedule | null,
+    minuteOfDay: number,
+    simDay: number,
+  ): void {
+    if (schedule === null) return;
+    const s = this.s;
+    const lastDayKey = slot === 'morning' ? 'lastMorningDay' : 'lastEveningDay';
+    if (minuteOfDay < schedule.injectionMinute) return;
+    if (simDay === s[lastDayKey]) return;
+
+    s[lastDayKey] = simDay;
+
+    // Stamp PK params at injection time from current patient.weight
+    const pk = LONG_ACTING_PROFILES[schedule.type];
+    const duration = pk.duration(schedule.units, s.patient.weight);
+    const peak = pk.peak(duration);
+
+    s.activeLongActing.push({
+      id: `la-${slot}-${s.simTimeMs}`,
+      simTimeMs: s.simTimeMs,
+      units: schedule.units,
+      type: schedule.type,
+      peak,
+      duration,
+    });
+
+    const ev: SimEvent = {
+      kind: 'longActing',
+      simTimeMs: s.simTimeMs,
+      units: schedule.units,
+      insulinType: schedule.type,
+      slot,
+    };
+    s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
   }
 
   private tick(): void {
@@ -163,10 +194,9 @@ export class InlineSimulator {
 
     // Purge expired
     s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60);
-    s.activeLongActing = s.activeLongActing.filter(d => {
-      const p = LONG_ACTING_PROFILES[d.type];
-      return p !== undefined && (nowMs - d.simTimeMs) / 60_000 <= p.dia * 60;
-    });
+    s.activeLongActing = s.activeLongActing.filter(d =>
+      (nowMs - d.simTimeMs) / 60_000 <= d.duration,
+    );
     s.resolvedMeals    = purgeAbsorbedMeals(s.resolvedMeals, s.patient.carbsAbsTime, nowMs);
     s.pumpMicroBoluses = s.pumpMicroBoluses.filter(mb => (nowMs - mb.simTimeMs) / 60_000 <= mb.dia * 60);
 
@@ -314,6 +344,8 @@ export class InlineSimulator {
       g6State: this.s.g6.getState(),
       activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
       activeLongActing: [...this.s.activeLongActing],
+      lastMorningDay: this.s.lastMorningDay,
+      lastEveningDay: this.s.lastEveningDay,
       pidCGMHistory: [...this.s.pidCGMHistory],
       pidPrevRate: this.s.pidPrevRate,
       pidTicksSinceLastMB: this.s.pidTicksSinceLastMB,
@@ -335,7 +367,10 @@ export class InlineSimulator {
       pidTicksSinceLastMB: state.pidTicksSinceLastMB ?? 999,
       throttle: state.throttle, running: false,
       g6: createG6NoiseGenerator(1, state.g6State),
-      rngState: randomSeed(), lastLongActingDay: -1, tempBasal: null, events: [],
+      rngState: randomSeed(),
+      lastMorningDay: state.lastMorningDay ?? -1,
+      lastEveningDay: state.lastEveningDay ?? -1,
+      tempBasal: null, events: [],
     });
   }
 

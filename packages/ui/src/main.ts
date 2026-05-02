@@ -3,9 +3,9 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
-import { CGMRenderer } from './canvas-renderer.js';
+import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
 import { saveState, loadState, exportSession, importSession } from './storage.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
@@ -77,6 +77,17 @@ function formatSimTime(ms: number): string {
   return `D+${String(d).padStart(2,'0')}:${String(h).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+function updateSkyIcon(simTimeMs: number): void {
+  const totalMin = Math.floor(simTimeMs / 60_000);
+  const hourOfDay = (Math.floor(totalMin / 60) % 24 + 24) % 24;
+  let tod: 'day' | 'dawn' | 'dusk' | 'night';
+  if (hourOfDay >= 7  && hourOfDay < 17) tod = 'day';
+  else if (hourOfDay >= 5 && hourOfDay < 7)  tod = 'dawn';
+  else if (hourOfDay >= 17 && hourOfDay < 20) tod = 'dusk';
+  else tod = 'night';
+  skyIcon.setAttribute('data-tod', tod);
+}
+
 function timeStringToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return (h ?? 22) * 60 + (m ?? 0);
@@ -101,10 +112,10 @@ const appState = {
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
-function getEl<T extends HTMLElement>(id: string): T {
+function getEl<T extends Element>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Element #${id} not found`);
-  return el as T;
+  return el as unknown as T;
 }
 
 const canvas           = getEl<HTMLCanvasElement>('cgm-canvas');
@@ -113,12 +124,14 @@ const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
 const throttleVal      = getEl<HTMLElement>('throttle-val');
 const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
+const skyIcon          = getEl<SVGSVGElement>('sky-icon');
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
 const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
 const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
 const iobVal           = getEl<HTMLElement>('iob-val');
 const cobVal           = getEl<HTMLElement>('cob-val');
 const unitToggle       = getEl<HTMLButtonElement>('unit-toggle');
+const themeToggle      = getEl<HTMLButtonElement>('theme-toggle');
 const btnPanel         = getEl<HTMLButtonElement>('btn-panel');
 const btnFullscreen    = getEl<HTMLButtonElement>('btn-fullscreen');
 const sidePanel        = getEl<HTMLElement>('side-panel');
@@ -132,9 +145,8 @@ const therapyMode      = getEl<HTMLSelectElement>('therapy-mode');
 const glucoseTarget    = getEl<HTMLInputElement>('glucose-target');
 const rapidAnalogue    = getEl<HTMLSelectElement>('rapid-analogue');
 const progDIA          = getEl<HTMLInputElement>('prog-dia');
-const longActingType   = getEl<HTMLSelectElement>('long-acting-type');
-const longActingDose   = getEl<HTMLInputElement>('long-acting-dose');
-const longActingTime   = getEl<HTMLInputElement>('long-acting-time');
+const laRowMorning = getEl<HTMLDivElement>('la-row-morning');
+const laRowEvening = getEl<HTMLDivElement>('la-row-evening');
 const tempBasalRate    = getEl<HTMLInputElement>('temp-basal-rate');
 const tempBasalDur     = getEl<HTMLInputElement>('temp-basal-duration');
 const btnSetTemp       = getEl<HTMLButtonElement>('btn-set-temp');
@@ -148,6 +160,7 @@ const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
 const enableSMB        = getEl<HTMLInputElement>('enable-smb');
 const rowSMB           = getEl<HTMLElement>('row-smb');
+const rowOverlayBasal  = getEl<HTMLElement>('row-overlay-basal');
 const overlayBasal     = getEl<HTMLInputElement>('overlay-basal');
 const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
 const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
@@ -164,6 +177,11 @@ const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
 const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
 const btnLive          = getEl<HTMLButtonElement>('btn-live');
 const scenarioBadge    = getEl<HTMLElement>('scenario-badge');
+const scenarioModeDD   = getEl<HTMLElement>('scenario-mode-dd');
+const scenarioModeBtn  = getEl<HTMLButtonElement>('scenario-mode-btn');
+const scenarioModeLbl  = scenarioModeBtn.querySelector<HTMLElement>('.dropdown-label')!;
+const scenarioModeMenu = scenarioModeDD.querySelector<HTMLElement>('.dropdown-menu')!;
+void scenarioBadge;
 const btnSnapshot      = getEl<HTMLButtonElement>('btn-snapshot');
 const btnRunCompare    = getEl<HTMLButtonElement>('btn-run-compare');
 const btnStopCompare   = getEl<HTMLButtonElement>('btn-stop-compare');
@@ -174,6 +192,7 @@ const basalProfileRows = getEl<HTMLElement>('basal-profile-rows');
 const btnAddBasal      = getEl<HTMLButtonElement>('btn-add-basal');
 const sectionMDI       = getEl<HTMLElement>('section-mdi');
 const sectionBasal     = getEl<HTMLElement>('section-basal');
+const sectionTempBasal = getEl<HTMLElement>('section-temp-basal');
 
 // ── Simulators ────────────────────────────────────────────────────────────────
 
@@ -207,12 +226,20 @@ compare.onTick((snap) => {
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
 
+let cgmFlashTimeout: number | undefined;
 function updateHUD(snap: TickSnapshot): void {
   simTimeEl.textContent = formatSimTime(snap.simTimeMs);
-  const disp = appState.displayUnit === 'mmoll'
+  updateSkyIcon(snap.simTimeMs);
+  const newCgmText = appState.displayUnit === 'mmoll'
     ? (snap.cgm / 18.0182).toFixed(1) : String(Math.round(snap.cgm));
-  currentCGMEl.textContent = disp;
+  const valueChanged = currentCGMEl.textContent !== newCgmText;
+  currentCGMEl.textContent = newCgmText;
   currentCGMEl.className = snap.cgm < 54 ? 'hypo-l2' : snap.cgm < 70 ? 'hypo-l1' : '';
+  if (valueChanged) {
+    currentCGMEl.classList.add('flash');
+    if (cgmFlashTimeout !== undefined) window.clearTimeout(cgmFlashTimeout);
+    cgmFlashTimeout = window.setTimeout(() => currentCGMEl.classList.remove('flash'), 250);
+  }
   trendArrowEl.textContent = trendArrow(snap.trend);
   iobVal.textContent = snap.iob.toFixed(2);
   cobVal.textContent = snap.cob.toFixed(0);
@@ -343,6 +370,21 @@ unitToggle.addEventListener('click', () => {
   renderer.markDirty();
 });
 
+// ── Theme toggle (light / dark) ─────────────────────────────────────────────
+function applyTheme(theme: 'dark' | 'light'): void {
+  document.documentElement.setAttribute('data-theme', theme);
+  setRendererTheme(theme);
+  themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
+  renderer.markDirty();
+}
+const savedTheme = (localStorage.getItem('cgmsim.theme') as 'dark' | 'light' | null) ?? 'dark';
+applyTheme(savedTheme);
+themeToggle.addEventListener('click', () => {
+  const next: 'dark' | 'light' = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem('cgmsim.theme', next);
+  applyTheme(next);
+});
+
 // ── Panel and tabs ────────────────────────────────────────────────────────────
 
 btnPanel.addEventListener('click', () => {
@@ -394,32 +436,178 @@ btnMeal.addEventListener('click', () => {
   const c = parseFloat(mealCarbs.value); if (c > 0) bridge.meal(c);
 });
 
+// ── Long-acting slot helpers ──────────────────────────────────────────────────
+
+type SlotName = 'morning' | 'evening';
+
+interface SlotRowRefs {
+  row:    HTMLDivElement;
+  type:   HTMLSelectElement;
+  dose:   HTMLInputElement;
+  time:   HTMLInputElement;
+  setBtn: HTMLButtonElement;
+}
+
+function getSlotRowRefs(row: HTMLDivElement): SlotRowRefs {
+  return {
+    row,
+    type:   row.querySelector<HTMLSelectElement>('.la-type')!,
+    dose:   row.querySelector<HTMLInputElement>('.la-dose')!,
+    time:   row.querySelector<HTMLInputElement>('.la-time')!,
+    setBtn: row.querySelector<HTMLButtonElement>('.la-set-btn')!,
+  };
+}
+
+function readSlotSchedule(refs: SlotRowRefs, slot: SlotName): LongActingSchedule | null {
+  const dose = parseFloat(refs.dose.value);
+  if (!Number.isFinite(dose) || dose < 1 || dose > 80) return null;
+  const minute = timeStringToMinutes(refs.time.value);
+  if (!Number.isFinite(minute)) return null;
+  const lo = slot === 'morning' ? 0 : 12 * 60;
+  const hi = slot === 'morning' ? 12 * 60 - 1 : 24 * 60 - 1;
+  if (minute < lo || minute > hi) return null;
+  return {
+    type: refs.type.value as LongActingType,
+    units: dose,
+    injectionMinute: minute,
+  };
+}
+
+/** Apply visual + control state for a slot. `schedule` non-null = Active (green, locked). */
+function setSlotActiveState(refs: SlotRowRefs, schedule: LongActingSchedule | null): void {
+  const isActive = schedule !== null;
+  refs.row.classList.toggle('active', isActive);
+  refs.type.disabled = isActive;
+  refs.dose.disabled = isActive;
+  refs.time.disabled = isActive;
+  refs.setBtn.textContent = isActive ? 'Unset' : 'Set';
+}
+
+function shakeRow(refs: SlotRowRefs): void {
+  refs.row.classList.remove('invalid');
+  // Force reflow so the animation re-triggers on the next add
+  void refs.row.offsetWidth;
+  refs.row.classList.add('invalid');
+}
+
+const morningRefs = getSlotRowRefs(laRowMorning);
+const eveningRefs = getSlotRowRefs(laRowEvening);
+const slotRefs: Record<SlotName, SlotRowRefs> = {
+  morning: morningRefs,
+  evening: eveningRefs,
+};
+
+// Track active schedule per slot — null = unset
+const activeSchedule: Record<SlotName, LongActingSchedule | null> = {
+  morning: null,
+  evening: null,
+};
+
+function setSlot(slot: SlotName, schedule: LongActingSchedule | null): void {
+  activeSchedule[slot] = schedule;
+  setSlotActiveState(slotRefs[slot], schedule);
+  // Push the full pair into therapy each time
+  bridge.setTherapyParam({
+    longActingMorning: activeSchedule.morning,
+    longActingEvening: activeSchedule.evening,
+  });
+}
+
+function onSetUnsetClick(slot: SlotName): void {
+  const refs = slotRefs[slot];
+  if (activeSchedule[slot] !== null) {
+    // Currently Active → Unset
+    setSlot(slot, null);
+    return;
+  }
+  // Currently Unset → validate and Set
+  const schedule = readSlotSchedule(refs, slot);
+  if (schedule === null) {
+    shakeRow(refs);
+    return;
+  }
+  setSlot(slot, schedule);
+}
+
+morningRefs.setBtn.addEventListener('click', () => onSetUnsetClick('morning'));
+eveningRefs.setBtn.addEventListener('click', () => onSetUnsetClick('evening'));
+
+/**
+ * Re-hydrate the UI rows from a therapy snapshot (e.g. after btnLoad / btnImport / btnReset).
+ * Updates the form input values, the cached activeSchedule, and the visual state.
+ * Does NOT call bridge.setTherapyParam — the caller is expected to have already
+ * pushed the new therapy state via bridge.reset(...).
+ */
+function syncSlotsFromTherapy(therapy: TherapyProfile): void {
+  const apply = (slot: SlotName, schedule: LongActingSchedule | null): void => {
+    const refs = slotRefs[slot];
+    if (schedule !== null) {
+      refs.type.value = schedule.type;
+      refs.dose.value = String(schedule.units);
+      refs.time.value = minutesToTimeString(schedule.injectionMinute);
+    }
+    activeSchedule[slot] = schedule;
+    setSlotActiveState(refs, schedule);
+  };
+  apply('morning', therapy.longActingMorning);
+  apply('evening', therapy.longActingEvening);
+}
+
 // ── Therapy changes ───────────────────────────────────────────────────────────
 
 function onTherapyChange(): void {
   const mode = therapyMode.value as 'AID' | 'PUMP' | 'MDI';
   const modeLabel = mode === 'AID' ? 'AID mode' : mode === 'PUMP' ? 'Pump (open loop)' : 'MDI';
-  scenarioBadge.textContent = `Default patient · ${modeLabel}`;
+  scenarioModeLbl.textContent = modeLabel;
+  scenarioModeMenu.querySelectorAll<HTMLElement>('li[role="option"]').forEach((li) => {
+    li.setAttribute('aria-selected', li.dataset.value === mode ? 'true' : 'false');
+  });
   bridge.setTherapyParam({
     mode,
-    glucoseTarget:           fromDisplay(parseFloat(glucoseTarget.value)),
-    rapidAnalogue:           rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
-    rapidDia:                parseFloat(progDIA.value),
-    longActingType:          longActingType.value as 'Glargine' | 'Degludec' | 'Detemir',
-    longActingDose:          parseFloat(longActingDose.value),
-    longActingInjectionTime: timeStringToMinutes(longActingTime.value),
-    enableSMB:               enableSMB.checked,
+    glucoseTarget: fromDisplay(parseFloat(glucoseTarget.value)),
+    rapidAnalogue: rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
+    rapidDia:      parseFloat(progDIA.value),
+    enableSMB:     enableSMB.checked,
   });
-  sectionMDI.style.display   = mode === 'MDI'  ? 'block' : 'none';
-  sectionBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
-  rowSMB.style.display       = mode === 'AID'  ? 'flex'  : 'none';
+  sectionMDI.style.display       = mode === 'MDI'  ? 'block' : 'none';
+  sectionBasal.style.display     = mode !== 'MDI'  ? 'block' : 'none';
+  sectionTempBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
+  rowSMB.style.display           = mode === 'AID'  ? 'flex'  : 'none';
+  rowOverlayBasal.style.display  = mode !== 'MDI'  ? 'flex'  : 'none';
+  renderer.options.therapyMode   = mode;
+  renderer.markDirty();
 }
 
-[therapyMode, glucoseTarget, rapidAnalogue, progDIA,
- longActingType, longActingDose, longActingTime].forEach(el =>
+[therapyMode, glucoseTarget, rapidAnalogue, progDIA].forEach(el =>
   el.addEventListener('change', onTherapyChange)
 );
 enableSMB.addEventListener('change', onTherapyChange);
+
+// Scenario mode dropdown — custom listbox (Edge ignores native <option> padding)
+function setScenarioMenuOpen(open: boolean): void {
+  scenarioModeDD.setAttribute('data-open', String(open));
+  scenarioModeBtn.setAttribute('aria-expanded', String(open));
+  scenarioModeMenu.hidden = !open;
+}
+scenarioModeBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setScenarioMenuOpen(scenarioModeMenu.hidden);
+});
+scenarioModeMenu.addEventListener('click', (e) => {
+  const li = (e.target as HTMLElement).closest<HTMLElement>('li[role="option"]');
+  if (!li) return;
+  const value = li.dataset.value!;
+  therapyMode.value = value;
+  setScenarioMenuOpen(false);
+  onTherapyChange();
+});
+document.addEventListener('click', (e) => {
+  if (scenarioModeMenu.hidden) return;
+  if (!scenarioModeDD.contains(e.target as Node)) setScenarioMenuOpen(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !scenarioModeMenu.hidden) setScenarioMenuOpen(false);
+});
 
 // ── Temp basal ────────────────────────────────────────────────────────────────
 
@@ -443,7 +631,7 @@ function renderBasalRows(): void {
     row.style.marginBottom = '4px';
     row.innerHTML = `
       <input type="time" value="${minutesToTimeString(seg.timeMinutes)}"
-        style="width:80px;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;"
+        style="width:104px;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;"
         ${i === 0 ? 'disabled' : ''} />
       <input type="number" value="${seg.rateUPerHour}" min="0" max="5" step="0.05"
         style="flex:1;background:var(--bg-surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:15.6px;" />
@@ -525,6 +713,7 @@ btnLoad.addEventListener('click', async () => {
     if (!s) { setStatus('No saved session found.'); return; }
     bridge.pause(); setRunning(false);
     bridge.reset(s); renderer.clearHistory();
+    syncSlotsFromTherapy(s.therapy);
     setStatus(`Loaded at ${formatSimTime(s.simTimeMs)}`);
   } catch (e) { setStatus(`Load failed: ${e}`); }
 });
@@ -541,6 +730,7 @@ btnImport.addEventListener('click', async () => {
     const s = await importSession();
     bridge.pause(); setRunning(false);
     bridge.reset(s); renderer.clearHistory();
+    syncSlotsFromTherapy(s.therapy);
     setStatus(`Imported at ${formatSimTime(s.simTimeMs)}`);
   } catch (e) { setStatus(`Import failed: ${e}`); }
 });
@@ -553,13 +743,16 @@ btnReset.addEventListener('click', () => {
     simTimeMs:0, trueGlucose:100, lastCGM:100,
     patient:{weight:75,diabetesDuration:10,trueISF:40,trueCR:12,
              dia:6,carbsAbsTime:360,gastricEmptyingRate:1},
-    therapy:{mode:'PUMP',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
-             rapidAnalogue:'Fiasp',rapidDia:5,longActingType:'Glargine',longActingDose:20,
-             longActingInjectionTime:22*60,glucoseTarget:100,enableSMB:false},
+    therapy:{mode:'MDI',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
+             rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
+             glucoseTarget:100,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
+    lastMorningDay:-1,lastEveningDay:-1,
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
+  setSlot('morning', null);
+  setSlot('evening', null);
   renderer.clearHistory();
   setStatus('Simulation reset.');
 });
