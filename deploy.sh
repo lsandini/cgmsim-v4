@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "fix MDI mode, style control panel, remove webworker"
-git push -u origin visuals
+git commit -m "do not count/render long acting basals as IOB in MDI mode"
+git push -u origin dev

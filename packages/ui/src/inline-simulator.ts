@@ -26,7 +26,6 @@ import { DexcomG6Noise, createG6NoiseGenerator } from '../../simulator/src/g6Noi
 import { computeDeltaBG } from '../../simulator/src/deltaBG.js';
 import {
   calculateBolusIOB,
-  calculateLongActingIOB,
   calculatePumpBasalIOB,
 } from '../../simulator/src/iob.js';
 import type { PumpBasalBolus } from '../../simulator/src/iob.js';
@@ -248,9 +247,8 @@ export class InlineSimulator {
     const noisy   = s.g6.applySensorModel(newTrue, nowMs);
     const cgm     = Math.max(40, Math.min(400, Math.round(noisy)));
 
-    const iob = calculateBolusIOB(s.activeBoluses, nowMs) +
-      (isPump ? calculatePumpBasalIOB(s.pumpMicroBoluses, nowMs)
-               : calculateLongActingIOB(s.activeLongActing, nowMs));
+    const iob = calculateBolusIOB(s.activeBoluses, nowMs)
+      + (isPump ? calculatePumpBasalIOB(s.pumpMicroBoluses, nowMs) : 0);
     const cob = calculateCOB(s.resolvedMeals, s.patient.carbsAbsTime, nowMs);
 
     s.trueGlucose = newTrue;
