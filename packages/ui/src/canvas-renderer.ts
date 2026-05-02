@@ -39,6 +39,9 @@ type ColorPalette = {
   cobFill: string; cobFillTop: string; cobLine: string;
   basalFill: string; basalLine: string;
   bolusMarker: string; mealMarker: string; smbMarker: string; longActingMarker: string;
+  bolusMarkerBottom: string; mealMarkerBottom: string; smbMarkerBottom: string; longActingMarkerBottom: string;
+  markerStroke: string;
+  markerLabelBg: string;
   future: string; futureEdge: string;
 };
 type ComparePalette = { trace: string; traceGlow: string; hypoL1: string; hypoL2: string; };
@@ -69,10 +72,16 @@ const DARK_PALETTE: ColorPalette = {
   cobLine:    'rgba(251, 191, 36, 0.90)',
   basalFill:  'rgba(245, 158, 11, 0.18)',
   basalLine:  'rgba(217, 119, 6, 0.85)',
-  bolusMarker: '#3b82f6',
-  mealMarker:  '#fbbf24',
+  bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
+  mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
-  longActingMarker: '#14b8a6',                   // teal — distinct from bolus blue / SMB purple
+  longActingMarker: '#14b8a6',                   // teal — distinct hue family from bolus sky-blue
+  bolusMarkerBottom:      '#2563eb',             // gradient bottom — deeper blue
+  mealMarkerBottom:       '#d97706',             // gradient bottom — deeper amber, pulls hue away from yellow
+  smbMarkerBottom:        '#9333ea',             // gradient bottom — deeper purple
+  longActingMarkerBottom: '#0d9488',             // gradient bottom — deeper rose
+  markerStroke: '#cbd5e1',                       // slate 300 — soft outline against dark bg
+  markerLabelBg: 'rgba(28, 34, 54, 0.78)',       // matches --bg-surface w/ alpha
   future: 'rgba(8, 12, 22, 0.45)',
   futureEdge: 'rgba(122, 162, 255, 0.35)',
 };
@@ -103,10 +112,16 @@ const LIGHT_PALETTE: ColorPalette = {
   cobLine:    'rgba(234, 179, 8, 0.90)',
   basalFill:  'rgba(245, 158, 11, 0.18)',
   basalLine:  'rgba(217, 119, 6, 0.85)',
-  bolusMarker: '#2563eb',
-  mealMarker:  '#d97706',
-  smbMarker:   '#9333ea',
-  longActingMarker: '#0d9488',                   // darker teal for light theme
+  bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
+  mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
+  smbMarker:   '#c084fc',
+  longActingMarker: '#14b8a6',                   // teal — distinct hue family from bolus sky-blue
+  bolusMarkerBottom:      '#2563eb',
+  mealMarkerBottom:       '#d97706',
+  smbMarkerBottom:        '#9333ea',
+  longActingMarkerBottom: '#0d9488',
+  markerStroke: '#64748b',                       // soft slate outline against light bg
+  markerLabelBg: 'rgba(255, 255, 255, 0.85)',
   future: 'rgba(15, 23, 42, 0.04)',
   futureEdge: 'rgba(59, 130, 246, 0.30)',
 };
@@ -126,6 +141,13 @@ const LIGHT_COMPARE: ComparePalette = {
 
 let COLORS: ColorPalette = DARK_PALETTE;
 let COMPARE_COLORS: ComparePalette = DARK_COMPARE;
+
+const LONG_ACTING_BRANDS = {
+  GlargineU100: 'Lantus',
+  GlargineU300: 'Toujeo',
+  Detemir:      'Levemir',
+  Degludec:     'Tresiba',
+} as const;
 
 export function setRendererTheme(theme: 'dark' | 'light'): void {
   if (theme === 'light') { COLORS = LIGHT_PALETTE; COMPARE_COLORS = LIGHT_COMPARE; }
@@ -361,6 +383,55 @@ export class CGMRenderer {
 
   private timeX(minuteOffset: number): number {
     return this.PAD_LEFT + (minuteOffset / this.viewWindowMinutes) * this.plotW;
+  }
+
+  private bgYAtEventTime(simTimeMs: number): number {
+    let bestCgm = -1;
+    let bestDelta = Infinity;
+    this.ring.forEach((e) => {
+      const d = Math.abs(e.simTimeMs - simTimeMs);
+      if (d < bestDelta) { bestDelta = d; bestCgm = e.cgm; }
+    });
+    const cgm = bestCgm >= 0 ? bestCgm : (this.ring.latest()?.cgm ?? 120);
+    return this.glucoseY(cgm);
+  }
+
+  private treatmentRadius(value: number, kind: 'carbs' | 'insulin'): number {
+    const equiv = kind === 'carbs' ? value : value * 10;
+    return Math.max(3, Math.min(20, Math.sqrt(equiv) * 1.8));
+  }
+
+  private drawLabelChip(
+    text: string,
+    x: number,
+    y: number,
+    align: 'center' | 'left',
+    baseline: 'top' | 'bottom' | 'middle',
+    color: string,
+  ): void {
+    const ctx = this.ctx;
+    ctx.save();
+    const tw = ctx.measureText(text).width;
+    const fh = 14;
+    const padX = 5, padY = 2;
+    const w = tw + 2 * padX;
+    const h = fh + 2 * padY;
+    const cx = align === 'center' ? x - w / 2 : x - padX;
+    const cy = baseline === 'top'    ? y - padY
+             : baseline === 'bottom' ? y - h + padY
+             :                         y - h / 2;
+    ctx.beginPath();
+    ctx.roundRect(cx, cy, w, h, 5);
+    ctx.fillStyle = COLORS.markerLabelBg;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = COLORS.markerStroke;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, cy + h / 2);
+    ctx.restore();
   }
 
   // Live-follow window start (original drift spec), then subtract pan offset.
@@ -718,7 +789,7 @@ export class CGMRenderer {
   private drawDots(ring: RingBuffer, winStartMin: number, colorByZone: boolean): void {
     const ctx = this.ctx;
     // Dot radius scales with zoom: smaller when many points are visible
-    const r = this.viewWindowMinutes <= 180 ? 3.5 : this.viewWindowMinutes <= 360 ? 2.5 : 2;
+    const r = this.viewWindowMinutes <= 180 ? 3.5 : 2.5;
     ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
@@ -1053,63 +1124,86 @@ export class CGMRenderer {
     const ctx = this.ctx;
     if (!this.ring.latest()) return;
 
+    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = COLORS.markerStroke;
+    ctx.lineWidth = 1.5;
+
     for (const ev of this.events) {
       const offsetMin = ev.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) continue;
 
       const x = this.timeX(offsetMin);
 
-      if (ev.kind === 'bolus') {
-        const y = this.PAD_TOP + this.plotH;
+      if (ev.kind === 'meal') {
+        const cy = this.bgYAtEventTime(ev.simTimeMs);
+        const r  = this.treatmentRadius(ev.carbsG, 'carbs');
+        const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
+        grad.addColorStop(0, COLORS.mealMarkerBottom + 'D9'); // dark stop on top, 0.85 alpha
+        grad.addColorStop(1, COLORS.mealMarker + 'D9');       // light stop on bottom, 0.85 alpha
         ctx.beginPath();
-        ctx.moveTo(x, y - 2);
-        ctx.lineTo(x - 5, y - 12);
-        ctx.lineTo(x + 5, y - 12);
-        ctx.closePath();
-        ctx.fillStyle = COLORS.bolusMarker;
+        ctx.arc(x, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
         ctx.fill();
-        ctx.fillStyle = COLORS.bolusMarker;
-        ctx.font = 'bold 10.8px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ev.units}U`, x, y - 15);
-      } else if (ev.kind === 'meal') {
-        const y = this.PAD_TOP;
+        ctx.stroke();
+        this.drawLabelChip(`${ev.carbsG} g`, x, cy - r - 4, 'center', 'bottom', COLORS.mealMarker);
+      } else if (ev.kind === 'bolus') {
+        const cy = this.bgYAtEventTime(ev.simTimeMs);
+        const r  = this.treatmentRadius(ev.units, 'insulin');
+        const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
+        grad.addColorStop(0, COLORS.bolusMarkerBottom + 'D9');
+        grad.addColorStop(1, COLORS.bolusMarker + 'D9');
         ctx.beginPath();
-        ctx.moveTo(x, y + 2);
-        ctx.lineTo(x - 5, y + 12);
-        ctx.lineTo(x + 5, y + 12);
-        ctx.closePath();
-        ctx.fillStyle = COLORS.mealMarker;
+        ctx.arc(x, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
         ctx.fill();
-        ctx.fillStyle = COLORS.mealMarker;
-        ctx.font = 'bold 10.8px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ev.carbsG}g`, x, y + 24);
+        ctx.stroke();
+        this.drawLabelChip(`${ev.units} U`, x, cy + r + 4, 'center', 'top', COLORS.bolusMarker);
+      } else if (ev.kind === 'longActing') {
+        const cy = this.bgYAtEventTime(ev.simTimeMs);
+        const r  = this.treatmentRadius(ev.units, 'insulin');
+        const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
+        grad.addColorStop(0, COLORS.longActingMarkerBottom + 'D9');
+        grad.addColorStop(1, COLORS.longActingMarker + 'D9');
+        ctx.beginPath();
+        ctx.arc(x, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.stroke();
+        const brand = LONG_ACTING_BRANDS[ev.insulinType];
+        const label = `${brand} ${ev.units}U`;
+        const labelWidth = ctx.measureText(label).width;
+        // Default: read upward from below the marker. Flip downward when high-BG markers
+        // would push the label off the top of the plot.
+        const flipDown = (cy - r - 6 - labelWidth) < this.PAD_TOP;
+        ctx.save();
+        if (flipDown) {
+          ctx.translate(x, cy + r + 6);
+          ctx.rotate(Math.PI / 2);
+        } else {
+          ctx.translate(x, cy - r - 6);
+          ctx.rotate(-Math.PI / 2);
+        }
+        this.drawLabelChip(label, 0, 0, 'left', 'middle', COLORS.longActingMarker);
+        ctx.restore();
       } else if (ev.kind === 'smb') {
         // Small upward triangle just above the bottom axis — visually distinct from manual bolus
         const y = this.PAD_TOP + this.plotH - 18;
+        const grad = ctx.createLinearGradient(x, y - 2, x, y + 6);
+        grad.addColorStop(0, COLORS.smbMarkerBottom + 'D9');
+        grad.addColorStop(1, COLORS.smbMarker + 'D9');
         ctx.beginPath();
         ctx.moveTo(x, y - 2);
         ctx.lineTo(x - 4, y + 6);
         ctx.lineTo(x + 4, y + 6);
         ctx.closePath();
-        ctx.fillStyle = COLORS.smbMarker;
+        ctx.fillStyle = grad;
         ctx.fill();
-        ctx.fillStyle = COLORS.smbMarker;
-        ctx.font = '9.6px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ev.units}U`, x, y + 16);
-      } else if (ev.kind === 'longActing') {
-        // Filled square at the top — distinct shape from triangles, signals "sustained" basal-style effect
-        const y = this.PAD_TOP + 4;
-        const sz = 7;
-        ctx.fillStyle = COLORS.longActingMarker;
-        ctx.fillRect(x - sz / 2, y, sz, sz);
-        ctx.font = '9.6px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ev.units}U`, x, y + sz + 11);
+        ctx.stroke();
+        this.drawLabelChip(`${ev.units} U`, x, y + 8, 'center', 'top', COLORS.smbMarker);
       }
     }
     ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
   }
 }

@@ -79,7 +79,7 @@ rate = scheduledBasal + (KP·e + KI·Σe + KD·ė×60) − 0.72·excessIOB
 - **IOB**: blue filled-area overlay, anchored at the 10 mmol/L line, rising upward
 - **COB**: orange filled-area overlay, same anchor
 - **Basal rate**: green step-chart at the bottom of the plot (0–2 U/hr scale). Shows scheduled rate in PUMP mode, PID-driven rate in AID mode.
-- **Event markers**: manual bolus (blue triangle, bottom), meal (amber triangle, top), SMB (purple triangle, bottom), long-acting injection (shown in event log)
+- **Event markers**: meal (amber `#fbbf24` full circle, matches COB overlay), bolus (sky-blue `#60a5fa` full circle, matches IOB overlay), and long-acting injection (teal `#14b8a6` full circle) all **float on the BG curve at the event timestamp**, with radius scaled by dose (`sqrt(value) * 1.8`, clamped 3-20px; insulin is multiplied by visual CR=10 to share scale with carbs). All markers carry a 1.5px contrasting stroke (`#e2e8f0` on dark, `#64748b` on light). Labels: `${grams} g` above meal circles, `${units} U` below bolus and long-acting circles. SMB stays as a small purple triangle just above the bottom axis. All marker fill colors are theme-unified (same hex on dark and light themes). Pump basal microboluses are NOT individually marked — they're represented collectively by the basal step-chart strip.
 
 ## Physiological model origin
 

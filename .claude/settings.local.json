@@ -36,7 +36,8 @@
       "Bash(npm -w @cgmsim/simulator test -- --run physics.test.ts)",
       "Bash(npm -w @cgmsim/simulator test -- --run)",
       "Bash(npx tsc *)",
-      "Bash(npm -w @cgmsim/ui exec -- tsc --noEmit -p tsconfig.json)"
+      "Bash(npm -w @cgmsim/ui exec -- tsc --noEmit -p tsconfig.json)",
+      "Bash(grep -E \"\\\\.\\(js|html\\)$\")"
     ]
   }
 }

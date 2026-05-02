@@ -23,3 +23,6 @@ packages/ui/src/*.js.map
 
 # Sourcemaps for the hand-maintained simulator runtime .js files (debug-only, not runtime)
 packages/simulator/src/*.js.map
+
+# Reference-only third-party source for study (e.g. Nightscout cgm-remote-monitor)
+vendor/
