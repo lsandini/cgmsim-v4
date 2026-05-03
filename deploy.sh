@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "update CLAUDE.md and README.md"
+git commit -m "update .gitignore"
 git push -u origin dev

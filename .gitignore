@@ -26,3 +26,9 @@ packages/simulator/src/*.js.map
 
 # Reference-only third-party source for study (e.g. Nightscout cgm-remote-monitor)
 vendor/
+
+# Surge deployment staging dir — local only
+/deploy/
+
+# Claude Code per-user settings (permissions, etc.) — not shared
+.claude/settings.local.json
