@@ -166,6 +166,7 @@ const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
 const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
 const overlayEvents    = getEl<HTMLInputElement>('overlay-events');
 const overlayTrue      = getEl<HTMLInputElement>('overlay-true');
+const overlayForecast  = getEl<HTMLInputElement>('overlay-forecast');
 const btnSave          = getEl<HTMLButtonElement>('btn-save');
 const btnLoad          = getEl<HTMLButtonElement>('btn-load');
 const btnExport        = getEl<HTMLButtonElement>('btn-export');
@@ -702,6 +703,7 @@ overlayIOB.addEventListener('change',    () => { renderer.options.showIOB = over
 overlayCOB.addEventListener('change',    () => { renderer.options.showCOB = overlayCOB.checked; renderer.markDirty(); });
 overlayEvents.addEventListener('change', () => { renderer.options.showEvents = overlayEvents.checked; renderer.markDirty(); });
 overlayTrue.addEventListener('change',   () => { renderer.options.showTrueGlucose = overlayTrue.checked; renderer.markDirty(); });
+overlayForecast.addEventListener('change', () => { renderer.options.showForecast = overlayForecast.checked; renderer.markDirty(); });
 
 // ── Session controls ──────────────────────────────────────────────────────────
 

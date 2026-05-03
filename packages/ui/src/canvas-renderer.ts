@@ -17,10 +17,12 @@
 
 import type { TickSnapshot, DisplayUnit } from '@cgmsim/shared';
 import type { SimEvent } from './inline-simulator.js';
+import { ar2Forecast } from '../../simulator/src/ar2.js';
+import type { ForecastPoint } from '../../simulator/src/ar2.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_WINDOW_MINUTES = 24 * 60;
+const DEFAULT_WINDOW_MINUTES = 12 * 60;
 const TICK_MINUTES = 1;
 const MAX_BUFFER = 7 * 24 * 60 / TICK_MINUTES + 1; // 7 days of 5-min ticks
 
@@ -43,6 +45,7 @@ type ColorPalette = {
   markerStroke: string;
   markerLabelBg: string;
   future: string; futureEdge: string;
+  forecast: string;
 };
 type ComparePalette = { trace: string; traceGlow: string; hypoL1: string; hypoL2: string; };
 
@@ -84,6 +87,7 @@ const DARK_PALETTE: ColorPalette = {
   markerLabelBg: 'rgba(28, 34, 54, 0.78)',       // matches --bg-surface w/ alpha
   future: 'rgba(8, 12, 22, 0.45)',
   futureEdge: 'rgba(122, 162, 255, 0.35)',
+  forecast: '#94a3b8',                           // slate-400 — light grey, readable against dark bg
 };
 
 const LIGHT_PALETTE: ColorPalette = {
@@ -124,6 +128,7 @@ const LIGHT_PALETTE: ColorPalette = {
   markerLabelBg: 'rgba(255, 255, 255, 0.85)',
   future: 'rgba(15, 23, 42, 0.04)',
   futureEdge: 'rgba(59, 130, 246, 0.30)',
+  forecast: '#475569',                           // slate-600 — dark grey, readable against light bg
 };
 
 const DARK_COMPARE: ComparePalette = {
@@ -154,6 +159,17 @@ export function setRendererTheme(theme: 'dark' | 'light'): void {
   else { COLORS = DARK_PALETTE; COMPARE_COLORS = DARK_COMPARE; }
 }
 
+/** Convert a `#rrggbb` hex to `rgba(r,g,b,a)`. Pass-through for non-hex inputs (already rgba/named). */
+function withAlpha(hex: string, alpha: number): string {
+  if (hex.length === 7 && hex[0] === '#') {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return hex;
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface RendererOptions {
@@ -162,6 +178,7 @@ export interface RendererOptions {
   showBasal: boolean;
   showTrueGlucose: boolean;
   showEvents: boolean;
+  showForecast: boolean;
   displayUnit: DisplayUnit;
   primaryLabel: string;
   compareLabel: string;
@@ -214,6 +231,19 @@ class RingBuffer {
     return this.buf[idx] ?? null;
   }
 
+  /** Last n entries in chronological order (oldest first). Returns fewer than n if buffer is shorter. */
+  lastN(n: number): RingEntry[] {
+    const cap = this.buf.length;
+    const count = Math.min(n, this._size);
+    const out: RingEntry[] = [];
+    for (let i = count; i > 0; i--) {
+      const idx = (this.head - i + cap) % cap;
+      const e = this.buf[idx];
+      if (e != null) out.push(e);
+    }
+    return out;
+  }
+
   clear(): void {
     this.buf.fill(null);
     this.head = 0;
@@ -251,11 +281,16 @@ export class CGMRenderer {
     showBasal: true,
     showTrueGlucose: false,
     showEvents: true,
+    showForecast: true,
     displayUnit: 'mmoll',
     primaryLabel: 'Run A',
     compareLabel: 'Run B',
     therapyMode: 'PUMP',
   };
+
+  // AR2 prediction points for the primary trace, recomputed each tick. Comparison runs
+  // do not get a forecast — pedagogically we want one trace, one prediction, one divergence.
+  private forecastPoints: ForecastPoint[] = [];
 
   private readonly PAD_LEFT        = 56;
   private readonly PAD_RIGHT       = 36;
@@ -318,7 +353,14 @@ export class CGMRenderer {
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
     });
     this.lastTickWallMs = performance.now();
+    this.updateForecast();
     this.dirty = true;
+  }
+
+  private updateForecast(): void {
+    const last2 = this.ring.lastN(2);
+    if (last2.length < 2) { this.forecastPoints = []; return; }
+    this.forecastPoints = ar2Forecast(last2[0]!.cgm, last2[1]!.cgm, last2[1]!.simTimeMs);
   }
 
   pushComparisonTick(snap: TickSnapshot): void {
@@ -340,6 +382,7 @@ export class CGMRenderer {
     this.ring.clear();
     this.comparisonRing.clear();
     this.events = [];
+    this.forecastPoints = [];
     this.viewOffsetMs = 0;
     this.dirty = true;
     this.notifyViewChange();
@@ -644,6 +687,8 @@ export class CGMRenderer {
     this.drawTrace(winStartMin);
     this.drawAnimatedExtension(winStartMin, latest, animSimMs);
 
+    if (this.options.showForecast) this.drawForecast(winStartMin);
+
     if (this.hasComparison) {
       this.drawComparisonTrace(winStartMin);
       this.drawLegend();
@@ -786,10 +831,36 @@ export class CGMRenderer {
     ctx.textBaseline = 'alphabetic';
   }
 
+  private drawForecast(winStartMin: number): void {
+    if (this.forecastPoints.length === 0) return;
+    const ctx = this.ctx;
+    // Match CGM dot size exactly — the forecast reads as a continuation of the trace.
+    const rOuter = this.viewWindowMinutes <= 180 ? 3 : 2.5;
+    // Hollow-ring style (port of Nightscout: fill=none, stroke). Pull the arc in by
+    // half the stroke width so the visual outer edge still sits at rOuter.
+    const lineWidth = 1;
+    const rArc = rOuter - lineWidth / 2;
+    ctx.lineWidth = lineWidth;
+    const xMin = this.PAD_LEFT;
+    const xMax = this.PAD_LEFT + this.plotW;
+
+    for (const p of this.forecastPoints) {
+      if (p.opacity <= 0) continue;
+      const offsetMin = p.mills / 60_000 - winStartMin;
+      const x = this.timeX(offsetMin);
+      if (x < xMin || x > xMax) continue;          // clip to plot area (3h zoom drops the far dots)
+      const y = this.glucoseY(p.mgdl);
+      ctx.strokeStyle = withAlpha(COLORS.forecast, p.opacity);
+      ctx.beginPath();
+      ctx.arc(x, y, rArc, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   private drawDots(ring: RingBuffer, winStartMin: number, colorByZone: boolean): void {
     const ctx = this.ctx;
     // Dot radius scales with zoom: smaller when many points are visible
-    const r = this.viewWindowMinutes <= 180 ? 3.5 : 2.5;
+    const r = this.viewWindowMinutes <= 180 ? 3 : 2.5;
     ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
