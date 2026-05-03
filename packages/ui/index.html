@@ -170,7 +170,9 @@
       text-transform: none;
       letter-spacing: 0.02em;
       gap: 8px;
+      transition: color 0.15s, border-color 0.15s;
     }
+    .pill.scenario:hover { color: var(--text); border-color: var(--accent); }
     .pill.scenario .dot { opacity: 0.5; }
 
     /* Custom dropdown — used inside the scenario pill */
@@ -473,7 +475,8 @@
     .quick-btn.meal:hover { background: rgba(210, 153, 34, 0.12); }
 
     /* Panel toggle */
-    #btn-panel {
+    #btn-panel,
+    #btn-fullscreen {
       width: 44px;
       height: 44px;
       border-radius: 8px;
@@ -486,8 +489,11 @@
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
     }
-    #btn-panel:hover { color: var(--text); border-color: var(--accent); }
+    #btn-fullscreen { font-size: 16px; }
+    #btn-panel:hover,
+    #btn-fullscreen:hover { color: var(--text); border-color: var(--accent); }
 
     /* (IOB / COB / scenario / unit-toggle now live in #top-strip as .pill) */
 
@@ -699,7 +705,7 @@
       opacity: 0.85;
       transition: opacity 0.12s, border-color 0.12s, color 0.12s;
     }
-    .view-btn:hover { opacity: 1; color: var(--text); }
+    .view-btn:hover { opacity: 1; color: var(--text); border-color: var(--accent); }
     .view-btn.active { border-color: var(--accent); color: var(--accent); opacity: 1; }
     .view-btn.live-btn { border-color: var(--green); color: var(--green); opacity: 1; }
 
@@ -965,15 +971,21 @@
         <div class="tab-content" id="tab-session">
           <div class="panel-section">
             <h3>Session</h3>
-            <button id="btn-export" class="session-btn">💾 Save session</button>
-            <button id="btn-import" class="session-btn">📂 Load session</button>
+            <div style="display:flex;gap:6px;margin-bottom:6px;">
+              <button id="btn-export" class="session-btn" style="flex:1;width:auto;margin-bottom:0;">💾 Save session</button>
+              <button id="btn-import" class="session-btn" style="flex:1;width:auto;margin-bottom:0;">📂 Load session</button>
+            </div>
             <button id="btn-reset" class="session-btn danger">↺ Reset simulation</button>
           </div>
           <div class="panel-section">
             <h3>Comparison run</h3>
-            <p style="font-size:13.2px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
-              Snapshot current state, then modify parameters and press Run B to compare two scenarios on the same canvas.
-            </p>
+            <ol style="font-size:13.2px;color:var(--text-muted);margin:0 0 10px 18px;padding:0;line-height:1.5;">
+              <li>Pause the simulation.</li>
+              <li>📸 Snapshot the current state.</li>
+              <li>Take your action: deliver a bolus / meal, or change a parameter.</li>
+              <li>Press ▶ Run B — a parallel sim starts from the snapshot.</li>
+              <li>Resume. <strong>Run A</strong> (green) continues with your change; <strong>Run B</strong> (pink) shows what would have happened without it.</li>
+            </ol>
             <button id="btn-snapshot" class="session-btn">📸 Snapshot current state</button>
             <div class="panel-row" style="margin-top:8px;">
               <label>Label A</label>
@@ -989,10 +1001,7 @@
               style="border-color:var(--accent);color:var(--accent);">▶ Run B</button>
             <button id="btn-stop-compare" class="session-btn danger" style="display:none;">■ Stop comparison</button>
           </div>
-          <div class="panel-section">
-            <h3>Status</h3>
-            <div id="session-status" style="font-size:14.4px;color:var(--text-muted);line-height:1.6;"></div>
-          </div>
+          <div id="session-status" style="font-size:12px;color:var(--text-muted);line-height:1.4;padding:4px 14px 10px;min-height:1.4em;"></div>
         </div>
 
       </div>
@@ -1028,8 +1037,8 @@
 
       <button class="quick-btn meal" id="btn-quick-meal" title="60g meal">🍽 60g</button>
       <button class="quick-btn" id="btn-quick-bolus" title="4U bolus">💉 4U</button>
-      <button id="btn-panel" title="Toggle panel">⚙</button>
-      <button id="btn-fullscreen" title="Full screen trace (F)" style="width:44px;height:44px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">⛶</button>
+      <button id="btn-panel" title="Toggle panel" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg></button>
+      <button id="btn-fullscreen" title="Full screen trace (F)">⛶</button>
     </div>
   </div>
 
