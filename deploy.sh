@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "add BG display, make UI prefs persistant"
+git commit -m "update CLAUDE.md and README.md"
 git push -u origin dev

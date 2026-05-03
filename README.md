@@ -4,18 +4,13 @@ Standalone browser-based glycaemic teaching simulator for structured diabetes ed
 
 Part of the [CGMSIM platform](https://cgmsim.com) — fourth generation, designed for instructor-controlled classroom use with no server or installation required.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/dark.png">
-  <img alt="CGMSIM v4 — main view" src="docs/light.png">
-</picture>
-
-> The screenshot above adapts to your GitHub theme: dark-mode viewers see the dark UI, light-mode viewers see the light UI.
+![CGMSIM v4 — main view](docs/screenshot.jpg)
 
 ## Quick start
 
-Download `cgmsim-v4-standalone.html` and open it in any modern browser (Chrome, Edge, Firefox, Safari). That's it — no server, no install, works offline. The whole simulator is one ~120 kB HTML file with all logic, styles, and assets inlined.
+Download `cgmsim-v4-standalone.html` and open it in any modern browser (Chrome, Edge, Firefox, Safari). That's it — no server, no install, works offline. The whole simulator is one ~140 kB HTML file with all logic, styles, and assets inlined.
 
-Save/load and comparison runs use the browser's IndexedDB, so sessions persist on the same machine.
+Sessions persist as JSON files you save to disk and reload at any time — full state including the chart history, event log, and RNG seeds, so a reloaded session resumes "as if nothing happened".
 
 ## Features
 
@@ -24,9 +19,12 @@ Save/load and comparison runs use the browser's IndexedDB, so sessions persist o
 - Two-layer parameter model — patient ground-truth physiology vs the controller's programmed beliefs — so mismatches between true and assumed ISF/ICR/DIA become teaching scenarios
 - Adjustable simulation speed (×1 to ×3600) — run a full 14-day scenario in seconds
 - Pause/resume at any point for discussion
-- Side-by-side comparison runs with different parameters
-- Session save/load (browser IndexedDB) and JSON export/import
-- Dark theme optimized for projection in classrooms
+- Side-by-side comparison runs to show "with vs. without" the latest decision
+- AR2 forecast overlay (Nightscout-style 65-min projection)
+- Big BG display chip floating on the chart, Nightscout-style
+- Session save/load via JSON file (full state + chart history + event log)
+- UI preferences (overlays, zoom, units, panel state) persist across reloads
+- Dark and light themes; the light theme is tuned for projection in classrooms
 
 ## Development
 
