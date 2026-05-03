@@ -160,6 +160,53 @@ export interface ActiveLongActing {
   duration: number;
 }
 
+/** Meal record after the fast/slow split has been resolved (decided once at meal entry). */
+export interface ResolvedMeal {
+  id: string;
+  simTimeMs: SimTimeMs;
+  carbsG: number;
+  gastricEmptyingRate: number;
+  /** Fast-absorbing carb fraction (g) — determined at meal entry, immutable. */
+  fastCarbsG: number;
+  /** Slow-absorbing carb fraction (g) — determined at meal entry, immutable. */
+  slowCarbsG: number;
+}
+
+/** Pump microbolus injected by the AID controller; PK params stamped at injection. */
+export interface PumpBasalBolus {
+  simTimeMs: SimTimeMs;
+  units: number;
+  /** DIA in hours (from therapy rapid analogue profile). */
+  dia: number;
+  /** Peak in minutes (from therapy rapid analogue profile). */
+  peak: number;
+}
+
+/** Discrete events emitted by the simulator for chart-marker rendering. */
+export type SimEvent =
+  | { kind: 'bolus';      simTimeMs: SimTimeMs; units: number }
+  | { kind: 'meal';       simTimeMs: SimTimeMs; carbsG: number }
+  | { kind: 'longActing'; simTimeMs: SimTimeMs; units: number; insulinType: LongActingType; slot: 'morning' | 'evening' }
+  | { kind: 'smb';        simTimeMs: SimTimeMs; units: number };
+
+/** Active temporary basal override (set via setTempBasal). */
+export interface TempBasal {
+  rateUPerHour: number;
+  /** Absolute simTimeMs at which the override expires. */
+  expiresAt: SimTimeMs;
+}
+
+/** A single point of the rendered CGM trace history (the renderer's ring-buffer entry). */
+export interface CGMTracePoint {
+  simTimeMs: SimTimeMs;
+  cgm: MgdL;
+  trueGlucose: MgdL;
+  iob: number;
+  cob: number;
+  trend: MgdL;
+  basalRate: number;
+}
+
 // ------------------------------------------------------------
 // Simulation state — complete, serialisable snapshot used for
 // save/restore and comparison-run snapshots.
@@ -183,6 +230,24 @@ export interface WorkerState {
   activeBoluses: ActiveBolus[];
   activeMeals: ActiveMeal[];
   activeLongActing: ActiveLongActing[];
+
+  /** Meals after fast/slow split has been resolved — drives carb effect & COB. */
+  resolvedMeals: ResolvedMeal[];
+
+  /** AID-mode microboluses still resolving in the body. */
+  pumpMicroBoluses: PumpBasalBolus[];
+
+  /** Active temporary basal override, or null if none. */
+  tempBasal: TempBasal | null;
+
+  /** Discrete event log (boluses, meals, long-acting, SMB) for chart markers. */
+  events: SimEvent[];
+
+  /** Seeded LCG state for the meal-split RNG. Persisting it preserves reproducibility. */
+  rngState: number;
+
+  /** Rendered CGM trace — written at export time, read at import time. Optional for v1 compatibility. */
+  cgmHistory?: CGMTracePoint[];
 
   /** Last sim-day on which the morning long-acting slot fired (-1 = never).
    *  Persisted so save/restore mid-day doesn't re-fire today's morning dose. */

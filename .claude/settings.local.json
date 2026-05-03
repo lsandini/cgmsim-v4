@@ -37,7 +37,10 @@
       "Bash(npm -w @cgmsim/simulator test -- --run)",
       "Bash(npx tsc *)",
       "Bash(npm -w @cgmsim/ui exec -- tsc --noEmit -p tsconfig.json)",
-      "Bash(grep -E \"\\\\.\\(js|html\\)$\")"
+      "Bash(grep -E \"\\\\.\\(js|html\\)$\")",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/check_unused.sh)",
+      "Bash(/tmp/check_unused.sh)"
     ]
   }
 }

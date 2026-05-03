@@ -6,7 +6,7 @@
 import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
-import { saveState, loadState, exportSession, importSession } from './storage.js';
+import { exportSession, importSession } from './storage.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
 
@@ -167,8 +167,6 @@ const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
 const overlayEvents    = getEl<HTMLInputElement>('overlay-events');
 const overlayTrue      = getEl<HTMLInputElement>('overlay-true');
 const overlayForecast  = getEl<HTMLInputElement>('overlay-forecast');
-const btnSave          = getEl<HTMLButtonElement>('btn-save');
-const btnLoad          = getEl<HTMLButtonElement>('btn-load');
 const btnExport        = getEl<HTMLButtonElement>('btn-export');
 const btnImport        = getEl<HTMLButtonElement>('btn-import');
 const btnReset         = getEl<HTMLButtonElement>('btn-reset');
@@ -204,22 +202,13 @@ renderer.start();
 
 // ── Tick handlers ─────────────────────────────────────────────────────────────
 
-let tickCount = 0;
-
 bridge.onTick((snap) => {
   appState.lastSnap = snap;
   renderer.pushTick(snap);
   updateHUD(snap);
-  // Auto-save every 10 ticks
-  if (++tickCount % 10 === 0) bridge.requestSave();
 });
 
 bridge.onEvent((evs) => renderer.pushEvents(evs));
-
-bridge.onStateSaved(async (s) => {
-  try { await saveState(s); setStatus(`Auto-saved at ${formatSimTime(s.simTimeMs)}`); }
-  catch { /* IndexedDB unavailable in some contexts */ }
-});
 
 compare.onTick((snap) => {
   renderer.pushComparisonTick(snap);
@@ -707,40 +696,52 @@ overlayForecast.addEventListener('change', () => { renderer.options.showForecast
 
 // ── Session controls ──────────────────────────────────────────────────────────
 
-btnSave.addEventListener('click', () => { bridge.requestSave(); setStatus('Saved ✓'); });
-
-btnLoad.addEventListener('click', async () => {
-  try {
-    const s = await loadState();
-    if (!s) { setStatus('No saved session found.'); return; }
-    bridge.pause(); setRunning(false);
-    bridge.reset(s); renderer.clearHistory();
-    syncSlotsFromTherapy(s.therapy);
-    setStatus(`Loaded at ${formatSimTime(s.simTimeMs)}`);
-  } catch (e) { setStatus(`Load failed: ${e}`); }
-});
-
 btnExport.addEventListener('click', () => {
-  bridge.requestSave();
-  const once = (s: WorkerState) => { exportSession(s); bridge.onStateSaved(() => {}); };
-  bridge.onStateSaved(once);
-  setStatus('Exporting...');
+  const s = bridge.getCurrentState();
+  s.cgmHistory = renderer.getHistorySnapshot();
+  exportSession(s);
+  setStatus('Saved session ✓');
 });
 
 btnImport.addEventListener('click', async () => {
   try {
-    const s = await importSession();
+    const { state, version } = await importSession();
     bridge.pause(); setRunning(false);
-    bridge.reset(s); renderer.clearHistory();
-    syncSlotsFromTherapy(s.therapy);
-    setStatus(`Imported at ${formatSimTime(s.simTimeMs)}`);
-  } catch (e) { setStatus(`Import failed: ${e}`); }
+    bridge.reset(state);
+    renderer.clearHistory();
+    const history = state.cgmHistory ?? [];
+    renderer.setHistorySnapshot(history);
+    renderer.setEvents(state.events ?? []);
+    syncSlotsFromTherapy(state.therapy);
+
+    // Manually refresh the HUD from the loaded state, since no tick will fire while paused.
+    const last = history[history.length - 1];
+    const hudSnap: TickSnapshot = {
+      type: 'TICK',
+      simTimeMs: state.simTimeMs,
+      cgm: last?.cgm ?? state.lastCGM,
+      trueGlucose: last?.trueGlucose ?? state.trueGlucose,
+      iob: last?.iob ?? 0,
+      cob: last?.cob ?? 0,
+      deltaMinutes: 5,
+      trend: last?.trend ?? 0,
+      basalRate: last?.basalRate ?? 0,
+    };
+    appState.lastSnap = hudSnap;
+    updateHUD(hudSnap);
+    renderer.snapToLive();
+    renderer.markDirty();
+
+    const legacy = version < 2 ? ' (legacy)' : '';
+    setStatus(`Loaded at ${formatSimTime(state.simTimeMs)}${legacy}`);
+  } catch (e) { setStatus(`Load failed: ${e}`); }
 });
 
 btnReset.addEventListener('click', () => {
   if (!confirm('Reset simulation? All current data will be lost.')) return;
   stopCompare();
   bridge.pause(); setRunning(false);
+  const seed = (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1;
   bridge.reset({
     simTimeMs:0, trueGlucose:100, lastCGM:100,
     patient:{weight:75,diabetesDuration:10,trueISF:40,trueCR:12,
@@ -748,8 +749,9 @@ btnReset.addEventListener('click', () => {
     therapy:{mode:'MDI',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
              rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
              glucoseTarget:100,enableSMB:false},
-    g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:(()=>{const s=(Date.now()^(Math.random()*0xFFFF_FFFF)>>>0)||1;return{jsr:123456789^s,seed:s};})()},
+    g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:{jsr:123456789^seed,seed}},
     activeBoluses:[],activeMeals:[],activeLongActing:[],
+    resolvedMeals:[],pumpMicroBoluses:[],tempBasal:null,events:[],rngState:seed,
     lastMorningDay:-1,lastEveningDay:-1,
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });

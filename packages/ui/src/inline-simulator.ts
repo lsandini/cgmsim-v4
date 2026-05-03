@@ -19,8 +19,12 @@ import type {
   ActiveLongActing,
   LongActingType,
   LongActingSchedule,
+  SimEvent,
+  TempBasal,
 } from '@cgmsim/shared';
 import { DEFAULT_PATIENT, DEFAULT_THERAPY_PROFILE } from '@cgmsim/shared';
+
+export type { SimEvent };
 
 import { DexcomG6Noise, createG6NoiseGenerator } from '../../simulator/src/g6Noise.js';
 import { computeDeltaBG } from '../../simulator/src/deltaBG.js';
@@ -40,16 +44,6 @@ const TICK_SIM_MS      = TICK_SIM_MINUTES * 60_000;
 function randomSeed(): number { return (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1; }
 const INITIAL_BG   = 100;
 
-export type SimEvent =
-  | { kind: 'bolus';      simTimeMs: number; units: number }
-  | { kind: 'meal';       simTimeMs: number; carbsG: number }
-  | { kind: 'longActing'; simTimeMs: number; units: number; insulinType: LongActingType; slot: 'morning' | 'evening' }
-  | { kind: 'smb';        simTimeMs: number; units: number };
-
-interface TempBasal {
-  rateUPerHour: number;
-  expiresAt: number;
-}
 
 interface SimState {
   simTimeMs:         number;
@@ -335,13 +329,19 @@ export class InlineSimulator {
 
   getEvents(): SimEvent[] { return [...this.s.events]; }
 
-  requestSave(): void {
-    const state: WorkerState = {
+  /** Build a complete, deeply-cloned snapshot of the current simulator state. */
+  getCurrentState(): WorkerState {
+    return {
       simTimeMs: this.s.simTimeMs, trueGlucose: this.s.trueGlucose, lastCGM: this.s.lastCGM,
       patient: { ...this.s.patient }, therapy: { ...this.s.therapy },
       g6State: this.s.g6.getState(),
       activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
       activeLongActing: [...this.s.activeLongActing],
+      resolvedMeals: this.s.resolvedMeals.map((m) => ({ ...m })),
+      pumpMicroBoluses: this.s.pumpMicroBoluses.map((b) => ({ ...b })),
+      tempBasal: this.s.tempBasal ? { ...this.s.tempBasal } : null,
+      events: this.s.events.map((e) => ({ ...e })),
+      rngState: this.s.rngState,
       lastMorningDay: this.s.lastMorningDay,
       lastEveningDay: this.s.lastEveningDay,
       pidCGMHistory: [...this.s.pidCGMHistory],
@@ -349,6 +349,10 @@ export class InlineSimulator {
       pidTicksSinceLastMB: this.s.pidTicksSinceLastMB,
       throttle: this.s.throttle, running: this.s.running,
     };
+  }
+
+  requestSave(): void {
+    const state = this.getCurrentState();
     for (const h of this.savedHandlers) h(state);
   }
 
@@ -359,16 +363,18 @@ export class InlineSimulator {
       patient: { ...state.patient }, therapy: { ...state.therapy },
       activeBoluses: [...state.activeBoluses], activeMeals: [...state.activeMeals],
       activeLongActing: [...state.activeLongActing],
-      resolvedMeals: [], pumpMicroBoluses: [],
+      resolvedMeals: (state.resolvedMeals ?? []).map((m) => ({ ...m })),
+      pumpMicroBoluses: (state.pumpMicroBoluses ?? []).map((b) => ({ ...b })),
       pidCGMHistory: [...(state.pidCGMHistory ?? [])],
       pidPrevRate: state.pidPrevRate ?? 0.8,
       pidTicksSinceLastMB: state.pidTicksSinceLastMB ?? 999,
       throttle: state.throttle, running: false,
       g6: createG6NoiseGenerator(1, state.g6State),
-      rngState: randomSeed(),
+      rngState: state.rngState ?? randomSeed(),
       lastMorningDay: state.lastMorningDay ?? -1,
       lastEveningDay: state.lastEveningDay ?? -1,
-      tempBasal: null, events: [],
+      tempBasal: state.tempBasal ? { ...state.tempBasal } : null,
+      events: (state.events ?? []).map((e) => ({ ...e })),
     });
   }
 

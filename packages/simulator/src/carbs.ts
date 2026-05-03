@@ -8,21 +8,10 @@
  * deterministic after that point (no random calls during the tick loop).
  */
 
-import type { ActiveMeal } from '@cgmsim/shared';
+import type { ActiveMeal, ResolvedMeal } from '@cgmsim/shared';
 import { getDeltaMinutes, roundTo8Decimals } from './utils.js';
 
-// ── Meal record with pre-computed carb split ─────────────────────────────────
-
-export interface ResolvedMeal {
-  id: string;
-  simTimeMs: number;
-  carbsG: number;
-  gastricEmptyingRate: number;
-  /** Fast-absorbing carbs (g). Pre-computed at meal entry. */
-  fastCarbsG: number;
-  /** Slow-absorbing carbs (g). Pre-computed at meal entry. */
-  slowCarbsG: number;
-}
+export type { ResolvedMeal };
 
 /**
  * Resolve a meal into fast/slow fractions.

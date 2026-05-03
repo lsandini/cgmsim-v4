@@ -12,15 +12,9 @@
 import type { ActiveBolus, ActiveLongActing } from '@cgmsim/shared';
 import { RAPID_PROFILES } from './insulinProfiles.js';
 import { getExpTreatmentActivity, getExpTreatmentIOB, getDeltaMinutes, roundTo8Decimals } from './utils.js';
+import type { PumpBasalBolus } from '@cgmsim/shared';
 
-export interface PumpBasalBolus {
-  simTimeMs: number;
-  units: number;
-  /** DIA in hours (from therapy rapid analogue profile). */
-  dia: number;
-  /** Peak in minutes (from therapy rapid analogue profile). */
-  peak: number;
-}
+export type { PumpBasalBolus };
 
 // ── Bolus IOB ────────────────────────────────────────────────────────────────
 

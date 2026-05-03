@@ -15,8 +15,7 @@
  *   - Pan (drag) and zoom (buttons / pinch) with live-follow mode
  */
 
-import type { TickSnapshot, DisplayUnit } from '@cgmsim/shared';
-import type { SimEvent } from './inline-simulator.js';
+import type { TickSnapshot, DisplayUnit, SimEvent, CGMTracePoint } from '@cgmsim/shared';
 import { ar2Forecast } from '../../simulator/src/ar2.js';
 import type { ForecastPoint } from '../../simulator/src/ar2.js';
 
@@ -186,15 +185,9 @@ export interface RendererOptions {
   therapyMode: 'AID' | 'PUMP' | 'MDI';
 }
 
-interface RingEntry {
-  simTimeMs: number;
-  cgm: number;
-  trueGlucose: number;
-  iob: number;
-  cob: number;
-  trend: number;
-  basalRate: number;
-}
+// Ring buffer entry shape — sourced from @cgmsim/shared so the on-disk session JSON
+// and the in-memory chart trace share a single canonical type.
+type RingEntry = CGMTracePoint;
 
 // ── Ring buffer ──────────────────────────────────────────────────────────────
 
@@ -390,6 +383,27 @@ export class CGMRenderer {
 
   clearComparison(): void {
     this.comparisonRing.clear();
+    this.dirty = true;
+  }
+
+  /** Snapshot the current chart trace in chronological order — for session export. */
+  getHistorySnapshot(): CGMTracePoint[] {
+    const out: CGMTracePoint[] = [];
+    this.ring.forEach((e) => { out.push({ ...e }); });
+    return out;
+  }
+
+  /** Replace the chart trace wholesale — for session import. Recomputes the AR2 forecast. */
+  setHistorySnapshot(entries: CGMTracePoint[]): void {
+    this.ring.clear();
+    for (const e of entries) this.ring.push({ ...e });
+    this.updateForecast();
+    this.dirty = true;
+  }
+
+  /** Replace the discrete event log wholesale — for session import. */
+  setEvents(events: SimEvent[]): void {
+    this.events = events.map((e) => ({ ...e }));
     this.dirty = true;
   }
 
