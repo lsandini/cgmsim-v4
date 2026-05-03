@@ -684,12 +684,19 @@ export class CGMRenderer {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, W, H);
 
+    // Canonical text state at the start of every frame. Individual draw helpers
+    // override what they need; this guarantees a known starting point and stops
+    // mid-frame leaks from contaminating the next frame.
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.setLineDash([]);
+
     const latest = this.ring.latest();
     const latestSimMs = latest?.simTimeMs ?? 0;
     const animSimMs = this.computeAnimatedSimMs(latest);
     const winStartMin = this.getWinStart(latestSimMs);
 
-    this.drawBands(winStartMin);
+    this.drawBands();
     this.drawFutureSpace(winStartMin, animSimMs);
     this.drawGrid(winStartMin);
 
@@ -713,8 +720,7 @@ export class CGMRenderer {
 
   // ── Draw layers ───────────────────────────────────────────────────────────
 
-  private drawBands(winStartMin: number): void {
-    void winStartMin;
+  private drawBands(): void {
     const ctx = this.ctx;
     const xL = this.PAD_LEFT;
     const xR = this.PAD_LEFT + this.plotW;
@@ -773,6 +779,7 @@ export class CGMRenderer {
     ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.gridLabel;
     ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
 
     for (const mg of glucoseLines) {
       const y = this.glucoseY(mg);
@@ -890,50 +897,6 @@ export class CGMRenderer {
     });
   }
 
-  private drawTracePath(
-    ring: RingBuffer,
-    winStartMin: number,
-    lineWidth: number,
-    color: string,
-    colorByZone: boolean,
-  ): void {
-    const ctx = this.ctx;
-    ctx.lineWidth = lineWidth;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-
-    let inPath = false;
-    let prevZone = 0;
-
-    ctx.beginPath();
-    ctx.strokeStyle = color;
-
-    ring.forEach((entry) => {
-      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-
-      const x = this.timeX(offsetMin);
-      const y = this.glucoseY(entry.cgm);
-
-      if (colorByZone) {
-        const zone = entry.cgm < HYPO_L1 ? 2 : entry.cgm < TIR_LOW ? 1 : 0;
-        if (zone !== prevZone && inPath) {
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.strokeStyle = zone === 2 ? COLORS.traceHypoL2
-            : zone === 1 ? COLORS.traceHypoL1 : COLORS.trace;
-          ctx.moveTo(x, y);
-          prevZone = zone;
-        }
-      }
-
-      if (!inPath) { ctx.moveTo(x, y); inPath = true; }
-      else           ctx.lineTo(x, y);
-    });
-
-    if (inPath) ctx.stroke();
-  }
-
   private drawTrueLine(winStartMin: number): void {
     const ctx = this.ctx;
     ctx.strokeStyle = COLORS.trueGlucose;
@@ -1033,12 +996,13 @@ export class CGMRenderer {
     // Current rate readout inside the panel (bottom-left)
     const latest = this.ring.latest();
     if (latest) {
+      ctx.save();
       ctx.font = 'bold 14px -apple-system, sans-serif';
       ctx.fillStyle = '#eef2fa';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 3);
-      ctx.textBaseline = 'alphabetic';
+      ctx.restore();
     }
   }
 

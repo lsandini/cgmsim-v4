@@ -22,12 +22,12 @@ export const LONG_ACTING_PROFILES = {
         duration: (units, weightKg) => (22 + 12 * units / weightKg) * 60,
         peak: (dur) => dur / 2.5,
     },
-    /** Glargine U300 (Toujeo). v3 TOU: dur = (24 + 14·U/wt)·60 min; peak = dur/2.5 */
+    /** Glargine U300 (Toujeo). v3 TOU: dur = (24 + 14·U/wt)·60 min; peak = dur/2.5 — longer & flatter than Lantus. */
     GlargineU300: {
         duration: (units, weightKg) => (24 + 14 * units / weightKg) * 60,
         peak: (dur) => dur / 2.5,
     },
-    /** Detemir (Levemir). v3 DET: dur = (14 + 24·U/wt)·60 min; peak = dur/3 */
+    /** Detemir (Levemir). v3 DET: dur = (14 + 24·U/wt)·60 min; peak = dur/3 — strongly dose-dependent. */
     Detemir: {
         duration: (units, weightKg) => (14 + 24 * units / weightKg) * 60,
         peak: (dur) => dur / 3,

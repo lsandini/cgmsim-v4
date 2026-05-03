@@ -175,12 +175,10 @@ const btnZoom6h        = getEl<HTMLButtonElement>('btn-zoom-6h');
 const btnZoom12h       = getEl<HTMLButtonElement>('btn-zoom-12h');
 const btnZoom24h       = getEl<HTMLButtonElement>('btn-zoom-24h');
 const btnLive          = getEl<HTMLButtonElement>('btn-live');
-const scenarioBadge    = getEl<HTMLElement>('scenario-badge');
 const scenarioModeDD   = getEl<HTMLElement>('scenario-mode-dd');
 const scenarioModeBtn  = getEl<HTMLButtonElement>('scenario-mode-btn');
 const scenarioModeLbl  = scenarioModeBtn.querySelector<HTMLElement>('.dropdown-label')!;
 const scenarioModeMenu = scenarioModeDD.querySelector<HTMLElement>('.dropdown-menu')!;
-void scenarioBadge;
 const btnSnapshot      = getEl<HTMLButtonElement>('btn-snapshot');
 const btnRunCompare    = getEl<HTMLButtonElement>('btn-run-compare');
 const btnStopCompare   = getEl<HTMLButtonElement>('btn-stop-compare');
@@ -603,8 +601,10 @@ document.addEventListener('keydown', (e) => {
 
 btnSetTemp.addEventListener('click', () => {
   const r = parseFloat(tempBasalRate.value), d = parseFloat(tempBasalDur.value);
-  bridge.setTempBasal(isNaN(r) ? 0 : r, isNaN(d) ? undefined : d);
-  setStatus(`Temp basal: ${r} U/hr for ${d} min`);
+  const rSafe = isNaN(r) ? 0 : r;
+  const dDisplay = isNaN(d) ? '∞' : `${d}`;
+  bridge.setTempBasal(rSafe, isNaN(d) ? undefined : d);
+  setStatus(`Temp basal: ${rSafe} U/hr for ${dDisplay} min`);
 });
 btnCancelTemp.addEventListener('click', () => { bridge.cancelTempBasal(); setStatus('Temp basal cancelled'); });
 
@@ -764,13 +764,10 @@ btnReset.addEventListener('click', () => {
 // ── Comparison runs ───────────────────────────────────────────────────────────
 
 btnSnapshot.addEventListener('click', () => {
-  bridge.requestSave();
-  const once = (s: WorkerState) => {
-    appState.snapshotState = s;
-    btnRunCompare.disabled = false;
-    setStatus(`Snapshot saved at ${formatSimTime(s.simTimeMs)}. Modify params, then press Run B.`);
-  };
-  bridge.onStateSaved(once);
+  const s = bridge.getCurrentState();
+  appState.snapshotState = s;
+  btnRunCompare.disabled = false;
+  setStatus(`Snapshot saved at ${formatSimTime(s.simTimeMs)}. Modify params, then press Run B.`);
 });
 
 btnRunCompare.addEventListener('click', () => {

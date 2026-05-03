@@ -13,7 +13,6 @@
  */
 
 import type { VirtualPatient, ActiveBolus, ActiveLongActing } from '@cgmsim/shared';
-import { RAPID_PROFILES } from './insulinProfiles.js';
 import { calculateBolusActivity, calculateLongActingActivity, calculatePumpBasalActivity } from './iob.js';
 import type { PumpBasalBolus } from './iob.js';
 import { calculateCarbEffect } from './carbs.js';

@@ -17,7 +17,6 @@ import type {
   ActiveBolus,
   ActiveMeal,
   ActiveLongActing,
-  LongActingType,
   LongActingSchedule,
   SimEvent,
   TempBasal,
@@ -101,7 +100,6 @@ function lcgNext(s: number): { value: number; nextState: number } {
 }
 
 type TickHandler  = (snap: TickSnapshot) => void;
-type SavedHandler = (state: WorkerState) => void;
 type EventHandler = (events: SimEvent[]) => void;
 
 export class InlineSimulator {
@@ -109,11 +107,9 @@ export class InlineSimulator {
   private rafId: number | null = null;
   private lastTickWallMs = 0;
   private tickHandlers:  TickHandler[]  = [];
-  private savedHandlers: SavedHandler[] = [];
   private eventHandlers: EventHandler[] = [];
 
   onTick(h: TickHandler):    void { this.tickHandlers.push(h); }
-  onStateSaved(h: SavedHandler): void { this.savedHandlers.push(h); }
   onEvent(h: EventHandler):  void { this.eventHandlers.push(h); }
 
   private getBasalRate(simTimeMs: number): number {
@@ -327,8 +323,6 @@ export class InlineSimulator {
   setPatientParam(patch: Partial<VirtualPatient>): void { Object.assign(this.s.patient, patch); }
   setTherapyParam(patch: Partial<TherapyProfile>): void { Object.assign(this.s.therapy, patch); }
 
-  getEvents(): SimEvent[] { return [...this.s.events]; }
-
   /** Build a complete, deeply-cloned snapshot of the current simulator state. */
   getCurrentState(): WorkerState {
     return {
@@ -351,18 +345,14 @@ export class InlineSimulator {
     };
   }
 
-  requestSave(): void {
-    const state = this.getCurrentState();
-    for (const h of this.savedHandlers) h(state);
-  }
-
   reset(state: WorkerState): void {
     this.pause();
     Object.assign(this.s, {
       simTimeMs: state.simTimeMs, trueGlucose: state.trueGlucose, lastCGM: state.lastCGM,
       patient: { ...state.patient }, therapy: { ...state.therapy },
-      activeBoluses: [...state.activeBoluses], activeMeals: [...state.activeMeals],
-      activeLongActing: [...state.activeLongActing],
+      activeBoluses: [...(state.activeBoluses ?? [])],
+      activeMeals: [...(state.activeMeals ?? [])],
+      activeLongActing: [...(state.activeLongActing ?? [])],
       resolvedMeals: (state.resolvedMeals ?? []).map((m) => ({ ...m })),
       pumpMicroBoluses: (state.pumpMicroBoluses ?? []).map((b) => ({ ...b })),
       pidCGMHistory: [...(state.pidCGMHistory ?? [])],

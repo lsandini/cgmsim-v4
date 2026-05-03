@@ -10,7 +10,7 @@
  *
  * Key differences from the previous v4 implementation:
  *   - Feedback only on EXCESS IOB (not a multiplicative safety factor on the whole rate)
- *   - Gains match v3: KP=0.01, KI=0.0005, KD=0.15 (derivative converted ×60 to U/hr)
+ *   - Gains: KP=0.012, KI=0.0008, KD=0.04 (derivative is multiplied ×60 inside the controller for U/hr)
  *   - Integral is a 2-hour sliding window sum (last 24 CGM errors), not an accumulator
  *   - Suspend at ≤70 mg/dL; minimum 0.1 U/hr above that threshold
  *   - Rate-of-change limited to 1 U/hr per 5-min tick
