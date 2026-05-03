@@ -11,7 +11,7 @@
  * flags this with "(legacy)".
  */
 
-import type { WorkerState } from '@cgmsim/shared';
+import type { WorkerState, DisplayUnit } from '@cgmsim/shared';
 
 const ENVELOPE_VERSION = 2;
 
@@ -32,6 +32,56 @@ export interface ImportResult {
   state: WorkerState;
   /** Envelope version — 1 = legacy (lossy), 2 = full session. */
   version: number;
+}
+
+// ── UI preferences (localStorage) ────────────────────────────────────────────
+//
+// Persisted across reloads, scoped to the browser profile. NOT part of session
+// JSON — these describe how the user wants to view the app, not the simulation.
+
+export interface UIPrefs {
+  showIOB: boolean;
+  showCOB: boolean;
+  showBasal: boolean;
+  showEvents: boolean;
+  showTrueGlucose: boolean;
+  showForecast: boolean;
+  showBgOverlay: boolean;
+  displayUnit: DisplayUnit;
+  viewWindowMinutes: number;
+  panelOpen: boolean;
+}
+
+const DEFAULT_UI_PREFS: UIPrefs = {
+  showIOB: true,
+  showCOB: true,
+  showBasal: true,
+  showEvents: true,
+  showTrueGlucose: false,
+  showForecast: true,
+  showBgOverlay: true,
+  displayUnit: 'mmoll',
+  viewWindowMinutes: 720,
+  panelOpen: false,
+};
+
+const PREFS_KEY = 'cgmsim.ui-prefs';
+
+export function loadUIPrefs(): UIPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return { ...DEFAULT_UI_PREFS };
+    const parsed = JSON.parse(raw) as Partial<UIPrefs>;
+    return { ...DEFAULT_UI_PREFS, ...parsed };
+  } catch {
+    return { ...DEFAULT_UI_PREFS };
+  }
+}
+
+export function saveUIPrefs(prefs: UIPrefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch { /* localStorage unavailable */ }
 }
 
 export function importSession(): Promise<ImportResult> {

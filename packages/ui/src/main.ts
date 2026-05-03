@@ -6,7 +6,7 @@
 import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
-import { exportSession, importSession } from './storage.js';
+import { exportSession, importSession, loadUIPrefs, saveUIPrefs } from './storage.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
 
@@ -99,11 +99,13 @@ function minutesToTimeString(m: number): string {
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
+const uiPrefs = loadUIPrefs();
+
 const appState = {
   running:        false,
   throttle:       10 as number,
-  displayUnit:    'mmoll' as DisplayUnit,
-  panelOpen:      false,
+  displayUnit:    uiPrefs.displayUnit,
+  panelOpen:      uiPrefs.panelOpen,
   fullScreen:     false,
   lastSnap:       null as TickSnapshot | null,
   snapshotState:  null as WorkerState | null,   // saved for comparison run
@@ -128,6 +130,8 @@ const skyIcon          = getEl<SVGSVGElement>('sky-icon');
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
 const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
 const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
+const bgOverlay        = getEl<HTMLElement>('bg-overlay');
+const bgOverlayValue   = getEl<HTMLElement>('bg-overlay-value');
 const iobVal           = getEl<HTMLElement>('iob-val');
 const cobVal           = getEl<HTMLElement>('cob-val');
 const unitToggle       = getEl<HTMLButtonElement>('unit-toggle');
@@ -167,6 +171,7 @@ const overlayCOB       = getEl<HTMLInputElement>('overlay-cob');
 const overlayEvents    = getEl<HTMLInputElement>('overlay-events');
 const overlayTrue      = getEl<HTMLInputElement>('overlay-true');
 const overlayForecast  = getEl<HTMLInputElement>('overlay-forecast');
+const overlayBG        = getEl<HTMLInputElement>('overlay-bg');
 const btnExport        = getEl<HTMLButtonElement>('btn-export');
 const btnImport        = getEl<HTMLButtonElement>('btn-import');
 const btnReset         = getEl<HTMLButtonElement>('btn-reset');
@@ -221,12 +226,19 @@ function updateHUD(snap: TickSnapshot): void {
   const newCgmText = appState.displayUnit === 'mmoll'
     ? (snap.cgm / 18.0182).toFixed(1) : String(Math.round(snap.cgm));
   const valueChanged = currentCGMEl.textContent !== newCgmText;
+  const zoneClass = snap.cgm < 54 ? 'hypo-l2' : snap.cgm < 70 ? 'hypo-l1' : '';
   currentCGMEl.textContent = newCgmText;
-  currentCGMEl.className = snap.cgm < 54 ? 'hypo-l2' : snap.cgm < 70 ? 'hypo-l1' : '';
+  currentCGMEl.className = zoneClass;
+  bgOverlayValue.textContent = newCgmText;
+  bgOverlay.className = zoneClass;
   if (valueChanged) {
     currentCGMEl.classList.add('flash');
+    bgOverlay.classList.add('flash');
     if (cgmFlashTimeout !== undefined) window.clearTimeout(cgmFlashTimeout);
-    cgmFlashTimeout = window.setTimeout(() => currentCGMEl.classList.remove('flash'), 250);
+    cgmFlashTimeout = window.setTimeout(() => {
+      currentCGMEl.classList.remove('flash');
+      bgOverlay.classList.remove('flash');
+    }, 250);
   }
   trendArrowEl.textContent = trendArrow(snap.trend);
   iobVal.textContent = snap.iob.toFixed(2);
@@ -234,6 +246,21 @@ function updateHUD(snap: TickSnapshot): void {
 }
 
 function setStatus(msg: string): void { sessionStatus.textContent = msg; }
+
+function persistUIPrefs(): void {
+  saveUIPrefs({
+    showIOB:           renderer.options.showIOB,
+    showCOB:           renderer.options.showCOB,
+    showBasal:         renderer.options.showBasal,
+    showEvents:        renderer.options.showEvents,
+    showTrueGlucose:   renderer.options.showTrueGlucose,
+    showForecast:      renderer.options.showForecast,
+    showBgOverlay:     bgOverlay.style.display !== 'none',
+    displayUnit:       appState.displayUnit,
+    viewWindowMinutes: renderer.zoomMinutes,
+    panelOpen:         appState.panelOpen,
+  });
+}
 
 // ── Pause / Resume ────────────────────────────────────────────────────────────
 
@@ -301,10 +328,10 @@ function updateZoomButtons(activeMinutes: number): void {
   btnZoom24h.classList.toggle('active', activeMinutes === 1440);
 }
 
-btnZoom3h.addEventListener('click',  () => { renderer.setZoom(180);  updateZoomButtons(180); });
-btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360); });
-btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720); });
-btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); });
+btnZoom3h.addEventListener('click',  () => { renderer.setZoom(180);  updateZoomButtons(180);  persistUIPrefs(); });
+btnZoom6h.addEventListener('click',  () => { renderer.setZoom(360);  updateZoomButtons(360);  persistUIPrefs(); });
+btnZoom12h.addEventListener('click', () => { renderer.setZoom(720);  updateZoomButtons(720);  persistUIPrefs(); });
+btnZoom24h.addEventListener('click', () => { renderer.setZoom(1440); updateZoomButtons(1440); persistUIPrefs(); });
 btnLive.addEventListener('click', () => renderer.snapToLive());
 
 renderer.onViewChange(() => {
@@ -356,6 +383,7 @@ unitToggle.addEventListener('click', () => {
   syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
+  persistUIPrefs();
 });
 
 // ── Theme toggle (light / dark) ─────────────────────────────────────────────
@@ -378,6 +406,7 @@ themeToggle.addEventListener('click', () => {
 btnPanel.addEventListener('click', () => {
   appState.panelOpen = !appState.panelOpen;
   sidePanel.classList.toggle('open', appState.panelOpen);
+  persistUIPrefs();
 });
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -687,12 +716,13 @@ function onPatientChange(): void {
 
 // ── Overlay toggles ───────────────────────────────────────────────────────────
 
-overlayBasal.addEventListener('change',  () => { renderer.options.showBasal = overlayBasal.checked; renderer.markDirty(); });
-overlayIOB.addEventListener('change',    () => { renderer.options.showIOB = overlayIOB.checked; renderer.markDirty(); });
-overlayCOB.addEventListener('change',    () => { renderer.options.showCOB = overlayCOB.checked; renderer.markDirty(); });
-overlayEvents.addEventListener('change', () => { renderer.options.showEvents = overlayEvents.checked; renderer.markDirty(); });
-overlayTrue.addEventListener('change',   () => { renderer.options.showTrueGlucose = overlayTrue.checked; renderer.markDirty(); });
-overlayForecast.addEventListener('change', () => { renderer.options.showForecast = overlayForecast.checked; renderer.markDirty(); });
+overlayBasal.addEventListener('change',  () => { renderer.options.showBasal = overlayBasal.checked; renderer.markDirty(); persistUIPrefs(); });
+overlayIOB.addEventListener('change',    () => { renderer.options.showIOB = overlayIOB.checked; renderer.markDirty(); persistUIPrefs(); });
+overlayCOB.addEventListener('change',    () => { renderer.options.showCOB = overlayCOB.checked; renderer.markDirty(); persistUIPrefs(); });
+overlayEvents.addEventListener('change', () => { renderer.options.showEvents = overlayEvents.checked; renderer.markDirty(); persistUIPrefs(); });
+overlayTrue.addEventListener('change',   () => { renderer.options.showTrueGlucose = overlayTrue.checked; renderer.markDirty(); persistUIPrefs(); });
+overlayForecast.addEventListener('change', () => { renderer.options.showForecast = overlayForecast.checked; renderer.markDirty(); persistUIPrefs(); });
+overlayBG.addEventListener('change',       () => { bgOverlay.style.display = overlayBG.checked ? '' : 'none'; persistUIPrefs(); });
 
 // ── Session controls ──────────────────────────────────────────────────────────
 
@@ -839,11 +869,37 @@ document.addEventListener('keydown', (e) => {
 // ── Initial state ─────────────────────────────────────────────────────────────
 
 // HTML default input values are written in mg/dL (e.g. glucose-target=100, true-isf=40).
-// Default display unit is mmol/L. syncPanelUnits MUST run before the change handlers,
-// otherwise fromDisplay() treats "40" as mmol/L → 720 mg/dL/U and EGP rockets BG to ceiling.
-syncPanelUnits('mgdl');  // first: rewrite panel values into the current display unit (mmol/L)
+// syncPanelUnits MUST run before the change handlers, otherwise fromDisplay() treats
+// "40" as mmol/L → 720 mg/dL/U and EGP rockets BG to ceiling.
+// At this point appState.displayUnit reflects the loaded UI pref (default mmol/L).
+syncPanelUnits('mgdl');  // first: rewrite panel values from mg/dL into the current display unit
 onTherapyChange();   // then: read converted values and push to model
 onPatientChange();
 pushBasalProfile();
 bridge.setThrottle(10);
 setRunning(false);   // start paused — user presses ▶ to begin
+
+// ── Apply persisted UI prefs ──────────────────────────────────────────────────
+// Sync renderer options, checkbox states, panel + chip visibility, zoom level,
+// and unit-toggle text from the loaded prefs blob. Theme is loaded separately above.
+renderer.options.showIOB         = uiPrefs.showIOB;
+renderer.options.showCOB         = uiPrefs.showCOB;
+renderer.options.showBasal       = uiPrefs.showBasal;
+renderer.options.showEvents      = uiPrefs.showEvents;
+renderer.options.showTrueGlucose = uiPrefs.showTrueGlucose;
+renderer.options.showForecast    = uiPrefs.showForecast;
+renderer.options.displayUnit     = uiPrefs.displayUnit;
+overlayIOB.checked      = uiPrefs.showIOB;
+overlayCOB.checked      = uiPrefs.showCOB;
+overlayBasal.checked    = uiPrefs.showBasal;
+overlayEvents.checked   = uiPrefs.showEvents;
+overlayTrue.checked     = uiPrefs.showTrueGlucose;
+overlayForecast.checked = uiPrefs.showForecast;
+overlayBG.checked       = uiPrefs.showBgOverlay;
+bgOverlay.style.display = uiPrefs.showBgOverlay ? '' : 'none';
+unitToggle.textContent  = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+cgmUnitEl.textContent   = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+sidePanel.classList.toggle('open', uiPrefs.panelOpen);
+renderer.setZoom(uiPrefs.viewWindowMinutes);
+updateZoomButtons(uiPrefs.viewWindowMinutes);
+renderer.markDirty();

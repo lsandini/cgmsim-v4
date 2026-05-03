@@ -67,6 +67,9 @@
       --top-strip-height: 52px;
       --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       --font-mono: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
+
+      /* BG overlay placeholder background (50% transparent, theme-aware) */
+      --bg-overlay-bg: rgba(15, 23, 42, 0.50);
     }
 
     /* Light theme — Loop-inspired: white surfaces, soft blues, warm IOB/carb hues */
@@ -103,6 +106,8 @@
       --marker-bolus: #3b82f6;
       --marker-meal:  #16a34a;
       --marker-smb:   #9333ea;
+
+      --bg-overlay-bg: rgba(255, 255, 255, 0.50);
     }
 
     html, body {
@@ -250,6 +255,37 @@
       overflow: hidden;
       background: var(--bg);
     }
+
+    /* Big "Nightscout-style" current BG overlay — chip centered on the screen,
+       number centered in the chip. */
+    #bg-overlay {
+      position: absolute;
+      left: 50%;
+      top: 16px;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 200px;
+      padding: 6px 28px;
+      background: var(--bg-overlay-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      pointer-events: none;
+      user-select: none;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 72px;
+      line-height: 1;
+      color: var(--cgm);
+      transition: color 0.25s ease, text-shadow 0.25s ease;
+      z-index: 5;
+    }
+    #bg-overlay.hypo-l1 { color: var(--amber); }
+    #bg-overlay.hypo-l2 { color: var(--red); }
+    #bg-overlay.flash   { text-shadow: 0 0 24px var(--cgm-glow); }
+    #bg-overlay.flash.hypo-l1 { text-shadow: 0 0 24px rgba(245, 158, 11, 0.55); }
+    #bg-overlay.flash.hypo-l2 { text-shadow: 0 0 24px rgba(239, 68, 68, 0.60); }
 
     #cgm-canvas {
       display: block;
@@ -792,6 +828,11 @@
     <div id="canvas-area">
       <canvas id="cgm-canvas"></canvas>
 
+      <!-- Big current BG overlay -->
+      <div id="bg-overlay">
+        <span id="bg-overlay-value">---</span>
+      </div>
+
       <div id="cgm-tooltip"></div>
 
       <!-- Collapsible side panel -->
@@ -837,12 +878,16 @@
               <input type="checkbox" id="overlay-events" checked />
             </div>
             <div class="panel-row">
-              <label>True glucose</label>
+              <label>True glucose (without G6 noise)</label>
               <input type="checkbox" id="overlay-true" />
             </div>
             <div class="panel-row">
               <label>AR2 forecast</label>
               <input type="checkbox" id="overlay-forecast" checked />
+            </div>
+            <div class="panel-row">
+              <label>BG display</label>
+              <input type="checkbox" id="overlay-bg" checked />
             </div>
           </div>
         </div>
