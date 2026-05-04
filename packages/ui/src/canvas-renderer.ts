@@ -22,8 +22,9 @@ import type { ForecastPoint } from '../../simulator/src/ar2.js';
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_WINDOW_MINUTES = 12 * 60;
-const TICK_MINUTES = 1;
-const MAX_BUFFER = 7 * 24 * 60 / TICK_MINUTES + 1; // 7 days of 5-min ticks
+const TICK_INTERVAL_MIN = 5;                          // simulator tick cadence — must match simulator
+const RING_RETENTION_DAYS = 7;
+const MAX_BUFFER = (RING_RETENTION_DAYS * 24 * 60) / TICK_INTERVAL_MIN + 1;
 
 // ATTD glucose thresholds (mg/dL)
 const TIR_LOW = 70;
@@ -285,6 +286,20 @@ export class CGMRenderer {
   // do not get a forecast — pedagogically we want one trace, one prediction, one divergence.
   private forecastPoints: ForecastPoint[] = [];
 
+  /**
+   * Cached displayed sim-time, written once at the start of each render() and
+   * read by overlay/marker draw methods to cull anything past "now" (the
+   * lookahead zone). The latest engine tick is always known, but per the
+   * lookahead policy we only render up to displayedSimMs.
+   */
+  private displayedSimMs = 0;
+
+  /** Public read of the current displayed sim-time, in ms — used by main.ts to
+   *  stamp user-issued events (boluses, meals) at the time the user actually
+   *  sees on the chart, so markers appear at the "now" line instantly instead
+   *  of waiting for the engine's lookahead lag to catch up. */
+  get displayedSimTime(): number { return this.displayedSimMs; }
+
   private readonly PAD_LEFT        = 56;
   private readonly PAD_RIGHT       = 36;
   private readonly PAD_TOP         = 52;  // headroom for IOB/COB row (top: 12) + scenario badge (top: 28)
@@ -428,10 +443,6 @@ export class CGMRenderer {
 
   private get plotW(): number { return this.cssW - this.PAD_LEFT - this.PAD_RIGHT; }
   private get plotH(): number { return this.cssH - this.PAD_TOP - this.PAD_BOTTOM; }
-
-  private toDisplay(mgdl: number): number {
-    return this.options.displayUnit === 'mmoll' ? mgdl / 18.0182 : mgdl;
-  }
 
   private glucoseY(mgdl: number): number {
     const MIN = 40, MAX = 400;
@@ -634,7 +645,9 @@ export class CGMRenderer {
     const latest = this.ring.latest();
     if (!latest) { this.hideTooltip(); return; }
 
-    const winStartMin = this.getWinStart(latest.simTimeMs);
+    // Match the renderer's anchor (displayedSimTime) so hover hit-testing aligns
+    // with the visible dot positions while the graph is sliding.
+    const winStartMin = this.getWinStart(this.computeDisplayedSimTime());
     const HIT_RADIUS = 14; // px
 
     let bestDist = Infinity;
@@ -691,13 +704,14 @@ export class CGMRenderer {
     ctx.textBaseline = 'alphabetic';
     ctx.setLineDash([]);
 
-    const latest = this.ring.latest();
-    const latestSimMs = latest?.simTimeMs ?? 0;
-    const animSimMs = this.computeAnimatedSimMs(latest);
-    const winStartMin = this.getWinStart(latestSimMs);
+    const displayedSimMs = this.computeDisplayedSimTime();
+    this.displayedSimMs = displayedSimMs;
+    // Anchor the visible window to displayedSimTime so the "now" line stays at
+    // a fixed x position and the graph slides leftward continuously.
+    const winStartMin = this.getWinStart(displayedSimMs);
 
     this.drawBands();
-    this.drawFutureSpace(winStartMin, animSimMs);
+    this.drawFutureSpace(winStartMin, displayedSimMs);
     this.drawGrid(winStartMin);
 
     if (this.options.showBasal && this.options.therapyMode !== 'MDI') this.drawBasalOverlay(winStartMin);
@@ -706,7 +720,6 @@ export class CGMRenderer {
     if (this.options.showTrueGlucose) this.drawTrueLine(winStartMin);
 
     this.drawTrace(winStartMin);
-    this.drawAnimatedExtension(winStartMin, latest, animSimMs);
 
     if (this.options.showForecast) this.drawForecast(winStartMin);
 
@@ -825,12 +838,12 @@ export class CGMRenderer {
 
   private drawTrace(winStartMin: number): void {
     if (this.ring.size === 0) return;
-    this.drawDots(this.ring, winStartMin, true);
+    this.withPlotClip(() => this.drawDots(this.ring, winStartMin, true));
   }
 
   private drawComparisonTrace(winStartMin: number): void {
     if (this.comparisonRing.size === 0) return;
-    this.drawDots(this.comparisonRing, winStartMin, false);
+    this.withPlotClip(() => this.drawDots(this.comparisonRing, winStartMin, false));
   }
 
   private drawLegend(): void {
@@ -865,6 +878,24 @@ export class CGMRenderer {
     const xMin = this.PAD_LEFT;
     const xMax = this.PAD_LEFT + this.plotW;
 
+    // The latest CGM tick sits in the lookahead zone (right of "now") and is
+    // normally culled by drawDots. Draw it here as a hollow ring instead, so
+    // the prediction sequence reads continuously at +5/+10/.../+70 min from
+    // the now line — otherwise the first visible prediction would be 10 min
+    // ahead and the +5 slot would be empty. Once "now" catches up, the cull
+    // stops applying and drawDots renders it as a regular filled dot.
+    const latest = this.ring.latest();
+    if (latest && latest.simTimeMs > this.displayedSimMs) {
+      const offsetMin = latest.simTimeMs / 60_000 - winStartMin;
+      const x = this.timeX(offsetMin);
+      if (x >= xMin && x <= xMax) {
+        ctx.strokeStyle = withAlpha(COLORS.forecast, 1.0);
+        ctx.beginPath();
+        ctx.arc(x, this.glucoseY(latest.cgm), rArc, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
     for (const p of this.forecastPoints) {
       if (p.opacity <= 0) continue;
       const offsetMin = p.mills / 60_000 - winStartMin;
@@ -883,8 +914,11 @@ export class CGMRenderer {
     // Dot radius scales with zoom: smaller when many points are visible
     const r = this.viewWindowMinutes <= 180 ? 3 : 2.5;
     ring.forEach((entry) => {
+      // Lookahead cull: don't draw dots that haven't crossed the "now" line yet.
+      if (entry.simTimeMs > this.displayedSimMs) return;
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      // One extra tick past the left edge — the dot slides off smoothly under the clip.
+      if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
       const x = this.timeX(offsetMin);
       const y = this.glucoseY(entry.cgm);
       const color = colorByZone
@@ -899,23 +933,43 @@ export class CGMRenderer {
 
   private drawTrueLine(winStartMin: number): void {
     const ctx = this.ctx;
-    ctx.strokeStyle = COLORS.trueGlucose;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 4]);
-    ctx.beginPath();
-    let first = true;
+    this.withPlotClip(() => {
+      ctx.strokeStyle = COLORS.trueGlucose;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      let first = true;
+      let lastVisibleTG: RingEntry | null = null;
+      let nextLookaheadTG: RingEntry | null = null;
 
-    this.ring.forEach((entry) => {
-      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
-      const x = this.timeX(offsetMin);
-      const y = this.glucoseY(entry.trueGlucose);
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
+      this.ring.forEach((entry) => {
+        const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
+        // One extra tick past the left edge so the line slides off smoothly under the clip.
+        if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
+        if (entry.simTimeMs > this.displayedSimMs) {
+          if (nextLookaheadTG === null) nextLookaheadTG = entry;
+          return;
+        }
+        const x = this.timeX(offsetMin);
+        const y = this.glucoseY(entry.trueGlucose);
+        if (first) { ctx.moveTo(x, y); first = false; }
+        else ctx.lineTo(x, y);
+        lastVisibleTG = entry;
+      });
+
+      // Interpolated anchor at the "now" line.
+      if (lastVisibleTG && nextLookaheadTG && (lastVisibleTG as RingEntry).simTimeMs < this.displayedSimMs) {
+        const lv = lastVisibleTG as RingEntry;
+        const nl = nextLookaheadTG as RingEntry;
+        const t = (this.displayedSimMs - lv.simTimeMs) / (nl.simTimeMs - lv.simTimeMs);
+        const interpTG = lv.trueGlucose + t * (nl.trueGlucose - lv.trueGlucose);
+        const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
+        ctx.lineTo(this.timeX(nowOffsetMin), this.glucoseY(interpTG));
+      }
+
+      ctx.stroke();
+      ctx.setLineDash([]);
     });
-
-    ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   private drawBasalOverlay(winStartMin: number): void {
@@ -955,45 +1009,63 @@ export class CGMRenderer {
     ctx.fillText('Basal', 0, 0);
     ctx.restore();
 
-    // Collect visible step points
+    // Collect visible step points. Includes one extra tick past the left edge
+    // so the leftmost step starts off-screen and slides smoothly under the clip.
+    // Lookahead-cull: don't draw entries past displayedSimMs (they're future
+    // microboluses not yet "delivered" from the display's perspective).
     const pts: { x: number; y: number }[] = [];
+    let lastVisibleBasal: RingEntry | null = null;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
+      if (entry.simTimeMs > this.displayedSimMs) return;
       pts.push({
         x: this.timeX(offsetMin),
         y: panelBot - Math.min(entry.basalRate / MAX_BASAL, 1) * this.BASAL_PANEL_H,
       });
+      lastVisibleBasal = entry;
     });
     if (pts.length === 0) return;
 
-    // Filled area
-    ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, panelBot);
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i]!;
-      ctx.lineTo(p.x, p.y);
-      if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y);
+    // Step function: between ticks the rate IS the previous tick's value (no
+    // microbolus is delivered between ticks, no PID recompute happens). Hold
+    // the last visible step horizontally out to the "now" line — no interp.
+    if (lastVisibleBasal && (lastVisibleBasal as RingEntry).simTimeMs < this.displayedSimMs) {
+      const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
+      const lastPt = pts[pts.length - 1]!;
+      pts.push({ x: this.timeX(nowOffsetMin), y: lastPt.y });
     }
-    ctx.lineTo(pts[pts.length - 1]!.x, panelBot);
-    ctx.closePath();
-    ctx.fillStyle = COLORS.basalFill;
-    ctx.fill();
 
-    // Step line
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i]!;
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-      if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y);
-    }
-    ctx.strokeStyle = COLORS.basalLine;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([]);
-    ctx.stroke();
+    this.withBasalClip(panelTop, () => {
+      // Filled area
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, panelBot);
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i]!;
+        ctx.lineTo(p.x, p.y);
+        if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y);
+      }
+      ctx.lineTo(pts[pts.length - 1]!.x, panelBot);
+      ctx.closePath();
+      ctx.fillStyle = COLORS.basalFill;
+      ctx.fill();
 
-    // Current rate readout inside the panel (bottom-left)
+      // Step line
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i]!;
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+        if (i + 1 < pts.length) ctx.lineTo(pts[i + 1]!.x, p.y);
+      }
+      ctx.strokeStyle = COLORS.basalLine;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    });
+
+    // Current rate readout inside the panel (bottom-left). Outside the clip —
+    // it's chrome, not data.
     const latest = this.ring.latest();
     if (latest) {
       ctx.save();
@@ -1013,16 +1085,42 @@ export class CGMRenderer {
     const baseY  = this.glucoseY(TIR_HIGH);   // 10 mmol/L line — panel floor
     const topY   = baseY - panelH;            // panel ceiling
 
-    // Pass 1: collect visible (offset, iob) and find peak — auto-scale Y
+    // Pass 1: collect visible (offset, iob), track lookahead bracket for
+    // "now"-line interpolation, find peak — auto-scale Y. Includes one extra
+    // tick past the left edge so the polygon's leftmost vertex sits off-screen
+    // and slides smoothly under the clip.
     const visible: { x: number; iob: number }[] = [];
     let peakIOB = 0;
+    let lastVisibleIOB: RingEntry | null = null;
+    let nextLookaheadIOB: RingEntry | null = null;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
+      if (entry.simTimeMs > this.displayedSimMs) {
+        // First lookahead entry — captured for interpolation, not drawn.
+        if (nextLookaheadIOB === null) nextLookaheadIOB = entry;
+        return;
+      }
       visible.push({ x: this.timeX(offsetMin), iob: entry.iob });
       if (entry.iob > peakIOB) peakIOB = entry.iob;
+      lastVisibleIOB = entry;
     });
     if (visible.length === 0) return;
+
+    // Append a synthetic anchor at the "now" line with the linearly
+    // interpolated value between the last visible entry and the first lookahead
+    // entry. This makes the curve end exactly at "now" with a value that's a
+    // smooth fraction of the way to the next computed tick — no jumps, no
+    // extrapolation, no future data drawn.
+    if (lastVisibleIOB && nextLookaheadIOB && (lastVisibleIOB as RingEntry).simTimeMs < this.displayedSimMs) {
+      const lv = lastVisibleIOB as RingEntry;
+      const nl = nextLookaheadIOB as RingEntry;
+      const t = (this.displayedSimMs - lv.simTimeMs) / (nl.simTimeMs - lv.simTimeMs);
+      const interpIOB = lv.iob + t * (nl.iob - lv.iob);
+      const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
+      visible.push({ x: this.timeX(nowOffsetMin), iob: interpIOB });
+      if (interpIOB > peakIOB) peakIOB = interpIOB;
+    }
 
     const niceCeil = (v: number): number => {
       if (v <= 0) return 4;
@@ -1037,37 +1135,41 @@ export class CGMRenderer {
 
     const pts = visible.map((v) => ({ x: v.x, y: yFor(v.iob) }));
 
-    // Gradient fill
-    const grad = ctx.createLinearGradient(0, topY, 0, baseY);
-    grad.addColorStop(0, COLORS.iobFillTop);
-    grad.addColorStop(1, COLORS.iobFill);
+    // Clip the polygon + top edge + baseline to the plot area so off-screen
+    // vertices slide cleanly under the left/right boundaries.
+    this.withPlotClip(() => {
+      // Gradient fill
+      const grad = ctx.createLinearGradient(0, topY, 0, baseY);
+      grad.addColorStop(0, COLORS.iobFillTop);
+      grad.addColorStop(1, COLORS.iobFill);
 
-    ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, baseY);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, baseY);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+      ctx.lineTo(pts[pts.length - 1]!.x, baseY);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
 
-    // Top edge stroke
-    ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, pts[0]!.y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
-    ctx.strokeStyle = COLORS.iobLine;
-    ctx.lineWidth = 1.75;
-    ctx.setLineDash([]);
-    ctx.stroke();
+      // Top edge stroke
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, pts[0]!.y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      ctx.strokeStyle = COLORS.iobLine;
+      ctx.lineWidth = 1.75;
+      ctx.setLineDash([]);
+      ctx.stroke();
 
-    // Baseline reference line at the 10 mmol/L floor
-    ctx.beginPath();
-    ctx.moveTo(this.PAD_LEFT, baseY);
-    ctx.lineTo(this.PAD_LEFT + this.plotW, baseY);
-    ctx.strokeStyle = COLORS.iobLine;
-    ctx.lineWidth = 0.5;
-    ctx.globalAlpha = 0.35;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+      // Baseline reference line at the 10 mmol/L floor
+      ctx.beginPath();
+      ctx.moveTo(this.PAD_LEFT, baseY);
+      ctx.lineTo(this.PAD_LEFT + this.plotW, baseY);
+      ctx.strokeStyle = COLORS.iobLine;
+      ctx.lineWidth = 0.5;
+      ctx.globalAlpha = 0.35;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
 
     // Y-axis tick labels on the RIGHT margin: max at top, '0' at bottom
     const xRight = this.PAD_LEFT + this.plotW;
@@ -1099,74 +1201,103 @@ export class CGMRenderer {
     const peakY = baseY - maxPx;
 
     const pts: { x: number; y: number }[] = [];
+    let lastVisibleCOB: RingEntry | null = null;
+    let nextLookaheadCOB: RingEntry | null = null;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
-      if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) return;
+      if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
+      if (entry.simTimeMs > this.displayedSimMs) {
+        if (nextLookaheadCOB === null) nextLookaheadCOB = entry;
+        return;
+      }
       pts.push({
         x: this.timeX(offsetMin),
         y: baseY - Math.min(entry.cob / maxCOB, 1) * maxPx,
       });
+      lastVisibleCOB = entry;
     });
     if (pts.length === 0) return;
 
-    const grad = ctx.createLinearGradient(0, peakY, 0, baseY);
-    grad.addColorStop(0, COLORS.cobFillTop);
-    grad.addColorStop(1, COLORS.cobFill);
+    // Interpolated anchor at the "now" line.
+    if (lastVisibleCOB && nextLookaheadCOB && (lastVisibleCOB as RingEntry).simTimeMs < this.displayedSimMs) {
+      const lv = lastVisibleCOB as RingEntry;
+      const nl = nextLookaheadCOB as RingEntry;
+      const t = (this.displayedSimMs - lv.simTimeMs) / (nl.simTimeMs - lv.simTimeMs);
+      const interpCOB = lv.cob + t * (nl.cob - lv.cob);
+      const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
+      pts.push({
+        x: this.timeX(nowOffsetMin),
+        y: baseY - Math.min(interpCOB / maxCOB, 1) * maxPx,
+      });
+    }
 
-    ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, baseY);
-    for (const p of pts) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(pts[pts.length - 1]!.x, baseY);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
+    this.withPlotClip(() => {
+      const grad = ctx.createLinearGradient(0, peakY, 0, baseY);
+      grad.addColorStop(0, COLORS.cobFillTop);
+      grad.addColorStop(1, COLORS.cobFill);
 
-    ctx.beginPath();
-    ctx.moveTo(pts[0]!.x, pts[0]!.y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
-    ctx.strokeStyle = COLORS.cobLine;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([]);
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, baseY);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+      ctx.lineTo(pts[pts.length - 1]!.x, baseY);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, pts[0]!.y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      ctx.strokeStyle = COLORS.cobLine;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    });
   }
 
-  private computeAnimatedSimMs(latest: RingEntry | null): number {
-    // No animation when paused or when the user is reviewing history
-    if (!latest || !this.isRunning || this.viewOffsetMs > 0) return latest?.simTimeMs ?? 0;
+  /**
+   * Sim-time displayed at the "now" line.
+   *
+   * Lookahead model: the renderer lags the engine by at most one tick. Between
+   * two consecutive ticks, displayedSimTime slides linearly from the previous
+   * tick's simTimeMs toward the latest's, paced by wall-time × throttle, capped
+   * at the latest tick's simTimeMs (we never draw past data we have).
+   *
+   * Consequence: the latest computed tick's data may sit in the lookahead zone
+   * (right of the "now" line). Phases 2+ cull / interpolate those values.
+   *
+   * Paused or panning → freeze at the latest tick.
+   */
+  private computeDisplayedSimTime(): number {
+    const last2 = this.ring.lastN(2);
+    if (last2.length === 0) return 0;
+    if (last2.length === 1) return last2[0]!.simTimeMs;
+    const latestSim = last2[1]!.simTimeMs;
+    if (!this.isRunning || this.viewOffsetMs > 0) return latestSim;
+    const prevSim = last2[0]!.simTimeMs;
     const advance = (performance.now() - this.lastTickWallMs) * this.currentThrottle;
-    return Math.min(latest.simTimeMs + advance, latest.simTimeMs + TICK_MINUTES * 60_000);
+    return Math.min(prevSim + advance, latestSim);
   }
 
-  private drawAnimatedExtension(winStartMin: number, latest: RingEntry | null, animSimMs: number): void {
-    if (!latest || !this.isRunning || this.viewOffsetMs > 0) return;
-    if (animSimMs <= latest.simTimeMs) return;
-
-    const lastOffsetMin = latest.simTimeMs / 60_000 - winStartMin;
-    if (lastOffsetMin > this.viewWindowMinutes) return;
-
-    const animOffsetMin = animSimMs / 60_000 - winStartMin;
-    const x1 = this.timeX(lastOffsetMin);
-    const x2 = this.timeX(Math.min(animOffsetMin, this.viewWindowMinutes));
-
-    const dtMin = (animSimMs - latest.simTimeMs) / 60_000;
-    const extrapCGM = Math.max(40, Math.min(400, latest.cgm + latest.trend * dtMin));
-    const y1 = this.glucoseY(latest.cgm);
-    const y2 = this.glucoseY(extrapCGM);
-
-    const color = extrapCGM < HYPO_L1 ? COLORS.traceHypoL2
-      : extrapCGM < TIR_LOW ? COLORS.traceHypoL1 : COLORS.trace;
-
+  /** Run a draw callback inside a clip rect over the main plot area. */
+  private withPlotClip(draw: () => void): void {
     const ctx = this.ctx;
-    ctx.globalAlpha = 0.45;
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    ctx.globalAlpha = 1.0;
+    ctx.rect(this.PAD_LEFT, this.PAD_TOP, this.plotW, this.plotH);
+    ctx.clip();
+    draw();
+    ctx.restore();
+  }
+
+  /** Run a draw callback inside a clip rect over the basal panel below the main plot. */
+  private withBasalClip(panelTop: number, draw: () => void): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(this.PAD_LEFT, panelTop, this.plotW, this.BASAL_PANEL_H);
+    ctx.clip();
+    draw();
+    ctx.restore();
   }
 
   private drawEventMarkers(winStartMin: number): void {
@@ -1179,6 +1310,8 @@ export class CGMRenderer {
     ctx.lineWidth = 1.5;
 
     for (const ev of this.events) {
+      // Lookahead cull: marker doesn't appear until "now" has passed its issue time.
+      if (ev.simTimeMs > this.displayedSimMs) continue;
       const offsetMin = ev.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < 0 || offsetMin > this.viewWindowMinutes) continue;
 

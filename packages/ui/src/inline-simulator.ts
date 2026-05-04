@@ -279,28 +279,42 @@ export class InlineSimulator {
     if (this.s.running) this.lastTickWallMs = performance.now();
   }
 
-  bolus(units: number, analogue?: RapidAnalogueType): void {
+  /**
+   * @param units    bolus amount in U
+   * @param analogue rapid insulin profile (defaults to therapy's rapid analogue)
+   * @param simTimeMs OPTIONAL stamp time. Defaults to engine.simTimeMs (latest
+   *   tick's post-advance time). The renderer passes its `displayedSimTime`
+   *   here so markers appear at the user's "now" line instantly instead of
+   *   landing in the lookahead zone where they'd be culled. The bolus is
+   *   processed normally by subsequent ticks; only the simTime stamp differs
+   *   (by at most one tick interval).
+   */
+  bolus(units: number, analogue?: RapidAnalogueType, simTimeMs?: number): void {
+    const t = simTimeMs ?? this.s.simTimeMs;
     this.s.activeBoluses.push({
-      id: `bolus-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
-      simTimeMs: this.s.simTimeMs, units,
+      id: `bolus-${t}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: t, units,
       analogue: analogue ?? this.s.therapy.rapidAnalogue,
       dia: this.s.patient.dia,
     });
-    const ev: SimEvent = { kind: 'bolus', simTimeMs: this.s.simTimeMs, units };
+    const ev: SimEvent = { kind: 'bolus', simTimeMs: t, units };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);
   }
 
-  meal(carbsG: number, gastricEmptyingRate?: number): void {
+  /** Same `simTimeMs` override pattern as `bolus()` — stamp at displayedSimTime
+   *  for instant marker visibility. */
+  meal(carbsG: number, gastricEmptyingRate?: number, simTimeMs?: number): void {
+    const t = simTimeMs ?? this.s.simTimeMs;
     const meal: ActiveMeal = {
-      id: `meal-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
-      simTimeMs: this.s.simTimeMs, carbsG,
+      id: `meal-${t}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: t, carbsG,
       gastricEmptyingRate: gastricEmptyingRate ?? this.s.patient.gastricEmptyingRate,
     };
     const { value, nextState } = lcgNext(this.s.rngState);
     this.s.rngState = nextState;
     this.s.resolvedMeals.push(resolveMealSplit(meal, value));
-    const ev: SimEvent = { kind: 'meal', simTimeMs: this.s.simTimeMs, carbsG };
+    const ev: SimEvent = { kind: 'meal', simTimeMs: t, carbsG };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);
   }

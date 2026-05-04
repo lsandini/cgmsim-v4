@@ -443,14 +443,17 @@ document.addEventListener('fullscreenchange', () => {
 btnFullscreen.addEventListener('click', toggleFullScreen);
 
 // ── Quick inject ──────────────────────────────────────────────────────────────
+// Bolus / meal stamping uses renderer.displayedSimTime — the sim-time the user
+// actually sees on the chart — so the marker lands at the "now" line instantly
+// instead of in the lookahead zone where it'd be culled.
 
-btnQuickMeal.addEventListener('click',  () => bridge.meal(60));
-btnQuickBolus.addEventListener('click', () => bridge.bolus(parseFloat(bolusAmount.value) || 4));
+btnQuickMeal.addEventListener('click',  () => bridge.meal(60, undefined, renderer.displayedSimTime));
+btnQuickBolus.addEventListener('click', () => bridge.bolus(parseFloat(bolusAmount.value) || 4, undefined, renderer.displayedSimTime));
 btnBolus.addEventListener('click', () => {
-  const u = parseFloat(bolusAmount.value); if (u > 0) bridge.bolus(u);
+  const u = parseFloat(bolusAmount.value); if (u > 0) bridge.bolus(u, undefined, renderer.displayedSimTime);
 });
 btnMeal.addEventListener('click', () => {
-  const c = parseFloat(mealCarbs.value); if (c > 0) bridge.meal(c);
+  const c = parseFloat(mealCarbs.value); if (c > 0) bridge.meal(c, undefined, renderer.displayedSimTime);
 });
 
 // ── Long-acting slot helpers ──────────────────────────────────────────────────
@@ -859,8 +862,8 @@ document.addEventListener('keydown', (e) => {
       throttleSlider.value = String(throttleToPos(prev));
       throttleSlider.dispatchEvent(new Event('input')); break;
     }
-    case 'm': bridge.meal(60); break;
-    case 'b': bridge.bolus(parseFloat(bolusAmount.value) || 4); break;
+    case 'm': bridge.meal(60, undefined, renderer.displayedSimTime); break;
+    case 'b': bridge.bolus(parseFloat(bolusAmount.value) || 4, undefined, renderer.displayedSimTime); break;
     case 'u': unitToggle.click(); break;
     case 'f': case 'F': toggleFullScreen(); break;
   }
