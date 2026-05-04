@@ -51,7 +51,6 @@ interface SimState {
   patient:           VirtualPatient;
   therapy:           TherapyProfile;
   activeBoluses:     ActiveBolus[];
-  activeMeals:       ActiveMeal[];
   activeLongActing:  ActiveLongActing[];
   resolvedMeals:     ResolvedMeal[];
   pumpMicroBoluses:  PumpBasalBolus[];
@@ -76,7 +75,6 @@ function createInitialState(): SimState {
     patient:           { ...DEFAULT_PATIENT },
     therapy:           { ...DEFAULT_THERAPY_PROFILE, basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }] },
     activeBoluses:     [],
-    activeMeals:       [],
     activeLongActing:  [],
     resolvedMeals:     [],
     pumpMicroBoluses:  [],
@@ -302,7 +300,6 @@ export class InlineSimulator {
     const { value, nextState } = lcgNext(this.s.rngState);
     this.s.rngState = nextState;
     this.s.resolvedMeals.push(resolveMealSplit(meal, value));
-    this.s.activeMeals.push(meal);
     const ev: SimEvent = { kind: 'meal', simTimeMs: this.s.simTimeMs, carbsG };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);
@@ -329,7 +326,7 @@ export class InlineSimulator {
       simTimeMs: this.s.simTimeMs, trueGlucose: this.s.trueGlucose, lastCGM: this.s.lastCGM,
       patient: { ...this.s.patient }, therapy: { ...this.s.therapy },
       g6State: this.s.g6.getState(),
-      activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
+      activeBoluses: [...this.s.activeBoluses],
       activeLongActing: [...this.s.activeLongActing],
       resolvedMeals: this.s.resolvedMeals.map((m) => ({ ...m })),
       pumpMicroBoluses: this.s.pumpMicroBoluses.map((b) => ({ ...b })),
@@ -351,7 +348,6 @@ export class InlineSimulator {
       simTimeMs: state.simTimeMs, trueGlucose: state.trueGlucose, lastCGM: state.lastCGM,
       patient: { ...state.patient }, therapy: { ...state.therapy },
       activeBoluses: [...(state.activeBoluses ?? [])],
-      activeMeals: [...(state.activeMeals ?? [])],
       activeLongActing: [...(state.activeLongActing ?? [])],
       resolvedMeals: (state.resolvedMeals ?? []).map((m) => ({ ...m })),
       pumpMicroBoluses: (state.pumpMicroBoluses ?? []).map((b) => ({ ...b })),

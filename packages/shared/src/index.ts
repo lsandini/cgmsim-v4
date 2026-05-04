@@ -228,7 +228,6 @@ export interface WorkerState {
   g6State: G6NoiseState;
 
   activeBoluses: ActiveBolus[];
-  activeMeals: ActiveMeal[];
   activeLongActing: ActiveLongActing[];
 
   /** Meals after fast/slow split has been resolved — drives carb effect & COB. */

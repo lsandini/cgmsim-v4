@@ -780,7 +780,7 @@ btnReset.addEventListener('click', () => {
              rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
              glucoseTarget:100,enableSMB:false},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:{jsr:123456789^seed,seed}},
-    activeBoluses:[],activeMeals:[],activeLongActing:[],
+    activeBoluses:[],activeLongActing:[],
     resolvedMeals:[],pumpMicroBoluses:[],tempBasal:null,events:[],rngState:seed,
     lastMorningDay:-1,lastEveningDay:-1,
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
