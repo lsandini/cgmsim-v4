@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "smoothing the graph rendering"
+git commit -m "cleanup"
 git push -u origin smooth

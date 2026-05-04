@@ -286,18 +286,9 @@ export class CGMRenderer {
   // do not get a forecast — pedagogically we want one trace, one prediction, one divergence.
   private forecastPoints: ForecastPoint[] = [];
 
-  /**
-   * Cached displayed sim-time, written once at the start of each render() and
-   * read by overlay/marker draw methods to cull anything past "now" (the
-   * lookahead zone). The latest engine tick is always known, but per the
-   * lookahead policy we only render up to displayedSimMs.
-   */
+  /** Sim-time at the "now" line. Written by render(), read by overlay/marker
+   *  cull paths and by main.ts (via displayedSimTime) for event stamping. */
   private displayedSimMs = 0;
-
-  /** Public read of the current displayed sim-time, in ms — used by main.ts to
-   *  stamp user-issued events (boluses, meals) at the time the user actually
-   *  sees on the chart, so markers appear at the "now" line instantly instead
-   *  of waiting for the engine's lookahead lag to catch up. */
   get displayedSimTime(): number { return this.displayedSimMs; }
 
   private readonly PAD_LEFT        = 56;
@@ -502,11 +493,12 @@ export class CGMRenderer {
     ctx.restore();
   }
 
-  // Live-follow window start (original drift spec), then subtract pan offset.
-  private getWinStart(latestSimMs: number): number {
-    const latestMin = latestSimMs / 60_000;
-    const histMin = this.viewWindowMinutes * 0.75; // 75% history, 25% future
-    const liveStart = latestMin <= histMin ? 0 : latestMin - histMin;
+  // Window left-edge minute that places `simMs` at 75% across the plot
+  // (history left, future right), minus the user's pan offset.
+  private getWinStart(simMs: number): number {
+    const min = simMs / 60_000;
+    const histMin = this.viewWindowMinutes * 0.75;
+    const liveStart = min <= histMin ? 0 : min - histMin;
     return liveStart - this.viewOffsetMs / 60_000;
   }
 
@@ -878,12 +870,10 @@ export class CGMRenderer {
     const xMin = this.PAD_LEFT;
     const xMax = this.PAD_LEFT + this.plotW;
 
-    // The latest CGM tick sits in the lookahead zone (right of "now") and is
-    // normally culled by drawDots. Draw it here as a hollow ring instead, so
-    // the prediction sequence reads continuously at +5/+10/.../+70 min from
-    // the now line — otherwise the first visible prediction would be 10 min
-    // ahead and the +5 slot would be empty. Once "now" catches up, the cull
-    // stops applying and drawDots renders it as a regular filled dot.
+    // The latest CGM tick is culled by drawDots while in the lookahead zone.
+    // Draw it here as a hollow ring so the prediction sequence reads
+    // continuously at +5/+10/.../+70 min from "now" instead of starting at +10.
+    // Once "now" catches up, drawDots renders it as a regular filled dot.
     const latest = this.ring.latest();
     if (latest && latest.simTimeMs > this.displayedSimMs) {
       const offsetMin = latest.simTimeMs / 60_000 - winStartMin;
@@ -957,10 +947,10 @@ export class CGMRenderer {
         lastVisibleTG = entry;
       });
 
-      // Interpolated anchor at the "now" line.
-      if (lastVisibleTG && nextLookaheadTG && (lastVisibleTG as RingEntry).simTimeMs < this.displayedSimMs) {
-        const lv = lastVisibleTG as RingEntry;
-        const nl = nextLookaheadTG as RingEntry;
+      // Interpolated anchor at the "now" line — same pattern as IOB / COB.
+      const lv = lastVisibleTG as RingEntry | null;
+      const nl = nextLookaheadTG as RingEntry | null;
+      if (lv && nl && lv.simTimeMs < this.displayedSimMs) {
         const t = (this.displayedSimMs - lv.simTimeMs) / (nl.simTimeMs - lv.simTimeMs);
         const interpTG = lv.trueGlucose + t * (nl.trueGlucose - lv.trueGlucose);
         const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
@@ -1009,10 +999,9 @@ export class CGMRenderer {
     ctx.fillText('Basal', 0, 0);
     ctx.restore();
 
-    // Collect visible step points. Includes one extra tick past the left edge
-    // so the leftmost step starts off-screen and slides smoothly under the clip.
-    // Lookahead-cull: don't draw entries past displayedSimMs (they're future
-    // microboluses not yet "delivered" from the display's perspective).
+    // Collect visible step points; cull lookahead zone (microboluses not yet
+    // "delivered" from the display's perspective). One extra tick past the
+    // left edge so the leftmost step slides smoothly under the clip.
     const pts: { x: number; y: number }[] = [];
     let lastVisibleBasal: RingEntry | null = null;
     this.ring.forEach((entry) => {
@@ -1027,10 +1016,11 @@ export class CGMRenderer {
     });
     if (pts.length === 0) return;
 
-    // Step function: between ticks the rate IS the previous tick's value (no
-    // microbolus is delivered between ticks, no PID recompute happens). Hold
-    // the last visible step horizontally out to the "now" line — no interp.
-    if (lastVisibleBasal && (lastVisibleBasal as RingEntry).simTimeMs < this.displayedSimMs) {
+    // Step function: between ticks the rate IS the previous tick's value
+    // (no microbolus is delivered, no PID recompute). Hold the last step
+    // horizontally out to the "now" line — no interpolation.
+    const lastBasal = lastVisibleBasal as RingEntry | null;
+    if (lastBasal && lastBasal.simTimeMs < this.displayedSimMs) {
       const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
       const lastPt = pts[pts.length - 1]!;
       pts.push({ x: this.timeX(nowOffsetMin), y: lastPt.y });
@@ -1085,10 +1075,9 @@ export class CGMRenderer {
     const baseY  = this.glucoseY(TIR_HIGH);   // 10 mmol/L line — panel floor
     const topY   = baseY - panelH;            // panel ceiling
 
-    // Pass 1: collect visible (offset, iob), track lookahead bracket for
-    // "now"-line interpolation, find peak — auto-scale Y. Includes one extra
-    // tick past the left edge so the polygon's leftmost vertex sits off-screen
-    // and slides smoothly under the clip.
+    // Collect visible (offset, iob) and track the lookahead bracket for
+    // "now"-line interpolation. One extra tick past the left edge so the
+    // leftmost vertex sits off-screen and slides smoothly under the clip.
     const visible: { x: number; iob: number }[] = [];
     let peakIOB = 0;
     let lastVisibleIOB: RingEntry | null = null;
@@ -1097,7 +1086,6 @@ export class CGMRenderer {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
       if (entry.simTimeMs > this.displayedSimMs) {
-        // First lookahead entry — captured for interpolation, not drawn.
         if (nextLookaheadIOB === null) nextLookaheadIOB = entry;
         return;
       }
@@ -1107,14 +1095,14 @@ export class CGMRenderer {
     });
     if (visible.length === 0) return;
 
-    // Append a synthetic anchor at the "now" line with the linearly
-    // interpolated value between the last visible entry and the first lookahead
-    // entry. This makes the curve end exactly at "now" with a value that's a
-    // smooth fraction of the way to the next computed tick — no jumps, no
-    // extrapolation, no future data drawn.
-    if (lastVisibleIOB && nextLookaheadIOB && (lastVisibleIOB as RingEntry).simTimeMs < this.displayedSimMs) {
-      const lv = lastVisibleIOB as RingEntry;
-      const nl = nextLookaheadIOB as RingEntry;
+    // Append a synthetic anchor at the "now" line with the value linearly
+    // interpolated between the last visible entry and the first lookahead one,
+    // so the curve ends exactly at "now" with no jumps and no extrapolation.
+    // The `as` re-widens the type — TS narrows closure-mutated `let` vars to
+    // their initializer (`null`), which kills the if-narrowing without it.
+    const lv = lastVisibleIOB as RingEntry | null;
+    const nl = nextLookaheadIOB as RingEntry | null;
+    if (lv && nl && lv.simTimeMs < this.displayedSimMs) {
       const t = (this.displayedSimMs - lv.simTimeMs) / (nl.simTimeMs - lv.simTimeMs);
       const interpIOB = lv.iob + t * (nl.iob - lv.iob);
       const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
@@ -1135,8 +1123,8 @@ export class CGMRenderer {
 
     const pts = visible.map((v) => ({ x: v.x, y: yFor(v.iob) }));
 
-    // Clip the polygon + top edge + baseline to the plot area so off-screen
-    // vertices slide cleanly under the left/right boundaries.
+    // Clip data to the plot area so off-screen vertices slide cleanly past
+    // the left/right boundaries.
     this.withPlotClip(() => {
       // Gradient fill
       const grad = ctx.createLinearGradient(0, topY, 0, baseY);
@@ -1218,10 +1206,10 @@ export class CGMRenderer {
     });
     if (pts.length === 0) return;
 
-    // Interpolated anchor at the "now" line.
-    if (lastVisibleCOB && nextLookaheadCOB && (lastVisibleCOB as RingEntry).simTimeMs < this.displayedSimMs) {
-      const lv = lastVisibleCOB as RingEntry;
-      const nl = nextLookaheadCOB as RingEntry;
+    // Interpolated anchor at the "now" line — same pattern as IOB.
+    const lv = lastVisibleCOB as RingEntry | null;
+    const nl = nextLookaheadCOB as RingEntry | null;
+    if (lv && nl && lv.simTimeMs < this.displayedSimMs) {
       const t = (this.displayedSimMs - lv.simTimeMs) / (nl.simTimeMs - lv.simTimeMs);
       const interpCOB = lv.cob + t * (nl.cob - lv.cob);
       const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
@@ -1255,17 +1243,10 @@ export class CGMRenderer {
   }
 
   /**
-   * Sim-time displayed at the "now" line.
-   *
-   * Lookahead model: the renderer lags the engine by at most one tick. Between
-   * two consecutive ticks, displayedSimTime slides linearly from the previous
-   * tick's simTimeMs toward the latest's, paced by wall-time × throttle, capped
-   * at the latest tick's simTimeMs (we never draw past data we have).
-   *
-   * Consequence: the latest computed tick's data may sit in the lookahead zone
-   * (right of the "now" line). Phases 2+ cull / interpolate those values.
-   *
-   * Paused or panning → freeze at the latest tick.
+   * Sim-time at the "now" line. Lookahead model: between two consecutive ticks,
+   * slides linearly from the previous tick's simTimeMs toward the latest's,
+   * paced by wall-time × throttle, capped at the latest (no extrapolation).
+   * Paused or panning → freeze at latest.
    */
   private computeDisplayedSimTime(): number {
     const last2 = this.ring.lastN(2);

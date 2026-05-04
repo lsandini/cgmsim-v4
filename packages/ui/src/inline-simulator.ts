@@ -279,16 +279,9 @@ export class InlineSimulator {
     if (this.s.running) this.lastTickWallMs = performance.now();
   }
 
-  /**
-   * @param units    bolus amount in U
-   * @param analogue rapid insulin profile (defaults to therapy's rapid analogue)
-   * @param simTimeMs OPTIONAL stamp time. Defaults to engine.simTimeMs (latest
-   *   tick's post-advance time). The renderer passes its `displayedSimTime`
-   *   here so markers appear at the user's "now" line instantly instead of
-   *   landing in the lookahead zone where they'd be culled. The bolus is
-   *   processed normally by subsequent ticks; only the simTime stamp differs
-   *   (by at most one tick interval).
-   */
+  /** `simTimeMs` overrides the stamp time (defaults to engine.simTimeMs). The
+   *  renderer passes displayedSimTime so the marker lands at the user's "now"
+   *  line instantly instead of in the lookahead zone where it'd be culled. */
   bolus(units: number, analogue?: RapidAnalogueType, simTimeMs?: number): void {
     const t = simTimeMs ?? this.s.simTimeMs;
     this.s.activeBoluses.push({
@@ -302,8 +295,7 @@ export class InlineSimulator {
     for (const h of this.eventHandlers) h([ev]);
   }
 
-  /** Same `simTimeMs` override pattern as `bolus()` — stamp at displayedSimTime
-   *  for instant marker visibility. */
+  /** `simTimeMs` overrides the stamp time — see bolus(). */
   meal(carbsG: number, gastricEmptyingRate?: number, simTimeMs?: number): void {
     const t = simTimeMs ?? this.s.simTimeMs;
     const meal: ActiveMeal = {
