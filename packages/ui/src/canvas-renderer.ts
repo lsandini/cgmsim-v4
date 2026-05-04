@@ -59,9 +59,9 @@ const DARK_PALETTE: ColorPalette = {
   amberBand: 'rgba(245, 158, 11, 0.20)',
   redBand:   'rgba(239, 68, 68, 0.20)',
   hypoLine:  '#ef4444',
-  hypoL2Line:'#dc2626',
-  hyperLine: '#f59e0b',
-  lowLine:   '#10b981',
+  hypoL2Line:'#dc2626',  // red-600 — deep saturated red
+  hyperLine: '#ea580c',  // orange-600 — saturated orange
+  lowLine:   '#16a34a',  // green-600 — deep green
   trace:        '#22c55e',
   traceGlow:    'rgba(34, 197, 94, 0.40)',
   traceHypoL1:  '#f59e0b',
@@ -100,9 +100,9 @@ const LIGHT_PALETTE: ColorPalette = {
   amberBand: 'rgba(245, 158, 11, 0.12)',
   redBand:   'rgba(239, 68, 68, 0.12)',
   hypoLine:  '#dc2626',
-  hypoL2Line:'#b91c1c',
-  hyperLine: '#d97706',
-  lowLine:   '#16a34a',
+  hypoL2Line:'#fb7185',  // rose-400 — pink-tinted red
+  hyperLine: '#fcd34d',  // amber-300 — bright golden yellow
+  lowLine:   '#86efac',  // green-300 — vivid mint, distinct from CGM trace
   trace:        '#16a34a',                       // Loop green CGM
   traceGlow:    'rgba(22, 163, 74, 0.25)',
   traceHypoL1:  '#d97706',
@@ -729,23 +729,23 @@ export class CGMRenderer {
     const ctx = this.ctx;
     const xL = this.PAD_LEFT;
     const xR = this.PAD_LEFT + this.plotW;
-    const yHigh = this.glucoseY(TIR_HIGH);   // 180 mg/dL — dashed orange
-    const yLow  = this.glucoseY(TIR_LOW);    //  70 mg/dL — dashed green
-    const yVlow = this.glucoseY(HYPO_L1);    //  54 mg/dL — dashed red
+    const yHigh = this.glucoseY(TIR_HIGH);   // 180 mg/dL — amber (hyper)
+    const yLow  = this.glucoseY(TIR_LOW);    //  70 mg/dL — green (low TIR)
+    const yVlow = this.glucoseY(HYPO_L1);    //  54 mg/dL — red (hypo L2)
 
+    // Solid lines at lowered opacity so they read as TIR thresholds without
+    // competing visually with the data. Solid (vs dashed) avoids the optical
+    // artifact where a fixed dash pattern fights the leftward chart drift.
     ctx.lineWidth = 1.25;
-    ctx.setLineDash([6, 5]);
 
-    ctx.strokeStyle = COLORS.hyperLine;
+    ctx.strokeStyle = withAlpha(COLORS.hyperLine, 0.9);
     ctx.beginPath(); ctx.moveTo(xL, yHigh); ctx.lineTo(xR, yHigh); ctx.stroke();
 
-    ctx.strokeStyle = COLORS.lowLine;
+    ctx.strokeStyle = withAlpha(COLORS.lowLine, 0.9);
     ctx.beginPath(); ctx.moveTo(xL, yLow); ctx.lineTo(xR, yLow); ctx.stroke();
 
-    ctx.strokeStyle = COLORS.hypoL2Line;
+    ctx.strokeStyle = withAlpha(COLORS.hypoL2Line, 0.9);
     ctx.beginPath(); ctx.moveTo(xL, yVlow); ctx.lineTo(xR, yVlow); ctx.stroke();
-
-    ctx.setLineDash([]);
   }
 
   private drawFutureSpace(winStartMin: number, animSimMs: number): void {
@@ -980,7 +980,7 @@ export class CGMRenderer {
     ctx.stroke();
 
     // Y-axis tick labels: '2' at top, '0' at bottom
-    ctx.font = '12px -apple-system, sans-serif';
+    ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -990,7 +990,7 @@ export class CGMRenderer {
 
     // Rotated 'Basal' label on the left margin
     ctx.save();
-    ctx.font = '12px -apple-system, sans-serif';
+    ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.basalLine;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1161,7 +1161,7 @@ export class CGMRenderer {
 
     // Y-axis tick labels on the RIGHT margin: max at top, '0' at bottom
     const xRight = this.PAD_LEFT + this.plotW;
-    ctx.font = '12px -apple-system, sans-serif';
+    ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = COLORS.iobLine;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';

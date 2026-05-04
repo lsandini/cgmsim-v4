@@ -500,7 +500,7 @@ function setSlotActiveState(refs: SlotRowRefs, schedule: LongActingSchedule | nu
   refs.type.disabled = isActive;
   refs.dose.disabled = isActive;
   refs.time.disabled = isActive;
-  refs.setBtn.textContent = isActive ? 'Unset' : 'Set';
+  refs.setBtn.textContent = isActive ? 'Edit' : 'Set';
 }
 
 function shakeRow(refs: SlotRowRefs): void {
