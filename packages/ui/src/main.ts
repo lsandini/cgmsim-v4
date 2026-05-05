@@ -3,11 +3,13 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile, Prescription, MDISubmode } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile, Prescription, MDISubmode, VirtualPatient } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
 import { exportSession, importSession, loadUIPrefs, saveUIPrefs } from './storage.js';
+import { runOnboarding, ensureOnboardingStyles } from './onboarding/onboarding.js';
+import { PATIENT_CASES, buildTherapyForCase, type CaseId, type TherapyChoice, type PatientCase } from './onboarding/cases.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
 
@@ -1022,45 +1024,132 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── Initial state ─────────────────────────────────────────────────────────────
+// ── Onboarding case persistence + form application ───────────────────────────
+const ONBOARDING_KEY = 'cgmsim.onboarded';
+const CASE_KEY       = 'cgmsim.case';
+
+interface SavedCase { caseId: CaseId; therapy: TherapyChoice; }
+
+function loadSavedCase(): SavedCase | null {
+  const raw = localStorage.getItem(CASE_KEY);
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw) as Partial<SavedCase>;
+    if (!obj.caseId || !obj.therapy) return null;
+    if (!(obj.caseId in PATIENT_CASES)) return null;
+    return { caseId: obj.caseId, therapy: obj.therapy };
+  } catch { return null; }
+}
+
+function writePatientToForm(p: VirtualPatient): void {
+  const isMmol = appState.displayUnit === 'mmoll';
+  trueISF.value          = isMmol ? (p.trueISF / 18.0182).toFixed(1) : String(p.trueISF);
+  trueCR.value           = String(p.trueCR);
+  trueDIA.value          = String(p.dia);
+  patientWeight.value    = String(p.weight);
+  diabetesDuration.value = String(p.diabetesDuration);
+  carbsAbsTime.value     = String(p.carbsAbsTime);
+  gastricRate.value      = String(p.gastricEmptyingRate);
+}
+
+function writeTherapyToForm(c: PatientCase, choice: TherapyChoice): void {
+  const therapy = buildTherapyForCase(c, choice);
+  therapyMode.value = therapy.mode;
+  basalSegments = therapy.basalProfile.map(e => ({ ...e }));
+  renderBasalRows();
+  setSlot('morning', null);
+  setSlot('evening', null);
+  if (therapy.mode === 'MDI' && therapy.longActingEvening) {
+    eveningRefs.type.value = therapy.longActingEvening.type;
+    eveningRefs.dose.value = String(therapy.longActingEvening.units);
+    eveningRefs.time.value = minutesToTimeString(therapy.longActingEvening.injectionMinute);
+    setSlot('evening', therapy.longActingEvening);
+  }
+}
+
+getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', async () => {
+  const result = await runOnboarding();
+  if (!result.caseId || !result.therapy) return;
+  const c = PATIENT_CASES[result.caseId];
+  writePatientToForm(c.patient);
+  writeTherapyToForm(c, result.therapy);
+  onTherapyChange();
+  onPatientChange();
+  pushBasalProfile();
+  localStorage.setItem(CASE_KEY, JSON.stringify({ caseId: result.caseId, therapy: result.therapy }));
+  document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
+  setStatus(`Loaded case: ${c.shortLabel} · ${result.therapy.toUpperCase()}`);
+});
+
+// ── Initial state (gated on onboarding modal on first launch) ────────────────
 
 // HTML default input values are written in mg/dL (e.g. glucose-target=100, true-isf=40).
 // syncPanelUnits MUST run before the change handlers, otherwise fromDisplay() treats
 // "40" as mmol/L → 720 mg/dL/U and EGP rockets BG to ceiling.
 // At this point appState.displayUnit reflects the loaded UI pref (default mmol/L).
-syncPanelUnits('mgdl');  // first: rewrite panel values from mg/dL into the current display unit
-onTherapyChange();   // then: read converted values and push to model
-// Push the persisted prescription into the simulator so it matches the UI's
-// `currentPrescription` (loaded from localStorage). Without this, the engine
-// would silently run on DEFAULT_PRESCRIPTION until the user reopens the modal.
-bridge.setTherapyParam({ prescription: currentPrescription });
-setSubmode(currentSubmode);  // sync segmented toggle state + button visibility
-onPatientChange();
-pushBasalProfile();
-bridge.setThrottle(10);
-setRunning(false);   // start paused — user presses ▶ to begin
 
-// ── Apply persisted UI prefs ──────────────────────────────────────────────────
-// Sync renderer options, checkbox states, panel + chip visibility, zoom level,
-// and unit-toggle text from the loaded prefs blob. Theme is loaded separately above.
-renderer.options.showIOB         = uiPrefs.showIOB;
-renderer.options.showCOB         = uiPrefs.showCOB;
-renderer.options.showBasal       = uiPrefs.showBasal;
-renderer.options.showEvents      = uiPrefs.showEvents;
-renderer.options.showTrueGlucose = uiPrefs.showTrueGlucose;
-renderer.options.showForecast    = uiPrefs.showForecast;
-renderer.options.displayUnit     = uiPrefs.displayUnit;
-overlayIOB.checked      = uiPrefs.showIOB;
-overlayCOB.checked      = uiPrefs.showCOB;
-overlayBasal.checked    = uiPrefs.showBasal;
-overlayEvents.checked   = uiPrefs.showEvents;
-overlayTrue.checked     = uiPrefs.showTrueGlucose;
-overlayForecast.checked = uiPrefs.showForecast;
-overlayBG.checked       = uiPrefs.showBgOverlay;
-bgOverlay.style.display = uiPrefs.showBgOverlay ? '' : 'none';
-unitToggle.textContent  = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-cgmUnitEl.textContent   = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-sidePanel.classList.toggle('open', uiPrefs.panelOpen);
-renderer.setZoom(uiPrefs.viewWindowMinutes);
-updateZoomButtons(uiPrefs.viewWindowMinutes);
-renderer.markDirty();
+void (async () => {
+  syncPanelUnits('mgdl');
+
+  const onboarded = localStorage.getItem(ONBOARDING_KEY) === 'true';
+  let savedCase = loadSavedCase();
+  let justOnboarded = false;
+
+  if (!onboarded) {
+    ensureOnboardingStyles();
+    const result = await runOnboarding();
+    localStorage.setItem(ONBOARDING_KEY, 'true');
+    if (result.caseId && result.therapy) {
+      savedCase = { caseId: result.caseId, therapy: result.therapy };
+      localStorage.setItem(CASE_KEY, JSON.stringify(savedCase));
+      justOnboarded = true;
+    }
+  }
+
+  if (savedCase) {
+    const c = PATIENT_CASES[savedCase.caseId];
+    writePatientToForm(c.patient);
+    writeTherapyToForm(c, savedCase.therapy);
+  }
+
+  onTherapyChange();
+  // Push the persisted prescription into the simulator so it matches the UI's
+  // `currentPrescription` (loaded from localStorage). Without this, the engine
+  // would silently run on DEFAULT_PRESCRIPTION until the user reopens the modal.
+  bridge.setTherapyParam({ prescription: currentPrescription });
+  setSubmode(currentSubmode);
+  onPatientChange();
+  pushBasalProfile();
+  bridge.setThrottle(10);
+  setRunning(false);
+
+  // ── Apply persisted UI prefs ──
+  renderer.options.showIOB         = uiPrefs.showIOB;
+  renderer.options.showCOB         = uiPrefs.showCOB;
+  renderer.options.showBasal       = uiPrefs.showBasal;
+  renderer.options.showEvents      = uiPrefs.showEvents;
+  renderer.options.showTrueGlucose = uiPrefs.showTrueGlucose;
+  renderer.options.showForecast    = uiPrefs.showForecast;
+  renderer.options.displayUnit     = uiPrefs.displayUnit;
+  overlayIOB.checked      = uiPrefs.showIOB;
+  overlayCOB.checked      = uiPrefs.showCOB;
+  overlayBasal.checked    = uiPrefs.showBasal;
+  overlayEvents.checked   = uiPrefs.showEvents;
+  overlayTrue.checked     = uiPrefs.showTrueGlucose;
+  overlayForecast.checked = uiPrefs.showForecast;
+  overlayBG.checked       = uiPrefs.showBgOverlay;
+  bgOverlay.style.display = uiPrefs.showBgOverlay ? '' : 'none';
+  unitToggle.textContent  = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+  cgmUnitEl.textContent   = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+  sidePanel.classList.toggle('open', uiPrefs.panelOpen);
+  renderer.setZoom(uiPrefs.viewWindowMinutes);
+  updateZoomButtons(uiPrefs.viewWindowMinutes);
+  renderer.markDirty();
+
+  if (justOnboarded) {
+    appState.panelOpen = true;
+    sidePanel.classList.add('open');
+    document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
+    persistUIPrefs();
+  }
+})();

@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "start at 06:00, style fixes"
-git push -u origin smooth
+git commit -m "set default patients and default basals+ rates"
+git push -u origin onboarding-v2
