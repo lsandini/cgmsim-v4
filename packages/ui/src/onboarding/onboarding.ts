@@ -55,7 +55,7 @@ export function runOnboarding(): Promise<OnboardingResult> {
   return new Promise((resolve) => {
     injectStyles();
 
-    let step: 1 | 2 = 1;
+    let step: 1 | 2 | 3 = 1;
     let selectedCase: CaseId | null = null;
     let selectedTherapy: TherapyChoice | null = null;
 
@@ -68,15 +68,15 @@ export function runOnboarding(): Promise<OnboardingResult> {
     overlay.innerHTML = `
       <div class="onboarding-modal">
         <div class="onboarding-header">
-          <h2 id="onboarding-title">Choose a patient</h2>
-          <div class="onboarding-step-indicator">Step <span class="ob-current">1</span> of 2</div>
+          <h2 id="onboarding-title">Welcome</h2>
+          <div class="onboarding-step-indicator">Step <span class="ob-current">1</span> of 3</div>
         </div>
         <div class="onboarding-body"></div>
         <div class="onboarding-footer">
           <button class="onboarding-skip" type="button">Skip onboarding</button>
           <div class="onboarding-actions">
             <button class="onboarding-back" type="button" hidden>← Back</button>
-            <button class="onboarding-next" type="button" disabled>Next →</button>
+            <button class="onboarding-next" type="button">Get started →</button>
           </div>
         </div>
       </div>
@@ -111,7 +111,20 @@ export function runOnboarding(): Promise<OnboardingResult> {
     function renderStep(): void {
       stepEl.textContent = String(step);
       backBtn.hidden = step === 1;
+      bodyEl.classList.toggle('onboarding-body--welcome', step === 1);
       if (step === 1) {
+        titleEl.textContent = 'Welcome';
+        nextBtn.textContent = 'Get started →';
+        nextBtn.disabled = false;
+        bodyEl.innerHTML = `
+          <div class="onboarding-welcome-title">Welcome to CGMSIM v4</div>
+          <p class="onboarding-welcome-message">
+            This is a teaching simulator for diabetes education. You'll pick a virtual
+            patient and a therapy approach, then explore how blood glucose responds to
+            insulin, food, and time. All data is synthetic — this is not a clinical tool.
+          </p>
+        `;
+      } else if (step === 2) {
         titleEl.textContent = 'Choose a patient';
         nextBtn.textContent = 'Next →';
         nextBtn.disabled = selectedCase === null;
@@ -139,10 +152,15 @@ export function runOnboarding(): Promise<OnboardingResult> {
     }
 
     skipBtn.addEventListener('click', () => close({ caseId: null, therapy: null }));
-    backBtn.addEventListener('click', () => { step = 1; renderStep(); });
+    backBtn.addEventListener('click', () => {
+      if (step === 3) step = 2;
+      else if (step === 2) step = 1;
+      renderStep();
+    });
     nextBtn.addEventListener('click', () => {
-      if (step === 1) { step = 2; renderStep(); }
-      else { close({ caseId: selectedCase, therapy: selectedTherapy }); }
+      if (step === 1)      { step = 2; renderStep(); }
+      else if (step === 2) { step = 3; renderStep(); }
+      else                 { close({ caseId: selectedCase, therapy: selectedTherapy }); }
     });
 
     document.addEventListener('keydown', onKey);

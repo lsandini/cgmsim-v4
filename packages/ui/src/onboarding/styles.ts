@@ -35,6 +35,23 @@ export const onboardingCSS = `
   overflow-y: auto;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
 }
+.onboarding-body--welcome {
+  display: block;
+  padding: 40px 48px;
+  text-align: center;
+}
+.onboarding-welcome-title {
+  font-size: 28px; font-weight: 600;
+  margin-bottom: 18px;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.onboarding-welcome-message {
+  font-size: 15px; line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 520px;
+  margin: 0 auto;
+}
 
 .onboarding-footer {
   display: flex; justify-content: space-between; align-items: center;
