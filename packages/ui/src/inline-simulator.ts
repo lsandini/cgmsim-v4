@@ -42,7 +42,8 @@ import { RAPID_PROFILES, LONG_ACTING_PROFILES } from '../../simulator/src/insuli
 const TICK_SIM_MINUTES = 5;
 const TICK_SIM_MS      = TICK_SIM_MINUTES * 60_000;
 function randomSeed(): number { return (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1; }
-const INITIAL_BG   = 100;
+const INITIAL_BG          = 100;
+const INITIAL_SIM_TIME_MS = 6 * 60 * 60_000;  // 06:00
 
 
 interface SimState {
@@ -71,7 +72,7 @@ interface SimState {
 
 function createInitialState(): SimState {
   return {
-    simTimeMs:         0,
+    simTimeMs:         INITIAL_SIM_TIME_MS,
     trueGlucose:       INITIAL_BG,
     lastCGM:           INITIAL_BG,
     patient:           { ...DEFAULT_PATIENT },

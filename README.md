@@ -15,7 +15,7 @@ Sessions persist as JSON files you save to disk and reload at any time — full 
 ## Features
 
 - Physiological glucose model with insulin PD profiles, carbohydrate absorption, EGP/dawn phenomenon, hypo counter-regulation, and Dexcom G6 sensor noise
-- Three therapy modes: AID (PID controller with optional supermicroboluses), open-loop pump, MDI
+- Three therapy modes: AID (PID controller with optional supermicroboluses), open-loop pump, MDI (with LIVE manual-entry and PRESCRIPTION auto-dispatch submodes)
 - Two-layer parameter model — patient ground-truth physiology vs the controller's programmed beliefs — so mismatches between true and assumed ISF/ICR/DIA become teaching scenarios
 - Adjustable simulation speed (×1 to ×3600) — run a full 14-day scenario in seconds
 - Pause/resume at any point for discussion

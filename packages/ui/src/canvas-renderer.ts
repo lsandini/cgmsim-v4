@@ -7,7 +7,7 @@
  *
  * Spec §7.3 and §8.2:
  *   - 24-hour default display window (6h / 12h / 24h zoom levels)
- *   - Fixed midnight-at-left for first 18h; scrolling thereafter
+ *   - Fixed session-start-at-left until current sim time crosses 75% of plot; scrolling thereafter
  *   - ATTD colour bands: green (70–180), amber (54–70), red (<54)
  *   - Glow effect on trace line
  *   - IOB and COB activity overlays (toggleable)
@@ -25,6 +25,7 @@ const DEFAULT_WINDOW_MINUTES = 12 * 60;
 const TICK_INTERVAL_MIN = 5;                          // simulator tick cadence — must match simulator
 const RING_RETENTION_DAYS = 7;
 const MAX_BUFFER = (RING_RETENTION_DAYS * 24 * 60) / TICK_INTERVAL_MIN + 1;
+const SESSION_START_MIN = 6 * 60;                     // matches INITIAL_SIM_TIME_MS in inline-simulator.ts
 
 // ATTD glucose thresholds (mg/dL)
 const TIR_LOW = 70;
@@ -502,10 +503,12 @@ export class CGMRenderer {
 
   // Window left-edge minute that places `simMs` at 75% across the plot
   // (history left, future right), minus the user's pan offset.
+  // Floored at SESSION_START_MIN so a fresh session pins 06:00 to the
+  // far left and the trace fills the chart left-to-right as time advances.
   private getWinStart(simMs: number): number {
     const min = simMs / 60_000;
     const histMin = this.viewWindowMinutes * 0.75;
-    const liveStart = min <= histMin ? 0 : min - histMin;
+    const liveStart = Math.max(SESSION_START_MIN, min - histMin);
     return liveStart - this.viewOffsetMs / 60_000;
   }
 

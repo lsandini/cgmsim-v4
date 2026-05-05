@@ -927,7 +927,7 @@ btnReset.addEventListener('click', () => {
   bridge.pause(); setRunning(false);
   const seed = (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1;
   bridge.reset({
-    simTimeMs:0, trueGlucose:100, lastCGM:100,
+    simTimeMs:6*60*60_000, trueGlucose:100, lastCGM:100,
     patient:{weight:75,diabetesDuration:10,trueISF:40,trueCR:12,
              dia:6,carbsAbsTime:360,gastricEmptyingRate:1},
     therapy:{mode:'MDI',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
