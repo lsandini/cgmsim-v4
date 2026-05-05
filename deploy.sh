@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "update .gitignore"
-git push -u origin dev
+git commit -m "start at 06:00, style fixes"
+git push -u origin smooth

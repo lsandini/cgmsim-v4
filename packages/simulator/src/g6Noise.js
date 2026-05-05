@@ -138,7 +138,7 @@ export class DexcomG6Noise {
         else {
             this.v = [0, 0];
             this.cc = [0, 0];
-            this.tCalib = 0; // simulation epoch — simTimeMs starts at 0
+            this.tCalib = 0;
         }
     }
     getState() {

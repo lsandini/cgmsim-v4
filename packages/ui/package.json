@@ -11,8 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cgmsim/shared": "*",
-    "idb": "^8.0.0"
+    "@cgmsim/shared": "*"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

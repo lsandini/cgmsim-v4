@@ -162,7 +162,14 @@
       font-weight: 600;
       letter-spacing: 0;
       color: var(--text);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      display: inline-block;
     }
+    /* Reserve space for the worst-case digit string so the pillbox doesn't
+       reflow as the value changes (and bump every control on its right). */
+    .pill.iob .val { min-width: 4.2ch; }   /* up to "99.99" */
+    .pill.cob .val { min-width: 2.5ch; }   /* up to "999" */
     .pill .unit {
       font-size: 11px;
       color: var(--text-muted);
@@ -386,7 +393,8 @@
     #current-cgm.flash.hypo-l2 { text-shadow: 0 0 14px rgba(239, 68, 68, 0.60); }
 
     #cgm-unit {
-      font-size: 13px;
+      font-size: 14px;
+      letter-spacing: 0.04em;
       color: var(--text-muted);
       margin-left: -8px;
       align-self: flex-end;
@@ -499,16 +507,21 @@
       border: 1px solid var(--border);
       background: var(--bg-surface);
       color: var(--text);
-      font-size: 13px;
-      font-weight: 500;
+      font-size: 14px;
+      letter-spacing: 0.04em;
       cursor: pointer;
       white-space: nowrap;
       transition: border-color 0.15s, background 0.15s;
       flex-shrink: 0;
     }
     .quick-btn:hover { border-color: var(--accent); background: rgba(88, 166, 255, 0.08); }
-    .quick-btn.meal { border-color: var(--amber); color: var(--amber); }
-    .quick-btn.meal:hover { background: rgba(210, 153, 34, 0.12); }
+    /* Modifier buttons match the settings/fullscreen chrome at rest (dim
+       border) but keep a colored LABEL. Hover brightens the border to the
+       label's own color and tints the background to match. */
+    .quick-btn.meal { color: var(--amber); }
+    .quick-btn.meal:hover { border-color: var(--amber); background: rgba(210, 153, 34, 0.12); }
+    .quick-btn.bolus { color: var(--iob); }
+    .quick-btn.bolus:hover { border-color: var(--iob); background: rgba(59, 130, 246, 0.12); }
 
     /* Panel toggle */
     #btn-panel,
@@ -624,7 +637,8 @@
       border: 1px solid var(--border);
       color: var(--text);
       border-radius: 4px;
-      padding: 4px 6px;
+      padding: 0 6px;
+      height: 28px;
       font-size: 13px;
       font-family: var(--font);
     }
@@ -637,7 +651,7 @@
 
     .long-acting-row {
       display: grid;
-      grid-template-columns: 60px 1fr 38px 78px auto;
+      grid-template-columns: 60px 1fr 56px 78px auto;
       gap: 4px;
       align-items: center;
       padding: 6px 8px;
@@ -668,14 +682,18 @@
       cursor: not-allowed;
     }
     .long-acting-row .la-set-btn {
-      padding: 4px 12px;
+      padding: 0 6px;
+      height: 28px;          /* matches input/select height */
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border: 1px solid var(--border);
       border-radius: 4px;
       background: var(--bg-surface);
       color: var(--text);
       cursor: pointer;
       font-size: 13px;
-      min-width: 64px;       /* fits the wider "Unset" label so the dropdown column doesn't shrink on Set */
+      min-width: 40px;       /* fits "Edit" snugly so the column stays the same width on toggle */
       text-align: center;
     }
     .long-acting-row.active .la-set-btn {
@@ -731,8 +749,9 @@
     .view-btn {
       height: 32px;
       padding: 0 12px;
-      font-size: 13.2px;
-      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      line-height: 32px;
       border-radius: 6px;
       border: 1px solid var(--border);
       background: var(--bg-surface);
@@ -744,6 +763,152 @@
     .view-btn:hover { opacity: 1; color: var(--text); border-color: var(--accent); }
     .view-btn.active { border-color: var(--accent); color: var(--accent); opacity: 1; }
     .view-btn.live-btn { border-color: var(--green); color: var(--green); opacity: 1; }
+
+    /* MDI submode segmented toggle (LIVE / PRESCRIPTION) */
+    #mdi-submode-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 8px;
+    }
+    #mdi-submode-group[hidden] { display: none !important; }
+    .seg-toggle {
+      display: inline-flex;
+      align-items: stretch;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg-surface);
+      transition: border-color 0.15s;
+    }
+    .seg-toggle:hover { border-color: var(--accent); }
+    .seg-btn {
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+    .seg-btn:hover { color: var(--text); }
+    .seg-btn.active { background: var(--accent-soft); color: var(--accent); }
+    #btn-edit-prescription { font-size: 13px; }
+
+    /* Prescription modal */
+    #prescription-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 12, 22, 0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    #prescription-modal-backdrop[data-open="true"] { display: flex; }
+    #prescription-modal {
+      width: min(560px, 92vw);
+      max-height: 90vh;
+      overflow-y: auto;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      color: var(--text);
+      font-size: 14px;
+    }
+    #prescription-modal header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    #prescription-modal header h2 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    #prescription-modal .modal-body { padding: 14px 18px; }
+    #prescription-modal .modal-section { margin-bottom: 16px; }
+    #prescription-modal .modal-section h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    #prescription-modal .row {
+      display: grid;
+      grid-template-columns: 90px 1fr 110px;
+      gap: 12px;
+      align-items: center;
+      padding: 6px 0;
+    }
+    #prescription-modal .row .lbl-time { font-variant-numeric: tabular-nums; font-weight: 600; }
+    #prescription-modal .row .lbl-grams { color: var(--text-muted); }
+    #prescription-modal .row.scale-row {
+      grid-template-columns: 1fr 110px;
+    }
+    #prescription-modal input[type="number"] {
+      width: 100%;
+      padding: 5px 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: inherit;
+      text-align: right;
+    }
+    #prescription-modal input[type="number"]:focus { outline: none; border-color: var(--accent); }
+    #prescription-modal .fasting-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 14px;
+    }
+    #prescription-modal .fasting-row label { cursor: pointer; }
+    #prescription-modal .fasting-help {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+    #prescription-modal footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-surface);
+    }
+    #prescription-modal footer button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: inherit;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-panel);
+      color: var(--text);
+    }
+    #prescription-modal footer button.primary {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    #prescription-modal footer button:hover { border-color: var(--accent); }
+    #prescription-modal[data-fasting="true"] .meals-section { opacity: 0.4; pointer-events: none; }
 
     /* Panel tabs */
     #panel-tabs {
@@ -812,6 +977,14 @@
             <li role="option" data-value="MDI">MDI</li>
           </ul>
         </div>
+      </div>
+      <!-- MDI submode controls — visible only when therapy mode is MDI -->
+      <div id="mdi-submode-group" hidden>
+        <div class="seg-toggle" role="tablist" aria-label="MDI submode">
+          <button type="button" class="seg-btn active" data-submode="LIVE" role="tab" aria-selected="true">LIVE</button>
+          <button type="button" class="seg-btn" data-submode="PRESCRIPTION" role="tab" aria-selected="false">PRESCRIPTION</button>
+        </div>
+        <button type="button" id="btn-edit-prescription" class="pill" hidden title="Edit prescription">📋 Edit prescription</button>
       </div>
       <div class="spacer"></div>
       <div id="view-controls">
@@ -1081,9 +1254,55 @@
       <div id="trend-arrow">→</div>
 
       <button class="quick-btn meal" id="btn-quick-meal" title="60g meal">🍽 60g</button>
-      <button class="quick-btn" id="btn-quick-bolus" title="4U bolus">💉 4U</button>
+      <button class="quick-btn bolus" id="btn-quick-bolus" title="4U bolus">💉 4U</button>
       <button id="btn-panel" title="Toggle panel" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg></button>
       <button id="btn-fullscreen" title="Full screen trace (F)">⛶</button>
+    </div>
+  </div>
+
+  <!-- Prescription editor modal -->
+  <div id="prescription-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="prescription-title">
+    <div id="prescription-modal">
+      <header>
+        <h2 id="prescription-title">📋 Prescription</h2>
+        <button id="btn-prescription-close" class="pill pill-icon" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+
+        <div class="fasting-row">
+          <input type="checkbox" id="presc-fasting" />
+          <label for="presc-fasting"><strong>Fasting</strong> — no meals; corrections only</label>
+        </div>
+        <div class="fasting-help" id="presc-fasting-help" hidden>
+          When fasting, sliding-scale corrections fire at 07:00, 13:00, 17:00 and 22:00.
+        </div>
+
+        <div class="modal-section meals-section">
+          <h3>Meals (carbs fixed by hospital tray) — bolus given 10 min before</h3>
+          <div id="presc-meals"></div>
+        </div>
+
+        <div class="modal-section">
+          <h3>Sliding-scale correction (added to mealtime bolus, or fired alone if fasting)</h3>
+          <div class="row scale-row">
+            <span>If CGM &gt; 8 mmol/L</span>
+            <input type="number" id="presc-corr-1" min="0" max="20" step="0.5" value="0" />
+          </div>
+          <div class="row scale-row">
+            <span>If CGM &gt; 12 mmol/L</span>
+            <input type="number" id="presc-corr-2" min="0" max="20" step="0.5" value="0" />
+          </div>
+          <div class="row scale-row">
+            <span>If CGM &gt; 16 mmol/L</span>
+            <input type="number" id="presc-corr-3" min="0" max="20" step="0.5" value="0" />
+          </div>
+        </div>
+
+      </div>
+      <footer>
+        <button id="btn-prescription-cancel">Cancel</button>
+        <button id="btn-prescription-save" class="primary">Save</button>
+      </footer>
     </div>
   </div>
 

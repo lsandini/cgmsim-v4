@@ -30,6 +30,7 @@ import { computeDeltaBG } from '../../simulator/src/deltaBG.js';
 import {
   calculateBolusIOB,
   calculatePumpBasalIOB,
+  calculateLongActingActivity,
 } from '../../simulator/src/iob.js';
 import type { PumpBasalBolus } from '../../simulator/src/iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from '../../simulator/src/carbs.js';
@@ -41,7 +42,8 @@ import { RAPID_PROFILES, LONG_ACTING_PROFILES } from '../../simulator/src/insuli
 const TICK_SIM_MINUTES = 5;
 const TICK_SIM_MS      = TICK_SIM_MINUTES * 60_000;
 function randomSeed(): number { return (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1; }
-const INITIAL_BG   = 100;
+const INITIAL_BG          = 100;
+const INITIAL_SIM_TIME_MS = 6 * 60 * 60_000;  // 06:00
 
 
 interface SimState {
@@ -51,7 +53,6 @@ interface SimState {
   patient:           VirtualPatient;
   therapy:           TherapyProfile;
   activeBoluses:     ActiveBolus[];
-  activeMeals:       ActiveMeal[];
   activeLongActing:  ActiveLongActing[];
   resolvedMeals:     ResolvedMeal[];
   pumpMicroBoluses:  PumpBasalBolus[];
@@ -64,19 +65,19 @@ interface SimState {
   rngState:          number;
   lastMorningDay: number;
   lastEveningDay: number;
+  prescriptionLastFiredDay: Record<string, number>;
   tempBasal:         TempBasal | null;
   events:            SimEvent[];
 }
 
 function createInitialState(): SimState {
   return {
-    simTimeMs:         0,
+    simTimeMs:         INITIAL_SIM_TIME_MS,
     trueGlucose:       INITIAL_BG,
     lastCGM:           INITIAL_BG,
     patient:           { ...DEFAULT_PATIENT },
     therapy:           { ...DEFAULT_THERAPY_PROFILE, basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }] },
     activeBoluses:     [],
-    activeMeals:       [],
     activeLongActing:  [],
     resolvedMeals:     [],
     pumpMicroBoluses:  [],
@@ -89,6 +90,7 @@ function createInitialState(): SimState {
     rngState:          randomSeed(),
     lastMorningDay: -1,
     lastEveningDay: -1,
+    prescriptionLastFiredDay: {},
     tempBasal:         null,
     events:            [],
   };
@@ -133,6 +135,111 @@ export class InlineSimulator {
 
     this.fireSlotIfDue('morning', s.therapy.longActingMorning, minuteOfDay, simDay);
     this.fireSlotIfDue('evening', s.therapy.longActingEvening, minuteOfDay, simDay);
+  }
+
+  /**
+   * PRESCRIPTION submode: pre-programmed schedule auto-fires based on sim
+   * time-of-day. Forward-only — slots whose trigger time has already passed
+   * for "today" but were never fired (e.g. user enabled PRESCRIPTION mid-day,
+   * or imported a session, or just toggled fasting) are silently marked as
+   * already-fired and won't catch up.
+   */
+  private checkPrescription(): void {
+    const s = this.s;
+    if (s.therapy.mode !== 'MDI') return;
+    if (s.therapy.mdiSubmode !== 'PRESCRIPTION') return;
+
+    const minuteOfDay = (s.simTimeMs / 60_000) % (24 * 60);
+    const simDay      = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
+    const presc       = s.therapy.prescription;
+
+    if (presc.fasting) {
+      // Fasting → corrections only at the configured hours (no meals, no meal-bolus).
+      for (const h of presc.fastingCorrectionHours) {
+        const triggerMinute = h * 60;
+        this.firePrescriptionSlotIfDue(
+          `corr-fast-${h}`, triggerMinute, minuteOfDay, simDay,
+          () => this.fireCorrection(),
+        );
+      }
+      return;
+    }
+
+    // Non-fasting: per meal — bolus+correction 10 min before, carbs at meal time.
+    for (const meal of presc.meals) {
+      const mealMinute  = meal.hour * 60 + meal.minute;
+      const bolusMinute = mealMinute - 10;
+      const slotKey     = `meal-${meal.hour}-${meal.minute}`;
+
+      // Bolus (mealtime + correction) at T-10
+      if (bolusMinute >= 0) {
+        this.firePrescriptionSlotIfDue(
+          `${slotKey}-bolus`, bolusMinute, minuteOfDay, simDay,
+          () => {
+            const corr = this.computeCorrectionUnits();
+            const total = meal.bolusUnits + corr;
+            if (total > 0) this.bolus(total);
+          },
+        );
+      }
+
+      // Carb meal at T
+      this.firePrescriptionSlotIfDue(
+        `${slotKey}-carbs`, mealMinute, minuteOfDay, simDay,
+        () => { if (meal.grams > 0) this.meal(meal.grams); },
+      );
+    }
+  }
+
+  /**
+   * Forward-only slot firing. If the trigger time has not yet been crossed
+   * today, do nothing. If it has been crossed but we haven't fired today,
+   * fire — but NOT if the trigger was already "in the past" when this slot
+   * first became active (i.e. lastFired === -1 AND we're well past trigger).
+   * The simplest forward-only rule: fire only if `minuteOfDay - triggerMinute`
+   * is small (within one tick). Otherwise silently mark today as fired.
+   */
+  private firePrescriptionSlotIfDue(
+    slotKey: string,
+    triggerMinute: number,
+    minuteOfDay: number,
+    simDay: number,
+    fire: () => void,
+  ): void {
+    const s = this.s;
+    const last = s.prescriptionLastFiredDay[slotKey];
+    if (last === simDay) return;       // already fired today
+    if (minuteOfDay < triggerMinute) return; // not due yet
+
+    // Forward-only: only fire if we're within one tick of the trigger.
+    // Otherwise the user enabled PRESCRIPTION (or imported, or toggled fasting)
+    // after this slot's time had already passed — mark it done silently.
+    const minutesPast = minuteOfDay - triggerMinute;
+    if (minutesPast <= TICK_SIM_MINUTES) {
+      fire();
+    }
+    s.prescriptionLastFiredDay[slotKey] = simDay;
+  }
+
+  /**
+   * Sliding-scale correction: thresholds 8 / 12 / 16 mmol/L (≈ 144 / 216 / 288
+   * mg/dL). Highest tier wins. Uses the latest CGM (noisy) reading — the
+   * teaching point is the prescription's behaviour against what the patient/
+   * nurse actually sees, not the underlying true glucose.
+   */
+  private computeCorrectionUnits(): number {
+    const s = this.s;
+    const cgm = s.lastCGM;
+    const c = s.therapy.prescription.correction;
+    if (cgm > 16 * 18.0182) return c.units3;
+    if (cgm > 12 * 18.0182) return c.units2;
+    if (cgm >  8 * 18.0182) return c.units1;
+    return 0;
+  }
+
+  private fireCorrection(): void {
+    const u = this.computeCorrectionUnits();
+    if (u > 0) this.bolus(u);
   }
 
   private fireSlotIfDue(
@@ -180,6 +287,7 @@ export class InlineSimulator {
     const isPump = s.therapy.mode === 'PUMP' || s.therapy.mode === 'AID';
 
     this.checkLongActingDose();
+    this.checkPrescription();
 
     // Purge expired
     s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60);
@@ -245,10 +353,17 @@ export class InlineSimulator {
     s.lastCGM     = cgm;
     s.simTimeMs   = nowMs + TICK_SIM_MS;
 
+    // Long-acting activity in U/hr-equivalent (calculate* returns U/min). Always
+    // computed; the renderer only displays it in MDI mode.
+    const longActingActivity = isPump
+      ? 0
+      : calculateLongActingActivity(s.activeLongActing, nowMs) * 60;
+
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
       deltaMinutes: 5, trend: delta.deltaBG / TICK_SIM_MINUTES, basalRate,
+      longActingActivity: Math.round(longActingActivity * 1000) / 1000,
     };
     for (const h of this.tickHandlers) h(snap);
   }
@@ -281,29 +396,34 @@ export class InlineSimulator {
     if (this.s.running) this.lastTickWallMs = performance.now();
   }
 
-  bolus(units: number, analogue?: RapidAnalogueType): void {
+  /** `simTimeMs` overrides the stamp time (defaults to engine.simTimeMs). The
+   *  renderer passes displayedSimTime so the marker lands at the user's "now"
+   *  line instantly instead of in the lookahead zone where it'd be culled. */
+  bolus(units: number, analogue?: RapidAnalogueType, simTimeMs?: number): void {
+    const t = simTimeMs ?? this.s.simTimeMs;
     this.s.activeBoluses.push({
-      id: `bolus-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
-      simTimeMs: this.s.simTimeMs, units,
+      id: `bolus-${t}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: t, units,
       analogue: analogue ?? this.s.therapy.rapidAnalogue,
       dia: this.s.patient.dia,
     });
-    const ev: SimEvent = { kind: 'bolus', simTimeMs: this.s.simTimeMs, units };
+    const ev: SimEvent = { kind: 'bolus', simTimeMs: t, units };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);
   }
 
-  meal(carbsG: number, gastricEmptyingRate?: number): void {
+  /** `simTimeMs` overrides the stamp time — see bolus(). */
+  meal(carbsG: number, gastricEmptyingRate?: number, simTimeMs?: number): void {
+    const t = simTimeMs ?? this.s.simTimeMs;
     const meal: ActiveMeal = {
-      id: `meal-${this.s.simTimeMs}-${Math.random().toString(36).slice(2)}`,
-      simTimeMs: this.s.simTimeMs, carbsG,
+      id: `meal-${t}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: t, carbsG,
       gastricEmptyingRate: gastricEmptyingRate ?? this.s.patient.gastricEmptyingRate,
     };
     const { value, nextState } = lcgNext(this.s.rngState);
     this.s.rngState = nextState;
     this.s.resolvedMeals.push(resolveMealSplit(meal, value));
-    this.s.activeMeals.push(meal);
-    const ev: SimEvent = { kind: 'meal', simTimeMs: this.s.simTimeMs, carbsG };
+    const ev: SimEvent = { kind: 'meal', simTimeMs: t, carbsG };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);
   }
@@ -329,7 +449,7 @@ export class InlineSimulator {
       simTimeMs: this.s.simTimeMs, trueGlucose: this.s.trueGlucose, lastCGM: this.s.lastCGM,
       patient: { ...this.s.patient }, therapy: { ...this.s.therapy },
       g6State: this.s.g6.getState(),
-      activeBoluses: [...this.s.activeBoluses], activeMeals: [...this.s.activeMeals],
+      activeBoluses: [...this.s.activeBoluses],
       activeLongActing: [...this.s.activeLongActing],
       resolvedMeals: this.s.resolvedMeals.map((m) => ({ ...m })),
       pumpMicroBoluses: this.s.pumpMicroBoluses.map((b) => ({ ...b })),
@@ -338,6 +458,7 @@ export class InlineSimulator {
       rngState: this.s.rngState,
       lastMorningDay: this.s.lastMorningDay,
       lastEveningDay: this.s.lastEveningDay,
+      prescriptionLastFiredDay: { ...this.s.prescriptionLastFiredDay },
       pidCGMHistory: [...this.s.pidCGMHistory],
       pidPrevRate: this.s.pidPrevRate,
       pidTicksSinceLastMB: this.s.pidTicksSinceLastMB,
@@ -351,7 +472,6 @@ export class InlineSimulator {
       simTimeMs: state.simTimeMs, trueGlucose: state.trueGlucose, lastCGM: state.lastCGM,
       patient: { ...state.patient }, therapy: { ...state.therapy },
       activeBoluses: [...(state.activeBoluses ?? [])],
-      activeMeals: [...(state.activeMeals ?? [])],
       activeLongActing: [...(state.activeLongActing ?? [])],
       resolvedMeals: (state.resolvedMeals ?? []).map((m) => ({ ...m })),
       pumpMicroBoluses: (state.pumpMicroBoluses ?? []).map((b) => ({ ...b })),
@@ -363,6 +483,7 @@ export class InlineSimulator {
       rngState: state.rngState ?? randomSeed(),
       lastMorningDay: state.lastMorningDay ?? -1,
       lastEveningDay: state.lastEveningDay ?? -1,
+      prescriptionLastFiredDay: { ...(state.prescriptionLastFiredDay ?? {}) },
       tempBasal: state.tempBasal ? { ...state.tempBasal } : null,
       events: (state.events ?? []).map((e) => ({ ...e })),
     });

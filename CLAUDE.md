@@ -73,6 +73,26 @@ rate = scheduledBasal + (KP·e + KI·Σe + KD·ė×60) − 0.72·excessIOB
 - Minimum 15 min between any two microboluses
 - SMB events are emitted as `SimEvent { kind: 'smb' }` and rendered as purple triangles on the canvas
 
+## MDI submodes (LIVE / PRESCRIPTION)
+
+When `therapy.mode === 'MDI'`, a second axis controls how events are dispatched:
+
+- **LIVE** (default) — manual delivery. The instructor clicks meal / bolus / long-acting buttons themselves. Free-form, used for ad-hoc teaching scenarios.
+- **PRESCRIPTION** — auto-dispatch from a pre-programmed hospital-tray regimen. Manual entry inputs are greyed out (`applyPrescriptionLockUI()`); the prescription is the single source of truth.
+
+The prescription (`TherapyProfile.prescription`) holds:
+- **5 fixed meal slots** at 07:00 / 11:00 / 13:00 / 17:00 / 20:00 — time and grams are protocol-fixed; only `bolusUnits` is editable in the modal.
+- **Sliding-scale correction**, 3 tiers at >8 / >12 / >16 mmol/L. **Highest tier wins** (not additive).
+- **Fasting toggle**: meals disabled, only corrections fire — at the configured `fastingCorrectionHours` (default 7 / 13 / 17 / 22).
+
+**Firing rules** (`InlineSimulator.checkPrescription`):
+- Mealtime bolus + sliding-scale correction fire **T-10 min** before each meal slot; carbs fire at T.
+- Correction uses the noisy CGM, not true glucose — same teaching rationale as the PID input.
+- **Forward-only**: a slot whose trigger has already passed when PRESCRIPTION is enabled (or session imported, or fasting toggled mid-day) is silently marked "fired today" — no catch-up.
+- `WorkerState.prescriptionLastFiredDay` is a per-slot map persisted in v2 sessions, so save/restore and submode toggles never re-fire an already-delivered slot.
+
+Edited via the **📋 Edit prescription** pill in the top strip (visible only in MDI mode), which opens a modal.
+
 ## Canvas overlays
 
 - **CGM trace**: dots, radius 3px at 3h zoom / 2.5px at wider zooms, ATTD zone colours (TIR green / amber / red)
@@ -112,7 +132,7 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 ## Current state (as of 2026-05-03)
 
 - **Visual refresh**: cooler palette (off GitHub-dark), distinct CGM/IOB/COB hues, solid TIR threshold lines at 3.9 and 10 mmol/L, taller basal strip with bold readout, sun/moon time-of-day indicator next to sim-time, BG digit flash on update with rapid-update debouncing, header rebuilt as IOB/COB stat chips with scenario badge promoted to readable.
-- **Default therapy mode**: MDI. **Default display unit**: mmol/L. **Default zoom**: 12h.
+- **Default therapy mode**: MDI (default submode: LIVE; PRESCRIPTION available for hospital-tray scenarios). **Default display unit**: mmol/L. **Default zoom**: 12h.
 - Zoom levels: **3h / 6h / 12h / 24h**. Scroll wheel and pinch snap to these four levels.
 - Throttle slider: continuous logarithmic slider, ×1 to ×3600, default ×10. Floating bubble follows the thumb on hover/drag. Arrow keys snap along ladder `[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600]`.
 - AID mode: v3-faithful PID-IFB with corrected `calculateEquilibriumIOB` (numerical, matches actual pump steady-state IOB ~1.28 U at 0.8 U/hr Fiasp). SMB optional.

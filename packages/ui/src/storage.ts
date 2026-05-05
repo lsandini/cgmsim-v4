@@ -11,7 +11,8 @@
  * flags this with "(legacy)".
  */
 
-import type { WorkerState, DisplayUnit } from '@cgmsim/shared';
+import type { WorkerState, DisplayUnit, Prescription } from '@cgmsim/shared';
+import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 
 const ENVELOPE_VERSION = 2;
 
@@ -50,6 +51,8 @@ export interface UIPrefs {
   displayUnit: DisplayUnit;
   viewWindowMinutes: number;
   panelOpen: boolean;
+  /** MDI prescription — the user's last-saved prescription, restored on reload. */
+  prescription: Prescription;
 }
 
 const DEFAULT_UI_PREFS: UIPrefs = {
@@ -63,6 +66,7 @@ const DEFAULT_UI_PREFS: UIPrefs = {
   displayUnit: 'mmoll',
   viewWindowMinutes: 720,
   panelOpen: false,
+  prescription: DEFAULT_PRESCRIPTION,
 };
 
 const PREFS_KEY = 'cgmsim.ui-prefs';
