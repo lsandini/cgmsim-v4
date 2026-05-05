@@ -205,6 +205,8 @@ export interface CGMTracePoint {
   cob: number;
   trend: MgdL;
   basalRate: number;
+  /** MDI long-acting insulin activity (U/hr-equivalent). 0 in PUMP/AID mode. */
+  longActingActivity: number;
 }
 
 // ------------------------------------------------------------
@@ -286,6 +288,8 @@ export interface TickSnapshot {
   trend: MgdL;
   /** AID basal delivery this tick (U/hr equivalent). */
   basalRate: number;
+  /** MDI long-acting insulin activity (U/hr-equivalent). 0 in PUMP/AID mode. */
+  longActingActivity: number;
 }
 
 // ------------------------------------------------------------

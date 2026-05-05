@@ -30,6 +30,7 @@ import { computeDeltaBG } from '../../simulator/src/deltaBG.js';
 import {
   calculateBolusIOB,
   calculatePumpBasalIOB,
+  calculateLongActingActivity,
 } from '../../simulator/src/iob.js';
 import type { PumpBasalBolus } from '../../simulator/src/iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from '../../simulator/src/carbs.js';
@@ -243,10 +244,17 @@ export class InlineSimulator {
     s.lastCGM     = cgm;
     s.simTimeMs   = nowMs + TICK_SIM_MS;
 
+    // Long-acting activity in U/hr-equivalent (calculate* returns U/min). Always
+    // computed; the renderer only displays it in MDI mode.
+    const longActingActivity = isPump
+      ? 0
+      : calculateLongActingActivity(s.activeLongActing, nowMs) * 60;
+
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
       deltaMinutes: 5, trend: delta.deltaBG / TICK_SIM_MINUTES, basalRate,
+      longActingActivity: Math.round(longActingActivity * 1000) / 1000,
     };
     for (const h of this.tickHandlers) h(snap);
   }

@@ -759,6 +759,7 @@ btnImport.addEventListener('click', async () => {
       deltaMinutes: 5,
       trend: last?.trend ?? 0,
       basalRate: last?.basalRate ?? 0,
+      longActingActivity: last?.longActingActivity ?? 0,
     };
     appState.lastSnap = hudSnap;
     updateHUD(hudSnap);

@@ -40,6 +40,7 @@ type ColorPalette = {
   iobFill: string; iobFillTop: string; iobLine: string;
   cobFill: string; cobFillTop: string; cobLine: string;
   basalFill: string; basalLine: string;
+  longActingActivityFill: string; longActingActivityLine: string;
   bolusMarker: string; mealMarker: string; smbMarker: string; longActingMarker: string;
   bolusMarkerBottom: string; mealMarkerBottom: string; smbMarkerBottom: string; longActingMarkerBottom: string;
   markerStroke: string;
@@ -75,6 +76,8 @@ const DARK_PALETTE: ColorPalette = {
   cobLine:    'rgba(251, 191, 36, 0.90)',
   basalFill:  'rgba(245, 158, 11, 0.18)',
   basalLine:  'rgba(217, 119, 6, 0.85)',
+  longActingActivityFill: 'rgba(20, 184, 166, 0.22)',  // teal-500 translucent
+  longActingActivityLine: 'rgba(13, 148, 136, 0.90)',  // teal-600
   bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
   mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
@@ -116,6 +119,8 @@ const LIGHT_PALETTE: ColorPalette = {
   cobLine:    'rgba(234, 179, 8, 0.90)',
   basalFill:  'rgba(245, 158, 11, 0.18)',
   basalLine:  'rgba(217, 119, 6, 0.85)',
+  longActingActivityFill: 'rgba(20, 184, 166, 0.20)',
+  longActingActivityLine: 'rgba(13, 148, 136, 0.90)',
   bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
   mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
@@ -350,6 +355,7 @@ export class CGMRenderer {
     this.ring.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
+      longActingActivity: snap.longActingActivity,
     });
     this.lastTickWallMs = performance.now();
     this.updateForecast();
@@ -366,6 +372,7 @@ export class CGMRenderer {
     this.comparisonRing.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
+      longActingActivity: snap.longActingActivity,
     });
     this.dirty = true;
   }
@@ -402,7 +409,7 @@ export class CGMRenderer {
   /** Replace the chart trace wholesale — for session import. Recomputes the AR2 forecast. */
   setHistorySnapshot(entries: CGMTracePoint[]): void {
     this.ring.clear();
-    for (const e of entries) this.ring.push({ ...e });
+    for (const e of entries) this.ring.push({ ...e, longActingActivity: e.longActingActivity ?? 0 });
     this.updateForecast();
     this.dirty = true;
   }
@@ -706,7 +713,10 @@ export class CGMRenderer {
     this.drawFutureSpace(winStartMin, displayedSimMs);
     this.drawGrid(winStartMin);
 
-    if (this.options.showBasal && this.options.therapyMode !== 'MDI') this.drawBasalOverlay(winStartMin);
+    if (this.options.showBasal) {
+      if (this.options.therapyMode === 'MDI') this.drawLongActingActivityOverlay(winStartMin);
+      else this.drawBasalOverlay(winStartMin);
+    }
     if (this.options.showCOB) this.drawCOBOverlay(winStartMin);
     if (this.options.showIOB) this.drawIOBOverlay(winStartMin);
     if (this.options.showTrueGlucose) this.drawTrueLine(winStartMin);
@@ -1064,6 +1074,110 @@ export class CGMRenderer {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       ctx.fillText(`${latest.basalRate.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 3);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * MDI long-acting insulin activity strip — smooth filled biexponential curve
+   * (teal). Same geometry and 0–2 U/hr scale as the pump-basal panel so students
+   * can eyeball one against the other across modes.
+   */
+  private drawLongActingActivityOverlay(winStartMin: number): void {
+    if (this.ring.size === 0) return;
+    const ctx = this.ctx;
+    const MAX_RATE   = 2;
+    const mainBottom = this.PAD_TOP + this.plotH;
+    const panelTop   = mainBottom + this.BASAL_PANEL_OFF;
+    const panelBot   = panelTop + this.BASAL_PANEL_H;
+
+    // Separator line between time-label zone and panel
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(this.PAD_LEFT, panelTop - 4);
+    ctx.lineTo(this.PAD_LEFT + this.plotW, panelTop - 4);
+    ctx.stroke();
+
+    // Y-axis tick labels: '2' at top, '0' at bottom
+    ctx.font = '14px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.longActingActivityLine;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('2', this.PAD_LEFT - 3, panelTop);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('0', this.PAD_LEFT - 3, panelBot);
+
+    // Rotated 'LA act.' label on the left margin (Long-Acting activity)
+    ctx.save();
+    ctx.font = '14px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS.longActingActivityLine;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(this.PAD_LEFT - 18, panelTop + this.BASAL_PANEL_H / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('LA act.', 0, 0);
+    ctx.restore();
+
+    // Collect visible (offset, activity) points. Same lookahead/cull pattern as
+    // the IOB/COB overlays — one extra tick past the left edge so the leftmost
+    // segment slides smoothly under the clip.
+    const pts: { x: number; y: number }[] = [];
+    let lastVisible: RingEntry | null = null;
+    this.ring.forEach((entry) => {
+      const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
+      if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
+      if (entry.simTimeMs > this.displayedSimMs) return;
+      pts.push({
+        x: this.timeX(offsetMin),
+        y: panelBot - Math.min(entry.longActingActivity / MAX_RATE, 1) * this.BASAL_PANEL_H,
+      });
+      lastVisible = entry;
+    });
+    if (pts.length === 0) return;
+
+    // Hold the last sample horizontally out to "now" so the curve doesn't end
+    // mid-air between ticks (matches IOB/COB sliding behaviour).
+    const last = lastVisible as RingEntry | null;
+    if (last && last.simTimeMs < this.displayedSimMs) {
+      const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
+      const lastPt = pts[pts.length - 1]!;
+      pts.push({ x: this.timeX(nowOffsetMin), y: lastPt.y });
+    }
+
+    this.withBasalClip(panelTop, () => {
+      // Filled area
+      ctx.beginPath();
+      ctx.moveTo(pts[0]!.x, panelBot);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+      ctx.lineTo(pts[pts.length - 1]!.x, panelBot);
+      ctx.closePath();
+      ctx.fillStyle = COLORS.longActingActivityFill;
+      ctx.fill();
+
+      // Smooth line on top
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i]!;
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = COLORS.longActingActivityLine;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    });
+
+    // Current activity readout inside the panel (bottom-left).
+    const latest = this.ring.latest();
+    if (latest) {
+      ctx.save();
+      ctx.font = 'bold 14px -apple-system, sans-serif';
+      ctx.fillStyle = '#eef2fa';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`${latest.longActingActivity.toFixed(2)} U/h`, this.PAD_LEFT + 6, panelBot - 3);
       ctx.restore();
     }
   }
