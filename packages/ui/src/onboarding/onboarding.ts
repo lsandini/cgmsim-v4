@@ -1,5 +1,5 @@
 import { PATIENT_CASES, THERAPY_OPTIONS, type CaseId, type TherapyChoice } from './cases.js';
-import { patientFigureHTML, penIconHTML, pumpIconHTML, aidPumpIconHTML } from './icons.js';
+import { patientFigureHTML, mdiPensIconHTML, pumpIconHTML, aidPumpIconHTML } from './icons.js';
 import { onboardingCSS } from './styles.js';
 
 export interface OnboardingResult {
@@ -26,9 +26,9 @@ function figureSizeForCase(id: CaseId): 'lean' | 'average' | 'larger' {
 }
 
 function iconForTherapy(id: TherapyChoice): string {
-  return id === 'mdi' ? penIconHTML(70)
+  return id === 'mdi' ? mdiPensIconHTML(140)
        : id === 'pump' ? pumpIconHTML(140)
-       : aidPumpIconHTML(140);
+       : aidPumpIconHTML();
 }
 
 function renderPatientCards(selected: CaseId | null): string {

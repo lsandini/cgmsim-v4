@@ -72,20 +72,20 @@ export const THERAPY_OPTIONS: Record<TherapyChoice, TherapyOption> = {
   mdi: {
     id: 'mdi',
     mode: 'MDI',
-    label: 'Pens (MDI)',
-    description: 'Long-acting basal + rapid-acting bolus pens. Manual everything.',
+    label: 'Multiple Daily Injections',
+    description: 'Long acting basal and rapid-acting mealtime insulins',
   },
   pump: {
     id: 'pump',
     mode: 'PUMP',
     label: 'Standard pump',
-    description: 'Programmed basal rate + manual bolus. Open loop.',
+    description: 'Programmed basal rate + manual boluses',
   },
   aid: {
     id: 'aid',
     mode: 'AID',
     label: 'AID pump',
-    description: 'Closed loop: PID controller adjusts basal automatically.',
+    description: 'Closed loop: PID controller adjusts basal automatically',
   },
 };
 
