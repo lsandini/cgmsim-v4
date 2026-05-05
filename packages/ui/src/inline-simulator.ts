@@ -64,6 +64,7 @@ interface SimState {
   rngState:          number;
   lastMorningDay: number;
   lastEveningDay: number;
+  prescriptionLastFiredDay: Record<string, number>;
   tempBasal:         TempBasal | null;
   events:            SimEvent[];
 }
@@ -88,6 +89,7 @@ function createInitialState(): SimState {
     rngState:          randomSeed(),
     lastMorningDay: -1,
     lastEveningDay: -1,
+    prescriptionLastFiredDay: {},
     tempBasal:         null,
     events:            [],
   };
@@ -132,6 +134,111 @@ export class InlineSimulator {
 
     this.fireSlotIfDue('morning', s.therapy.longActingMorning, minuteOfDay, simDay);
     this.fireSlotIfDue('evening', s.therapy.longActingEvening, minuteOfDay, simDay);
+  }
+
+  /**
+   * PRESCRIPTION submode: pre-programmed schedule auto-fires based on sim
+   * time-of-day. Forward-only — slots whose trigger time has already passed
+   * for "today" but were never fired (e.g. user enabled PRESCRIPTION mid-day,
+   * or imported a session, or just toggled fasting) are silently marked as
+   * already-fired and won't catch up.
+   */
+  private checkPrescription(): void {
+    const s = this.s;
+    if (s.therapy.mode !== 'MDI') return;
+    if (s.therapy.mdiSubmode !== 'PRESCRIPTION') return;
+
+    const minuteOfDay = (s.simTimeMs / 60_000) % (24 * 60);
+    const simDay      = Math.floor(s.simTimeMs / (24 * 60 * 60_000));
+    const presc       = s.therapy.prescription;
+
+    if (presc.fasting) {
+      // Fasting → corrections only at the configured hours (no meals, no meal-bolus).
+      for (const h of presc.fastingCorrectionHours) {
+        const triggerMinute = h * 60;
+        this.firePrescriptionSlotIfDue(
+          `corr-fast-${h}`, triggerMinute, minuteOfDay, simDay,
+          () => this.fireCorrection(),
+        );
+      }
+      return;
+    }
+
+    // Non-fasting: per meal — bolus+correction 10 min before, carbs at meal time.
+    for (const meal of presc.meals) {
+      const mealMinute  = meal.hour * 60 + meal.minute;
+      const bolusMinute = mealMinute - 10;
+      const slotKey     = `meal-${meal.hour}-${meal.minute}`;
+
+      // Bolus (mealtime + correction) at T-10
+      if (bolusMinute >= 0) {
+        this.firePrescriptionSlotIfDue(
+          `${slotKey}-bolus`, bolusMinute, minuteOfDay, simDay,
+          () => {
+            const corr = this.computeCorrectionUnits();
+            const total = meal.bolusUnits + corr;
+            if (total > 0) this.bolus(total);
+          },
+        );
+      }
+
+      // Carb meal at T
+      this.firePrescriptionSlotIfDue(
+        `${slotKey}-carbs`, mealMinute, minuteOfDay, simDay,
+        () => { if (meal.grams > 0) this.meal(meal.grams); },
+      );
+    }
+  }
+
+  /**
+   * Forward-only slot firing. If the trigger time has not yet been crossed
+   * today, do nothing. If it has been crossed but we haven't fired today,
+   * fire — but NOT if the trigger was already "in the past" when this slot
+   * first became active (i.e. lastFired === -1 AND we're well past trigger).
+   * The simplest forward-only rule: fire only if `minuteOfDay - triggerMinute`
+   * is small (within one tick). Otherwise silently mark today as fired.
+   */
+  private firePrescriptionSlotIfDue(
+    slotKey: string,
+    triggerMinute: number,
+    minuteOfDay: number,
+    simDay: number,
+    fire: () => void,
+  ): void {
+    const s = this.s;
+    const last = s.prescriptionLastFiredDay[slotKey];
+    if (last === simDay) return;       // already fired today
+    if (minuteOfDay < triggerMinute) return; // not due yet
+
+    // Forward-only: only fire if we're within one tick of the trigger.
+    // Otherwise the user enabled PRESCRIPTION (or imported, or toggled fasting)
+    // after this slot's time had already passed — mark it done silently.
+    const minutesPast = minuteOfDay - triggerMinute;
+    if (minutesPast <= TICK_SIM_MINUTES) {
+      fire();
+    }
+    s.prescriptionLastFiredDay[slotKey] = simDay;
+  }
+
+  /**
+   * Sliding-scale correction: thresholds 8 / 12 / 16 mmol/L (≈ 144 / 216 / 288
+   * mg/dL). Highest tier wins. Uses the latest CGM (noisy) reading — the
+   * teaching point is the prescription's behaviour against what the patient/
+   * nurse actually sees, not the underlying true glucose.
+   */
+  private computeCorrectionUnits(): number {
+    const s = this.s;
+    const cgm = s.lastCGM;
+    const c = s.therapy.prescription.correction;
+    if (cgm > 16 * 18.0182) return c.units3;
+    if (cgm > 12 * 18.0182) return c.units2;
+    if (cgm >  8 * 18.0182) return c.units1;
+    return 0;
+  }
+
+  private fireCorrection(): void {
+    const u = this.computeCorrectionUnits();
+    if (u > 0) this.bolus(u);
   }
 
   private fireSlotIfDue(
@@ -179,6 +286,7 @@ export class InlineSimulator {
     const isPump = s.therapy.mode === 'PUMP' || s.therapy.mode === 'AID';
 
     this.checkLongActingDose();
+    this.checkPrescription();
 
     // Purge expired
     s.activeBoluses = s.activeBoluses.filter(b => (nowMs - b.simTimeMs) / 60_000 <= b.dia * 60);
@@ -349,6 +457,7 @@ export class InlineSimulator {
       rngState: this.s.rngState,
       lastMorningDay: this.s.lastMorningDay,
       lastEveningDay: this.s.lastEveningDay,
+      prescriptionLastFiredDay: { ...this.s.prescriptionLastFiredDay },
       pidCGMHistory: [...this.s.pidCGMHistory],
       pidPrevRate: this.s.pidPrevRate,
       pidTicksSinceLastMB: this.s.pidTicksSinceLastMB,
@@ -373,6 +482,7 @@ export class InlineSimulator {
       rngState: state.rngState ?? randomSeed(),
       lastMorningDay: state.lastMorningDay ?? -1,
       lastEveningDay: state.lastEveningDay ?? -1,
+      prescriptionLastFiredDay: { ...(state.prescriptionLastFiredDay ?? {}) },
       tempBasal: state.tempBasal ? { ...state.tempBasal } : null,
       events: (state.events ?? []).map((e) => ({ ...e })),
     });

@@ -3,7 +3,8 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile, Prescription, MDISubmode } from '@cgmsim/shared';
+import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
 import { exportSession, importSession, loadUIPrefs, saveUIPrefs } from './storage.js';
@@ -196,6 +197,21 @@ const sectionMDI       = getEl<HTMLElement>('section-mdi');
 const sectionBasal     = getEl<HTMLElement>('section-basal');
 const sectionTempBasal = getEl<HTMLElement>('section-temp-basal');
 
+// MDI submode + prescription modal
+const mdiSubmodeGroup  = getEl<HTMLElement>('mdi-submode-group');
+const btnEditPresc     = getEl<HTMLButtonElement>('btn-edit-prescription');
+const prescBackdrop    = getEl<HTMLElement>('prescription-modal-backdrop');
+const prescModal       = getEl<HTMLElement>('prescription-modal');
+const prescFasting     = getEl<HTMLInputElement>('presc-fasting');
+const prescFastingHelp = getEl<HTMLElement>('presc-fasting-help');
+const prescMealsList   = getEl<HTMLElement>('presc-meals');
+const prescCorr1       = getEl<HTMLInputElement>('presc-corr-1');
+const prescCorr2       = getEl<HTMLInputElement>('presc-corr-2');
+const prescCorr3       = getEl<HTMLInputElement>('presc-corr-3');
+const btnPrescClose    = getEl<HTMLButtonElement>('btn-prescription-close');
+const btnPrescCancel   = getEl<HTMLButtonElement>('btn-prescription-cancel');
+const btnPrescSave     = getEl<HTMLButtonElement>('btn-prescription-save');
+
 // ── Simulators ────────────────────────────────────────────────────────────────
 
 const bridge   = new InlineSimulator();   // primary
@@ -259,6 +275,7 @@ function persistUIPrefs(): void {
     displayUnit:       appState.displayUnit,
     viewWindowMinutes: renderer.zoomMinutes,
     panelOpen:         appState.panelOpen,
+    prescription:      currentPrescription,
   });
 }
 
@@ -596,7 +613,135 @@ function onTherapyChange(): void {
   rowOverlayBasal.style.display  = mode !== 'MDI'  ? 'flex'  : 'none';
   renderer.options.therapyMode   = mode;
   renderer.markDirty();
+  // MDI-only submode chrome
+  mdiSubmodeGroup.hidden = mode !== 'MDI';
+  applyPrescriptionLockUI();
 }
+
+// ── MDI submode (LIVE / PRESCRIPTION) ────────────────────────────────────────
+
+let currentSubmode: MDISubmode = 'LIVE';
+// Restore last-saved prescription from localStorage (uiPrefs); falls back to defaults.
+let currentPrescription: Prescription = JSON.parse(JSON.stringify(uiPrefs.prescription ?? DEFAULT_PRESCRIPTION));
+
+function setSubmode(submode: MDISubmode): void {
+  currentSubmode = submode;
+  for (const btn of mdiSubmodeGroup.querySelectorAll<HTMLButtonElement>('.seg-btn')) {
+    const isActive = btn.dataset.submode === submode;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', String(isActive));
+  }
+  // The "Edit prescription" button is only meaningful in PRESCRIPTION submode.
+  btnEditPresc.hidden = submode !== 'PRESCRIPTION';
+  bridge.setTherapyParam({ mdiSubmode: submode });
+  applyPrescriptionLockUI();
+}
+
+/**
+ * In PRESCRIPTION submode the user is forbidden from injecting boluses or meals
+ * manually — the prescription is the single source of truth. Disable the
+ * relevant controls; the bottom-strip quick-buttons get a visual "locked" hint.
+ */
+function applyPrescriptionLockUI(): void {
+  const lock = therapyMode.value === 'MDI' && currentSubmode === 'PRESCRIPTION';
+  const locks: HTMLButtonElement[] = [btnBolus, btnMeal, btnQuickMeal, btnQuickBolus];
+  for (const b of locks) {
+    b.disabled = lock;
+    b.title = lock ? 'Disabled in PRESCRIPTION submode' : '';
+    b.style.opacity = lock ? '0.4' : '';
+  }
+  bolusAmount.disabled = lock;
+  mealCarbs.disabled   = lock;
+}
+
+mdiSubmodeGroup.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.seg-btn');
+  if (!btn || btn.classList.contains('active')) return;
+  setSubmode(btn.dataset.submode as MDISubmode);
+});
+
+// ── Prescription modal ────────────────────────────────────────────────────────
+
+let prescPreOpenRunning = false;
+
+function openPrescriptionModal(): void {
+  prescPreOpenRunning = appState.running;
+  if (prescPreOpenRunning) { bridge.pause(); setRunning(false); }
+  populatePrescriptionForm(currentPrescription);
+  prescBackdrop.dataset.open = 'true';
+}
+
+function closePrescriptionModal(save: boolean): void {
+  if (save) {
+    currentPrescription = readPrescriptionForm();
+    bridge.setTherapyParam({ prescription: currentPrescription });
+    persistUIPrefs();
+  }
+  prescBackdrop.dataset.open = 'false';
+  if (prescPreOpenRunning) { bridge.resume(); setRunning(true); }
+  prescPreOpenRunning = false;
+}
+
+function populatePrescriptionForm(p: Prescription): void {
+  prescFasting.checked = p.fasting;
+  prescModal.dataset.fasting = String(p.fasting);
+  prescFastingHelp.hidden = !p.fasting;
+
+  prescMealsList.innerHTML = '';
+  for (let i = 0; i < p.meals.length; i++) {
+    const m = p.meals[i]!;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const hh = String(m.hour).padStart(2, '0');
+    const mm = String(m.minute).padStart(2, '0');
+    row.innerHTML = `
+      <span class="lbl-time">${hh}:${mm}</span>
+      <span class="lbl-grams">${m.grams} g — bolus 10 min before</span>
+      <input type="number" min="0" max="30" step="0.5" value="${m.bolusUnits}" data-meal-idx="${i}" aria-label="Bolus units for ${hh}:${mm}" />
+    `;
+    prescMealsList.appendChild(row);
+  }
+  prescCorr1.value = String(p.correction.units1);
+  prescCorr2.value = String(p.correction.units2);
+  prescCorr3.value = String(p.correction.units3);
+}
+
+function readPrescriptionForm(): Prescription {
+  const meals = currentPrescription.meals.map((m, i) => {
+    const input = prescMealsList.querySelector<HTMLInputElement>(`input[data-meal-idx="${i}"]`);
+    const v = input ? parseFloat(input.value) : 0;
+    return { ...m, bolusUnits: isNaN(v) ? 0 : Math.max(0, v) };
+  });
+  const parseU = (el: HTMLInputElement) => {
+    const v = parseFloat(el.value);
+    return isNaN(v) ? 0 : Math.max(0, v);
+  };
+  return {
+    fasting: prescFasting.checked,
+    meals,
+    correction: {
+      units1: parseU(prescCorr1),
+      units2: parseU(prescCorr2),
+      units3: parseU(prescCorr3),
+    },
+    fastingCorrectionHours: currentPrescription.fastingCorrectionHours,
+  };
+}
+
+prescFasting.addEventListener('change', () => {
+  prescModal.dataset.fasting = String(prescFasting.checked);
+  prescFastingHelp.hidden = !prescFasting.checked;
+});
+btnEditPresc.addEventListener('click',  () => openPrescriptionModal());
+btnPrescClose.addEventListener('click', () => closePrescriptionModal(false));
+btnPrescCancel.addEventListener('click', () => closePrescriptionModal(false));
+btnPrescSave.addEventListener('click',   () => closePrescriptionModal(true));
+prescBackdrop.addEventListener('click', (e) => {
+  if (e.target === prescBackdrop) closePrescriptionModal(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && prescBackdrop.dataset.open === 'true') closePrescriptionModal(false);
+});
 
 [therapyMode, glucoseTarget, rapidAnalogue, progDIA].forEach(el =>
   el.addEventListener('change', onTherapyChange)
@@ -746,6 +891,11 @@ btnImport.addEventListener('click', async () => {
     renderer.setHistorySnapshot(history);
     renderer.setEvents(state.events ?? []);
     syncSlotsFromTherapy(state.therapy);
+    // Sync prescription state from loaded therapy (legacy sessions get defaults)
+    currentPrescription = state.therapy.prescription
+      ? JSON.parse(JSON.stringify(state.therapy.prescription))
+      : JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
+    setSubmode(state.therapy.mdiSubmode ?? 'LIVE');
 
     // Manually refresh the HUD from the loaded state, since no tick will fire while paused.
     const last = history[history.length - 1];
@@ -782,11 +932,13 @@ btnReset.addEventListener('click', () => {
              dia:6,carbsAbsTime:360,gastricEmptyingRate:1},
     therapy:{mode:'MDI',basalProfile:[{timeMinutes:0,rateUPerHour:0.8}],
              rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
-             glucoseTarget:100,enableSMB:false},
+             glucoseTarget:100,enableSMB:false,
+             mdiSubmode:'LIVE',
+             prescription: JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION))},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:{jsr:123456789^seed,seed}},
     activeBoluses:[],activeLongActing:[],
     resolvedMeals:[],pumpMicroBoluses:[],tempBasal:null,events:[],rngState:seed,
-    lastMorningDay:-1,lastEveningDay:-1,
+    lastMorningDay:-1,lastEveningDay:-1,prescriptionLastFiredDay:{},
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
   });
   setSlot('morning', null);
@@ -878,6 +1030,11 @@ document.addEventListener('keydown', (e) => {
 // At this point appState.displayUnit reflects the loaded UI pref (default mmol/L).
 syncPanelUnits('mgdl');  // first: rewrite panel values from mg/dL into the current display unit
 onTherapyChange();   // then: read converted values and push to model
+// Push the persisted prescription into the simulator so it matches the UI's
+// `currentPrescription` (loaded from localStorage). Without this, the engine
+// would silently run on DEFAULT_PRESCRIPTION until the user reopens the modal.
+bridge.setTherapyParam({ prescription: currentPrescription });
+setSubmode(currentSubmode);  // sync segmented toggle state + button visibility
 onPatientChange();
 pushBasalProfile();
 bridge.setThrottle(10);

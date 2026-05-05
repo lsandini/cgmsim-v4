@@ -16,6 +16,43 @@ export type SimTimeMs = number;
 
 export type TherapyMode = 'MDI' | 'PUMP' | 'AID';
 
+/** MDI submode: LIVE (free-form events) or PRESCRIPTION (auto-fired schedule). */
+export type MDISubmode = 'LIVE' | 'PRESCRIPTION';
+
+/**
+ * Hospital-tray meal slot in PRESCRIPTION submode. Times and grams are fixed
+ * defaults; only `bolusUnits` is user-editable.
+ */
+export interface PrescribedMealSlot {
+  /** Hour of day (0–23). */
+  hour: number;
+  /** Minute of hour (0–59). */
+  minute: number;
+  /** Grams of carbs (fixed by hospital protocol — read-only in the editor). */
+  grams: number;
+  /** Mealtime bolus, fired 10 min before this slot. 0 = no bolus. */
+  bolusUnits: number;
+}
+
+/**
+ * Hyperglycaemia sliding-scale correction. Thresholds are globally predefined
+ * at 8 / 12 / 16 mmol/L; only the unit doses are user-editable. "Highest tier
+ * wins": at CGM = 13 mmol/L give units2 (not units1+units2).
+ */
+export interface CorrectionScale {
+  units1: number;  // applied if CGM > 8  mmol/L
+  units2: number;  // applied if CGM > 12 mmol/L
+  units3: number;  // applied if CGM > 16 mmol/L
+}
+
+export interface Prescription {
+  fasting: boolean;
+  meals: PrescribedMealSlot[];
+  correction: CorrectionScale;
+  /** Hours of day at which corrections fire when `fasting === true`. */
+  fastingCorrectionHours: number[];
+}
+
 export type RapidAnalogueType = 'Fiasp' | 'Lispro' | 'Aspart';
 
 export type LongActingType =
@@ -99,7 +136,25 @@ export interface TherapyProfile {
   glucoseTarget: MgdL;
   /** AID: enable supermicrobolus rules (rapid rise, sustained rise, prolonged high). */
   enableSMB: boolean;
+
+  /** MDI submode (only meaningful when mode === 'MDI'). */
+  mdiSubmode: MDISubmode;
+  /** Pre-programmed regimen used when mdiSubmode === 'PRESCRIPTION'. */
+  prescription: Prescription;
 }
+
+export const DEFAULT_PRESCRIPTION: Prescription = {
+  fasting: false,
+  meals: [
+    { hour: 7,  minute: 0, grams: 40, bolusUnits: 0 },
+    { hour: 11, minute: 0, grams: 80, bolusUnits: 0 },
+    { hour: 13, minute: 0, grams: 30, bolusUnits: 0 },
+    { hour: 17, minute: 0, grams: 70, bolusUnits: 0 },
+    { hour: 20, minute: 0, grams: 30, bolusUnits: 0 },
+  ],
+  correction: { units1: 0, units2: 0, units3: 0 },
+  fastingCorrectionHours: [7, 13, 17, 22],
+};
 
 export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
   mode: 'MDI',
@@ -110,6 +165,8 @@ export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
   longActingEvening: null,
   glucoseTarget: 100,
   enableSMB: false,
+  mdiSubmode: 'LIVE',
+  prescription: DEFAULT_PRESCRIPTION,
 };
 
 // ------------------------------------------------------------
@@ -255,6 +312,13 @@ export interface WorkerState {
   lastMorningDay: number;
   /** Same for the evening slot. */
   lastEveningDay: number;
+
+  /**
+   * Per-slot last-fired sim-day for PRESCRIPTION submode. Keys are stable slot
+   * identifiers like `meal-7-bolus`, `meal-7-carbs`, `corr-fast-13`. Persisted
+   * so save/restore and submode toggles don't re-fire already-delivered slots.
+   */
+  prescriptionLastFiredDay: Record<string, number>;
 
   /** PID controller: last ≤24 CGM readings for integral term (oldest first). */
   pidCGMHistory: number[];
