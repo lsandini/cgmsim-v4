@@ -34,7 +34,7 @@ function iconForTherapy(id: TherapyChoice): string {
 function renderPatientCards(selected: CaseId | null): string {
   return Object.values(PATIENT_CASES).map(c => `
     <div class="case-card${selected === c.id ? ' selected' : ''}" data-case-id="${c.id}" role="button" tabindex="0" aria-pressed="${selected === c.id}">
-      <div class="case-figure">${patientFigureHTML(figureSizeForCase(c.id), 80)}</div>
+      <div class="case-figure">${patientFigureHTML(figureSizeForCase(c.id), 110)}</div>
       <div class="case-label">${c.label}</div>
       <div class="case-sub">${c.description}</div>
     </div>
