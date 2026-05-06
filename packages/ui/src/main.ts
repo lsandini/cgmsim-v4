@@ -7,7 +7,9 @@ import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongAc
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
-import { exportSession, importSession, loadUIPrefs, saveUIPrefs } from './storage.js';
+import { exportSession, importSession, loadUIPrefs, saveUIPrefs,
+         loadPanelOverrides, savePanelOverrides, clearPanelOverrides,
+         type PanelOverrides } from './storage.js';
 import { runOnboarding, ensureOnboardingStyles } from './onboarding/onboarding.js';
 import { PATIENT_CASES, buildTherapyForCase, type CaseId, type TherapyChoice, type PatientCase } from './onboarding/cases.js';
 
@@ -281,6 +283,87 @@ function persistUIPrefs(): void {
   });
 }
 
+// ── Panel overrides (manual edits to therapy + patient tabs) ────────────────
+// Glucose target and trueISF are converted to mg/dL canonical so the snapshot
+// stays valid across unit toggles. All other fields are unitless.
+
+function readPanelSnapshot(): PanelOverrides {
+  return {
+    therapy: {
+      mode:               therapyMode.value as 'AID' | 'PUMP' | 'MDI',
+      glucoseTargetMgdl:  fromDisplay(parseFloat(glucoseTarget.value)),
+      progDIA:            parseFloat(progDIA.value),
+      rapidAnalogue:      rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
+      enableSMB:          enableSMB.checked,
+      basalSegments:      basalSegments.map(s => ({ ...s })),
+      longActingMorning:  activeSchedule.morning,
+      longActingEvening:  activeSchedule.evening,
+      laMorningInputs:    { type: morningRefs.type.value, dose: morningRefs.dose.value, time: morningRefs.time.value },
+      laEveningInputs:    { type: eveningRefs.type.value, dose: eveningRefs.dose.value, time: eveningRefs.time.value },
+      tempBasalRate:      tempBasalRate.value,
+      tempBasalDuration:  tempBasalDur.value,
+    },
+    patient: {
+      trueISFMgdl:         fromDisplay(parseFloat(trueISF.value)),
+      trueCR:              parseFloat(trueCR.value),
+      trueDIA:             parseFloat(trueDIA.value),
+      weight:              parseFloat(patientWeight.value),
+      diabetesDuration:    parseFloat(diabetesDuration.value),
+      carbsAbsTime:        parseFloat(carbsAbsTime.value),
+      gastricEmptyingRate: parseFloat(gastricRate.value),
+    },
+  };
+}
+
+/** Write a snapshot back into the form fields. Caller is responsible for
+ *  re-running onTherapyChange / onPatientChange / pushBasalProfile so the
+ *  simulator picks up the new values. */
+function applyPanelSnapshot(snap: PanelOverrides): void {
+  const isMmol = appState.displayUnit === 'mmoll';
+  const toDisplay = (mgdl: number): string =>
+    isMmol ? (mgdl / 18.0182).toFixed(1) : String(Math.round(mgdl));
+
+  // Therapy
+  therapyMode.value   = snap.therapy.mode;
+  glucoseTarget.value = toDisplay(snap.therapy.glucoseTargetMgdl);
+  progDIA.value       = String(snap.therapy.progDIA);
+  rapidAnalogue.value = snap.therapy.rapidAnalogue;
+  enableSMB.checked   = snap.therapy.enableSMB;
+  basalSegments       = snap.therapy.basalSegments.map(s => ({ ...s }));
+  renderBasalRows();
+
+  morningRefs.type.value = snap.therapy.laMorningInputs.type;
+  morningRefs.dose.value = snap.therapy.laMorningInputs.dose;
+  morningRefs.time.value = snap.therapy.laMorningInputs.time;
+  eveningRefs.type.value = snap.therapy.laEveningInputs.type;
+  eveningRefs.dose.value = snap.therapy.laEveningInputs.dose;
+  eveningRefs.time.value = snap.therapy.laEveningInputs.time;
+  setSlot('morning', snap.therapy.longActingMorning);
+  setSlot('evening', snap.therapy.longActingEvening);
+
+  tempBasalRate.value = snap.therapy.tempBasalRate;
+  tempBasalDur.value  = snap.therapy.tempBasalDuration;
+
+  // Patient
+  trueISF.value          = toDisplay(snap.patient.trueISFMgdl);
+  trueCR.value           = String(snap.patient.trueCR);
+  trueDIA.value          = String(snap.patient.trueDIA);
+  patientWeight.value    = String(snap.patient.weight);
+  diabetesDuration.value = String(snap.patient.diabetesDuration);
+  carbsAbsTime.value     = String(snap.patient.carbsAbsTime);
+  gastricRate.value      = String(snap.patient.gastricEmptyingRate);
+}
+
+/** True during init / reset / re-onboarding so the persist hooks below don't
+ *  re-save case defaults right after we just cleared them. Flipped to false
+ *  at the very end of the init IIFE; toggled around reset/re-onboarding. */
+let suppressPersist = true;
+
+function persistPanelOverrides(): void {
+  if (suppressPersist) return;
+  savePanelOverrides(readPanelSnapshot());
+}
+
 // ── Pause / Resume ────────────────────────────────────────────────────────────
 
 function setRunning(running: boolean): void {
@@ -550,6 +633,7 @@ function setSlot(slot: SlotName, schedule: LongActingSchedule | null): void {
     longActingMorning: activeSchedule.morning,
     longActingEvening: activeSchedule.evening,
   });
+  persistPanelOverrides();
 }
 
 function onSetUnsetClick(slot: SlotName): void {
@@ -618,6 +702,7 @@ function onTherapyChange(): void {
   // MDI-only submode chrome
   mdiSubmodeGroup.hidden = mode !== 'MDI';
   applyPrescriptionLockUI();
+  persistPanelOverrides();
 }
 
 // ── MDI submode (LIVE / PRESCRIPTION) ────────────────────────────────────────
@@ -626,7 +711,7 @@ let currentSubmode: MDISubmode = 'LIVE';
 // Restore last-saved prescription from localStorage (uiPrefs); falls back to defaults.
 let currentPrescription: Prescription = JSON.parse(JSON.stringify(uiPrefs.prescription ?? DEFAULT_PRESCRIPTION));
 
-function setSubmode(submode: MDISubmode): void {
+function setSubmode(submode: MDISubmode, fromInit = false): void {
   currentSubmode = submode;
   for (const btn of mdiSubmodeGroup.querySelectorAll<HTMLButtonElement>('.seg-btn')) {
     const isActive = btn.dataset.submode === submode;
@@ -637,6 +722,20 @@ function setSubmode(submode: MDISubmode): void {
   btnEditPresc.hidden = submode !== 'PRESCRIPTION';
   bridge.setTherapyParam({ mdiSubmode: submode });
   applyPrescriptionLockUI();
+
+  // Submode-specific evening LA defaults: LIVE = 21:00, PRESCRIPTION = 22:00.
+  // Only flip on user toggles (not on init / restore), and only when the current
+  // value is still the OTHER submode's default — leaves manual edits alone.
+  if (!fromInit && therapyMode.value === 'MDI' && activeSchedule.evening) {
+    const cur = activeSchedule.evening.injectionMinute;
+    const flipToPrescription = submode === 'PRESCRIPTION' && cur === 21 * 60;
+    const flipToLive         = submode === 'LIVE'         && cur === 22 * 60;
+    if (flipToPrescription || flipToLive) {
+      const desired = submode === 'PRESCRIPTION' ? 22 * 60 : 21 * 60;
+      eveningRefs.time.value = minutesToTimeString(desired);
+      setSlot('evening', { ...activeSchedule.evening, injectionMinute: desired });
+    }
+  }
 }
 
 /**
@@ -785,6 +884,7 @@ btnSetTemp.addEventListener('click', () => {
   bridge.setTempBasal(rSafe, isNaN(d) ? undefined : d);
   setStatus(`Temp basal: ${rSafe} U/hr for ${dDisplay} min`);
 });
+[tempBasalRate, tempBasalDur].forEach(el => el.addEventListener('change', persistPanelOverrides));
 btnCancelTemp.addEventListener('click', () => { bridge.cancelTempBasal(); setStatus('Temp basal cancelled'); });
 
 // ── Basal profile editor ──────────────────────────────────────────────────────
@@ -837,6 +937,7 @@ function pushBasalProfile(): void {
   bridge.setTherapyParam({
     basalProfile: [...basalSegments].sort((a, b) => a.timeMinutes - b.timeMinutes),
   });
+  persistPanelOverrides();
 }
 
 btnAddBasal.addEventListener('click', () => {
@@ -859,6 +960,7 @@ function onPatientChange(): void {
     carbsAbsTime:        parseFloat(carbsAbsTime.value),
     gastricEmptyingRate: parseFloat(gastricRate.value),
   });
+  persistPanelOverrides();
 }
 
 [trueISF, trueCR, trueDIA, patientWeight, diabetesDuration, carbsAbsTime, gastricRate]
@@ -897,7 +999,7 @@ btnImport.addEventListener('click', async () => {
     currentPrescription = state.therapy.prescription
       ? JSON.parse(JSON.stringify(state.therapy.prescription))
       : JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
-    setSubmode(state.therapy.mdiSubmode ?? 'LIVE');
+    setSubmode(state.therapy.mdiSubmode ?? 'LIVE', true);
 
     // Manually refresh the HUD from the loaded state, since no tick will fire while paused.
     const last = history[history.length - 1];
@@ -1071,14 +1173,36 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
   const result = await runOnboarding();
   if (!result.caseId || !result.therapy) return;
   const c = PATIENT_CASES[result.caseId];
+  suppressPersist = true;
+  clearPanelOverrides();
   writePatientToForm(c.patient);
   writeTherapyToForm(c, result.therapy);
   onTherapyChange();
   onPatientChange();
   pushBasalProfile();
+  suppressPersist = false;
   localStorage.setItem(CASE_KEY, JSON.stringify({ caseId: result.caseId, therapy: result.therapy }));
   document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
   setStatus(`Loaded case: ${c.shortLabel} · ${result.therapy.toUpperCase()}`);
+});
+
+getEl<HTMLButtonElement>('btn-reset-defaults').addEventListener('click', () => {
+  const sc = loadSavedCase();
+  if (!sc) {
+    setStatus('No saved case — use ↻ Restart onboarding.');
+    return;
+  }
+  if (!window.confirm('Discard all panel edits and reset to case defaults?')) return;
+  const c = PATIENT_CASES[sc.caseId];
+  suppressPersist = true;
+  clearPanelOverrides();
+  writePatientToForm(c.patient);
+  writeTherapyToForm(c, sc.therapy);
+  onTherapyChange();
+  onPatientChange();
+  pushBasalProfile();
+  suppressPersist = false;
+  setStatus(`Reset to case defaults: ${c.shortLabel} · ${sc.therapy.toUpperCase()}`);
 });
 
 // ── Initial state (gated on onboarding modal on first launch) ────────────────
@@ -1112,12 +1236,21 @@ void (async () => {
     writeTherapyToForm(c, savedCase.therapy);
   }
 
+  // First-time onboarding wipes any stale overrides; otherwise apply the
+  // user's saved panel edits on top of the case template.
+  if (justOnboarded) {
+    clearPanelOverrides();
+  } else {
+    const overrides = loadPanelOverrides();
+    if (overrides) applyPanelSnapshot(overrides);
+  }
+
   onTherapyChange();
   // Push the persisted prescription into the simulator so it matches the UI's
   // `currentPrescription` (loaded from localStorage). Without this, the engine
   // would silently run on DEFAULT_PRESCRIPTION until the user reopens the modal.
   bridge.setTherapyParam({ prescription: currentPrescription });
-  setSubmode(currentSubmode);
+  setSubmode(currentSubmode, true);
   onPatientChange();
   pushBasalProfile();
   bridge.setThrottle(10);
@@ -1152,4 +1285,7 @@ void (async () => {
     document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
     persistUIPrefs();
   }
+
+  // Init complete — user gestures from now on persist panel overrides.
+  suppressPersist = false;
 })();

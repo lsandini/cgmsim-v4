@@ -134,7 +134,7 @@ export function buildTherapyForCase(c: PatientCase, choice: TherapyChoice): Ther
     rapidDia: 5,
     longActingMorning: null,
     longActingEvening: isMDI
-      ? { type: 'GlargineU300', units: Math.max(1, Math.round(basalDaily)), injectionMinute: 22 * 60 }
+      ? { type: 'GlargineU300', units: Math.max(1, Math.round(basalDaily)), injectionMinute: 21 * 60 }
       : null,
     glucoseTarget: choice === 'aid' ? 110 : 100,
     enableSMB: false,

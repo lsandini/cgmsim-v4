@@ -11,7 +11,7 @@
  * flags this with "(legacy)".
  */
 
-import type { WorkerState, DisplayUnit, Prescription } from '@cgmsim/shared';
+import type { WorkerState, DisplayUnit, Prescription, LongActingSchedule } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 
 const ENVELOPE_VERSION = 2;
@@ -85,6 +85,66 @@ export function loadUIPrefs(): UIPrefs {
 export function saveUIPrefs(prefs: UIPrefs): void {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch { /* localStorage unavailable */ }
+}
+
+// ── Panel overrides (localStorage) ───────────────────────────────────────────
+//
+// Snapshot of the user's manual edits to the therapy + patient form fields,
+// applied on top of the case-template defaults on F5 so edits survive a refresh.
+// Cleared whenever the user picks a new case (re-onboarding) or hits "Reset to
+// case defaults", since both gestures mean "throw my edits away".
+//
+// Glucose target and trueISF are stored in mg/dL (canonical) so the snapshot
+// stays correct across mg/dL ↔ mmol/L unit toggles.
+
+export interface PanelOverrides {
+  therapy: {
+    mode: 'AID' | 'PUMP' | 'MDI';
+    glucoseTargetMgdl: number;
+    progDIA: number;
+    rapidAnalogue: 'Fiasp' | 'Lispro' | 'Aspart';
+    enableSMB: boolean;
+    basalSegments: { timeMinutes: number; rateUPerHour: number }[];
+    longActingMorning: LongActingSchedule | null;
+    longActingEvening: LongActingSchedule | null;
+    laMorningInputs: { type: string; dose: string; time: string };
+    laEveningInputs: { type: string; dose: string; time: string };
+    tempBasalRate: string;
+    tempBasalDuration: string;
+  };
+  patient: {
+    trueISFMgdl: number;
+    trueCR: number;
+    trueDIA: number;
+    weight: number;
+    diabetesDuration: number;
+    carbsAbsTime: number;
+    gastricEmptyingRate: number;
+  };
+}
+
+const OVERRIDES_KEY = 'cgmsim.panel-overrides';
+
+export function loadPanelOverrides(): PanelOverrides | null {
+  try {
+    const raw = localStorage.getItem(OVERRIDES_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PanelOverrides;
+  } catch {
+    return null;
+  }
+}
+
+export function savePanelOverrides(overrides: PanelOverrides): void {
+  try {
+    localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch { /* localStorage unavailable */ }
+}
+
+export function clearPanelOverrides(): void {
+  try {
+    localStorage.removeItem(OVERRIDES_KEY);
   } catch { /* localStorage unavailable */ }
 }
 

@@ -13,6 +13,19 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
-    minify: false,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,    // remove console.* calls entirely
+        drop_debugger: true,
+        passes: 2,             // run compression twice for slightly smaller output
+      },
+      format: {
+        comments: false,       // strip ALL comments, including /*! legal */ banners
+      },
+      mangle: true,
+    },
+    cssMinify: true,           // minify inlined CSS too
+    reportCompressedSize: true,
   },
 });

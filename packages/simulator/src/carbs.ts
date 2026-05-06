@@ -17,15 +17,22 @@ export type { ResolvedMeal };
  * Resolve a meal into fast/slow fractions.
  * Call once when the meal is created; store the result in simulator state.
  *
- * @param meal     The incoming meal event
- * @param random01 A random value in [0,1) — supply from the seeded RNG so
- *                 simulation is reproducible when reset from a saved state.
+ * Two independent draws decouple the two stages of the split: `r1` chooses
+ * the immediate fast carve-off (capped at 40 g), `r2` chooses the fast/slow
+ * ratio of the remainder. Independence widens the range of meal characters
+ * (slow-start/fast-tail and vice versa) without changing the mean.
+ *
+ * @param meal The incoming meal event
+ * @param r1   Random value in [0,1) for the initial fast carve-off
+ * @param r2   Random value in [0,1) for the remainder's fast/slow ratio.
+ *             Both must come from the seeded RNG so the simulation stays
+ *             reproducible across save/load.
  */
-export function resolveMealSplit(meal: ActiveMeal, random01: number): ResolvedMeal {
+export function resolveMealSplit(meal: ActiveMeal, r1: number, r2: number): ResolvedMeal {
   const total = meal.carbsG;
-  const fastPortion = Math.min(random01 * total, 40);
+  const fastPortion = Math.min(r1 * total, 40);
   const remaining = total - fastPortion;
-  const fastRatio = 0.1 + random01 * 0.3;
+  const fastRatio = 0.1 + r2 * 0.3;
   const fastCarbsG = fastPortion + fastRatio * remaining;
   const slowCarbsG = remaining * (1 - fastRatio);
   return {

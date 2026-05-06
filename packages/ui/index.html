@@ -1125,7 +1125,7 @@
                 <option value="Degludec">Degludec (Tresiba)</option>
               </select>
               <input type="number" class="la-dose" min="1" max="80" step="1" value="8" title="Dose (U)" />
-              <input type="time" class="la-time" min="12:00" max="23:59" value="20:00" />
+              <input type="time" class="la-time" min="12:00" max="23:59" value="21:00" />
               <button type="button" class="la-set-btn">Set</button>
             </div>
           </div>
@@ -1149,7 +1149,10 @@
         <div class="tab-content" id="tab-patient">
           <div class="panel-section">
             <h3>Onboarding</h3>
-            <button id="btn-reopen-onboarding" class="session-btn" type="button" title="Reopen the patient + therapy picker">↻ Restart onboarding</button>
+            <div style="display:flex;gap:6px;">
+              <button id="btn-reopen-onboarding" class="session-btn" type="button" style="flex:1;width:auto;margin-bottom:0;" title="Reopen the patient + therapy picker">↻ Restart onboarding</button>
+              <button id="btn-reset-defaults" class="session-btn" type="button" style="flex:1;width:auto;margin-bottom:0;" title="Discard panel edits and revert to the current case's defaults">↺ Reset to case defaults</button>
+            </div>
           </div>
           <div class="panel-section">
             <h3>True physiology</h3>
