@@ -723,15 +723,15 @@ function setSubmode(submode: MDISubmode, fromInit = false): void {
   bridge.setTherapyParam({ mdiSubmode: submode });
   applyPrescriptionLockUI();
 
-  // Submode-specific evening LA defaults: LIVE = 21:00, PRESCRIPTION = 22:00.
-  // Only flip on user toggles (not on init / restore), and only when the current
-  // value is still the OTHER submode's default — leaves manual edits alone.
+  // Evening LA defaults to 21:00 in both submodes. The flip block remains as a
+  // safety net: if the user manually entered 22:00 and toggles submode, normalise
+  // back to 21:00. Init / restore skips this via fromInit.
   if (!fromInit && therapyMode.value === 'MDI' && activeSchedule.evening) {
     const cur = activeSchedule.evening.injectionMinute;
     const flipToPrescription = submode === 'PRESCRIPTION' && cur === 21 * 60;
     const flipToLive         = submode === 'LIVE'         && cur === 22 * 60;
     if (flipToPrescription || flipToLive) {
-      const desired = submode === 'PRESCRIPTION' ? 22 * 60 : 21 * 60;
+      const desired = 21 * 60;
       eveningRefs.time.value = minutesToTimeString(desired);
       setSlot('evening', { ...activeSchedule.evening, injectionMinute: desired });
     }
@@ -857,7 +857,7 @@ function setScenarioMenuOpen(open: boolean): void {
 }
 scenarioModeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  setScenarioMenuOpen(scenarioModeMenu.hidden);
+  setScenarioMenuOpen(!!scenarioModeMenu.hidden);
 });
 scenarioModeMenu.addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest<HTMLElement>('li[role="option"]');
