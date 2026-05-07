@@ -64,16 +64,6 @@ function formatThrottle(t: number): string {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function trendArrow(mgdlPerMin: number): string {
-  if (mgdlPerMin >  3)   return '↑↑';
-  if (mgdlPerMin >  1)   return '↑';
-  if (mgdlPerMin >  0.3) return '↗';
-  if (mgdlPerMin < -3)   return '↓↓';
-  if (mgdlPerMin < -1)   return '↓';
-  if (mgdlPerMin < -0.3) return '↘';
-  return '→';
-}
-
 function formatSimTime(ms: number): string {
   const m = Math.floor(ms / 60_000);
   const d = Math.floor(m / 1440);
@@ -133,8 +123,6 @@ const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
 const skyIcon          = getEl<SVGSVGElement>('sky-icon');
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
-const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
-const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
 const bgOverlay        = getEl<HTMLElement>('bg-overlay');
 const bgOverlayValue   = getEl<HTMLElement>('bg-overlay-value');
 const iobVal           = getEl<HTMLElement>('iob-val');
@@ -144,12 +132,10 @@ const themeToggle      = getEl<HTMLButtonElement>('theme-toggle');
 const btnPanel         = getEl<HTMLButtonElement>('btn-panel');
 const btnFullscreen    = getEl<HTMLButtonElement>('btn-fullscreen');
 const sidePanel        = getEl<HTMLElement>('side-panel');
-const btnBolus         = getEl<HTMLButtonElement>('btn-bolus');
-const btnMeal          = getEl<HTMLButtonElement>('btn-meal');
-const btnQuickMeal     = getEl<HTMLButtonElement>('btn-quick-meal');
-const btnQuickBolus    = getEl<HTMLButtonElement>('btn-quick-bolus');
-const bolusAmount      = getEl<HTMLInputElement>('bolus-amount');
-const mealCarbs        = getEl<HTMLInputElement>('meal-carbs');
+const btnStripCarbs    = getEl<HTMLButtonElement>('btn-strip-carbs');
+const btnStripBolus    = getEl<HTMLButtonElement>('btn-strip-bolus');
+const stripCarbsLabel  = getEl<HTMLSpanElement>('strip-carbs-label');
+const stripBolusLabel  = getEl<HTMLSpanElement>('strip-bolus-label');
 const therapyMode      = getEl<HTMLSelectElement>('therapy-mode');
 const glucoseTarget    = getEl<HTMLInputElement>('glucose-target');
 const rapidAnalogue    = getEl<HTMLSelectElement>('rapid-analogue');
@@ -169,6 +155,7 @@ const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
 const enableSMB        = getEl<HTMLInputElement>('enable-smb');
 const rowSMB           = getEl<HTMLElement>('row-smb');
+const rowTarget        = getEl<HTMLElement>('row-target');
 const rowOverlayBasal  = getEl<HTMLElement>('row-overlay-basal');
 const overlayBasal     = getEl<HTMLInputElement>('overlay-basal');
 const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
@@ -260,7 +247,6 @@ function updateHUD(snap: TickSnapshot): void {
       bgOverlay.classList.remove('flash');
     }, 250);
   }
-  trendArrowEl.textContent = trendArrow(snap.trend);
   iobVal.textContent = snap.iob.toFixed(2);
   cobVal.textContent = snap.cob.toFixed(0);
 }
@@ -481,7 +467,6 @@ unitToggle.addEventListener('click', () => {
   appState.displayUnit = prev === 'mgdl' ? 'mmoll' : 'mgdl';
   renderer.options.displayUnit = appState.displayUnit;
   unitToggle.textContent = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-  cgmUnitEl.textContent  = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
   syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
@@ -508,6 +493,7 @@ themeToggle.addEventListener('click', () => {
 btnPanel.addEventListener('click', () => {
   appState.panelOpen = !appState.panelOpen;
   sidePanel.classList.toggle('open', appState.panelOpen);
+  btnPanel.classList.toggle('active', appState.panelOpen);
   persistUIPrefs();
 });
 
@@ -536,6 +522,7 @@ document.addEventListener('fullscreenchange', () => {
   appState.fullScreen = !!document.fullscreenElement;
   if (appState.fullScreen) {
     sidePanel.classList.remove('open');
+    btnPanel.classList.remove('active');
     appState.panelOpen = false;
   }
   btnFullscreen.textContent = appState.fullScreen ? '⊡' : '⛶';
@@ -549,14 +536,37 @@ btnFullscreen.addEventListener('click', toggleFullScreen);
 // actually sees on the chart — so the marker lands at the "now" line instantly
 // instead of in the lookahead zone where it'd be culled.
 
-btnQuickMeal.addEventListener('click',  () => bridge.meal(60, undefined, renderer.displayedSimTime));
-btnQuickBolus.addEventListener('click', () => bridge.bolus(parseFloat(bolusAmount.value) || 4, undefined, renderer.displayedSimTime));
-btnBolus.addEventListener('click', () => {
-  const u = parseFloat(bolusAmount.value); if (u > 0) bridge.bolus(u, undefined, renderer.displayedSimTime);
+// Strip dose state — values shown as the button labels, adjusted by ▲▼ flanks.
+let stripCarbsValue = 40;   // grams,  step 5,   bounds 5..150
+let stripBolusValue = 3;    // units,  step 0.5, bounds 0.5..20
+
+function renderStripDoses(): void {
+  stripCarbsLabel.textContent = `${stripCarbsValue}g`;
+  stripBolusLabel.textContent = `${stripBolusValue}U`;
+}
+renderStripDoses();
+
+function adjustStripDose(target: 'carbs' | 'bolus', dir: 'up' | 'down'): void {
+  if (target === 'carbs') {
+    const next = stripCarbsValue + (dir === 'up' ? 5 : -5);
+    stripCarbsValue = Math.max(5, Math.min(150, next));
+  } else {
+    const next = stripBolusValue + (dir === 'up' ? 0.5 : -0.5);
+    stripBolusValue = Math.max(0.5, Math.min(20, Math.round(next * 2) / 2));
+  }
+  renderStripDoses();
+}
+
+document.querySelectorAll<HTMLButtonElement>('.strip-dose-arrow').forEach((b) => {
+  b.addEventListener('click', () => {
+    const target = b.dataset['target'] as 'carbs' | 'bolus';
+    const dir    = b.dataset['dir']    as 'up'    | 'down';
+    adjustStripDose(target, dir);
+  });
 });
-btnMeal.addEventListener('click', () => {
-  const c = parseFloat(mealCarbs.value); if (c > 0) bridge.meal(c, undefined, renderer.displayedSimTime);
-});
+
+btnStripCarbs.addEventListener('click', () => bridge.meal(stripCarbsValue, undefined, renderer.displayedSimTime));
+btnStripBolus.addEventListener('click', () => bridge.bolus(stripBolusValue, undefined, renderer.displayedSimTime));
 
 // ── Long-acting slot helpers ──────────────────────────────────────────────────
 
@@ -696,6 +706,7 @@ function onTherapyChange(): void {
   sectionBasal.style.display     = mode !== 'MDI'  ? 'block' : 'none';
   sectionTempBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
   rowSMB.style.display           = mode === 'AID'  ? 'flex'  : 'none';
+  rowTarget.style.display        = mode === 'AID'  ? 'flex'  : 'none';
   rowOverlayBasal.style.display  = mode !== 'MDI'  ? 'flex'  : 'none';
   renderer.options.therapyMode   = mode;
   renderer.markDirty();
@@ -745,14 +756,15 @@ function setSubmode(submode: MDISubmode, fromInit = false): void {
  */
 function applyPrescriptionLockUI(): void {
   const lock = therapyMode.value === 'MDI' && currentSubmode === 'PRESCRIPTION';
-  const locks: HTMLButtonElement[] = [btnBolus, btnMeal, btnQuickMeal, btnQuickBolus];
+  const locks: HTMLButtonElement[] = [btnStripCarbs, btnStripBolus];
   for (const b of locks) {
     b.disabled = lock;
     b.title = lock ? 'Disabled in PRESCRIPTION submode' : '';
     b.style.opacity = lock ? '0.4' : '';
   }
-  bolusAmount.disabled = lock;
-  mealCarbs.disabled   = lock;
+  document.querySelectorAll<HTMLButtonElement>('.strip-dose-arrow').forEach((b) => {
+    b.disabled = lock;
+  });
 }
 
 mdiSubmodeGroup.addEventListener('click', (e) => {
@@ -1119,8 +1131,8 @@ document.addEventListener('keydown', (e) => {
       throttleSlider.value = String(throttleToPos(prev));
       throttleSlider.dispatchEvent(new Event('input')); break;
     }
-    case 'm': bridge.meal(60, undefined, renderer.displayedSimTime); break;
-    case 'b': bridge.bolus(parseFloat(bolusAmount.value) || 4, undefined, renderer.displayedSimTime); break;
+    case 'm': bridge.meal(stripCarbsValue,  undefined, renderer.displayedSimTime); break;
+    case 'b': bridge.bolus(stripBolusValue, undefined, renderer.displayedSimTime); break;
     case 'u': unitToggle.click(); break;
     case 'f': case 'F': toggleFullScreen(); break;
   }
@@ -1173,6 +1185,25 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
   const result = await runOnboarding();
   if (!result.caseId || !result.therapy) return;
   const c = PATIENT_CASES[result.caseId];
+
+  // Wipe the running simulation so the new case starts cleanly — matches
+  // Session > Reset simulation, but uses the chosen case's params instead
+  // of the hardcoded defaults.
+  stopCompare();
+  bridge.pause(); setRunning(false);
+  const seed = (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1;
+  bridge.reset({
+    simTimeMs: 6*60*60_000, trueGlucose: 100, lastCGM: 100,
+    patient: { ...c.patient },
+    therapy: buildTherapyForCase(c, result.therapy),
+    g6State: { v:[0,0], cc:[0,0], tCalib:0, rng:{ jsr:123456789^seed, seed } },
+    activeBoluses: [], activeLongActing: [],
+    resolvedMeals: [], pumpMicroBoluses: [], tempBasal: null, events: [], rngState: seed,
+    lastMorningDay: -1, lastEveningDay: -1, prescriptionLastFiredDay: {},
+    pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999, throttle: 10, running: false,
+  });
+  renderer.clearHistory();
+
   suppressPersist = true;
   clearPanelOverrides();
   writePatientToForm(c.patient);
@@ -1273,8 +1304,8 @@ void (async () => {
   overlayBG.checked       = uiPrefs.showBgOverlay;
   bgOverlay.style.display = uiPrefs.showBgOverlay ? '' : 'none';
   unitToggle.textContent  = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-  cgmUnitEl.textContent   = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
   sidePanel.classList.toggle('open', uiPrefs.panelOpen);
+  btnPanel.classList.toggle('active', uiPrefs.panelOpen);
   renderer.setZoom(uiPrefs.viewWindowMinutes);
   updateZoomButtons(uiPrefs.viewWindowMinutes);
   renderer.markDirty();
@@ -1282,6 +1313,7 @@ void (async () => {
   if (justOnboarded) {
     appState.panelOpen = true;
     sidePanel.classList.add('open');
+    btnPanel.classList.add('active');
     document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
     persistUIPrefs();
   }
