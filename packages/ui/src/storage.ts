@@ -95,13 +95,13 @@ export function saveUIPrefs(prefs: UIPrefs): void {
 // Cleared whenever the user picks a new case (re-onboarding) or hits "Reset to
 // case defaults", since both gestures mean "throw my edits away".
 //
-// Glucose target and trueISF are stored in mg/dL (canonical) so the snapshot
-// stays correct across mg/dL ↔ mmol/L unit toggles.
+// trueISF is stored in mg/dL (canonical) so the snapshot stays correct across
+// mg/dL ↔ mmol/L unit toggles. Glucose target is intentionally NOT persisted
+// — it always comes from the case template on reload / reset.
 
 export interface PanelOverrides {
   therapy: {
     mode: 'AID' | 'PUMP' | 'MDI';
-    glucoseTargetMgdl: number;
     progDIA: number;
     rapidAnalogue: 'Fiasp' | 'Lispro' | 'Aspart';
     enableSMB: boolean;

@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "UI fixes, responsiveness, re-onboarding resets"
+git commit -m "always reset AID target on reloads"
 git push -u origin onboarding-v2

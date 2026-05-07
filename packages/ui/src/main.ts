@@ -277,7 +277,6 @@ function readPanelSnapshot(): PanelOverrides {
   return {
     therapy: {
       mode:               therapyMode.value as 'AID' | 'PUMP' | 'MDI',
-      glucoseTargetMgdl:  fromDisplay(parseFloat(glucoseTarget.value)),
       progDIA:            parseFloat(progDIA.value),
       rapidAnalogue:      rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
       enableSMB:          enableSMB.checked,
@@ -309,9 +308,9 @@ function applyPanelSnapshot(snap: PanelOverrides): void {
   const toDisplay = (mgdl: number): string =>
     isMmol ? (mgdl / 18.0182).toFixed(1) : String(Math.round(mgdl));
 
-  // Therapy
+  // Therapy. Glucose target is intentionally NOT restored from the snapshot —
+  // it is reset to the case template default on every reload / reset.
   therapyMode.value   = snap.therapy.mode;
-  glucoseTarget.value = toDisplay(snap.therapy.glucoseTargetMgdl);
   progDIA.value       = String(snap.therapy.progDIA);
   rapidAnalogue.value = snap.therapy.rapidAnalogue;
   enableSMB.checked   = snap.therapy.enableSMB;
@@ -1169,6 +1168,11 @@ function writePatientToForm(p: VirtualPatient): void {
 function writeTherapyToForm(c: PatientCase, choice: TherapyChoice): void {
   const therapy = buildTherapyForCase(c, choice);
   therapyMode.value = therapy.mode;
+  // Glucose target is stored canonical mg/dL, but the form may be displaying mmol/L.
+  const isMmol = appState.displayUnit === 'mmoll';
+  glucoseTarget.value = isMmol
+    ? (therapy.glucoseTarget / 18.0182).toFixed(1)
+    : String(Math.round(therapy.glucoseTarget));
   basalSegments = therapy.basalProfile.map(e => ({ ...e }));
   renderBasalRows();
   setSlot('morning', null);
