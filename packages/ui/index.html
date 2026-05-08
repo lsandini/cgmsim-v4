@@ -739,6 +739,53 @@
       border-color: var(--accent);
     }
 
+    /* Custom 24h time picker (replaces native <input type="time"> UI). */
+    .time24 {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      cursor: ns-resize;
+      user-select: none;
+      padding: 0 6px;
+      height: 28px;
+      font-size: 13px;
+      font-family: var(--font);
+      gap: 1px;
+    }
+    .time24.focused { outline: none; border-color: var(--accent); }
+    .time24 .t24-h, .time24 .t24-m {
+      padding: 0 3px;
+      border-radius: 3px;
+      transition: background 80ms ease;
+    }
+    .time24 .t24-h:hover, .time24 .t24-m:hover {
+      background: rgba(96, 165, 250, 0.18);
+    }
+    .time24 .t24-h.active, .time24 .t24-m.active {
+      background: rgba(96, 165, 250, 0.28);
+    }
+    .time24 .t24-sep { opacity: 0.6; padding: 0 1px; }
+    .time24.disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .time24.disabled .t24-h:hover, .time24.disabled .t24-m:hover {
+      background: transparent;
+    }
+    /* In the long-acting grid column, fill the cell. */
+    .long-acting-row .time24 {
+      display: flex;
+      width: 100%;
+      font-size: 13px;
+      height: 28px;
+    }
+
     .long-acting-row input[type="number"],
     .long-acting-row input[type="time"],
     .long-acting-row select {

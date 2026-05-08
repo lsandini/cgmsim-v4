@@ -12,6 +12,7 @@ import { exportSession, importSession, loadUIPrefs, saveUIPrefs,
          type PanelOverrides } from './storage.js';
 import { runOnboarding, ensureOnboardingStyles } from './onboarding/onboarding.js';
 import { PATIENT_CASES, buildTherapyForCase, type CaseId, type TherapyChoice, type PatientCase } from './onboarding/cases.js';
+import { enhanceTimeInput } from './time24.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
 
@@ -611,6 +612,11 @@ function setSlotActiveState(refs: SlotRowRefs, schedule: LongActingSchedule | nu
   refs.type.disabled = isActive;
   refs.dose.disabled = isActive;
   refs.time.disabled = isActive;
+  const timeWidget = (refs.time as unknown as { _time24?: HTMLElement })._time24;
+  if (timeWidget) {
+    timeWidget.classList.toggle('disabled', isActive);
+    timeWidget.tabIndex = isActive ? -1 : 0;
+  }
   refs.setBtn.textContent = isActive ? 'Edit' : 'Set';
 }
 
@@ -623,6 +629,8 @@ function shakeRow(refs: SlotRowRefs): void {
 
 const morningRefs = getSlotRowRefs(laRowMorning);
 const eveningRefs = getSlotRowRefs(laRowEvening);
+enhanceTimeInput(morningRefs.time);
+enhanceTimeInput(eveningRefs.time);
 const slotRefs: Record<SlotName, SlotRowRefs> = {
   morning: morningRefs,
   evening: eveningRefs,
@@ -920,11 +928,14 @@ function renderBasalRows(): void {
         : '<div style="width:32px;"></div>'}
     `;
     const [timeInput, rateInput] = Array.from(row.querySelectorAll('input')) as HTMLInputElement[];
-    if (timeInput && !timeInput.disabled) {
-      timeInput.addEventListener('change', () => {
-        if (basalSegments[i]) basalSegments[i]!.timeMinutes = timeStringToMinutes(timeInput.value);
-        pushBasalProfile();
-      });
+    if (timeInput) {
+      enhanceTimeInput(timeInput, { minuteStep: 30 });
+      if (!timeInput.disabled) {
+        timeInput.addEventListener('change', () => {
+          if (basalSegments[i]) basalSegments[i]!.timeMinutes = timeStringToMinutes(timeInput.value);
+          pushBasalProfile();
+        });
+      }
     }
     if (rateInput) {
       rateInput.addEventListener('change', () => {
