@@ -45,20 +45,31 @@ function renderPatientCards(selected: CaseId | null): string {
   `).join('');
 }
 
-function renderTherapyCards(selected: TherapyChoice | null, withPrednisone: boolean): string {
+/** Standalone Prednisone tickbox row, rendered below the patient-case cards.
+ *  Case-agnostic — applies to whichever case the teacher picks. The warning
+ *  line tells the teacher that ticking it locks the therapy step to MDI. */
+function renderPrednisoneToggle(checked: boolean): string {
+  return `
+    <label class="prednisone-toggle-row" data-prednisone-toggle>
+      <input type="checkbox" ${checked ? 'checked' : ''} />
+      <div class="prednisone-toggle-text">
+        <span class="prednisone-toggle-label">Prednisone scenario</span>
+        <span class="prednisone-toggle-help">Therapy will be locked to MDI (AID/Pump disabled).</span>
+      </div>
+    </label>
+  `;
+}
+
+function renderTherapyCards(selected: TherapyChoice | null, lockToMDI: boolean): string {
   return Object.values(THERAPY_OPTIONS).map(t => {
-    const prednisoneCheckbox = t.id === 'mdi' ? `
-      <label class="therapy-prednisone-toggle" data-mdi-prednisone>
-        <input type="checkbox" ${withPrednisone ? 'checked' : ''} />
-        <span>Prednisone</span>
-      </label>
-    ` : '';
+    const isLocked = lockToMDI && (t.id === 'aid' || t.id === 'pump');
+    const lockedClass = isLocked ? ' locked' : '';
+    const lockedAttr  = isLocked ? ' aria-disabled="true" title="Disabled — Prednisone scenario requires MDI therapy"' : '';
     return `
-    <div class="therapy-card${selected === t.id ? ' selected' : ''}" data-therapy-id="${t.id}" role="button" tabindex="0" aria-pressed="${selected === t.id}">
+    <div class="therapy-card${selected === t.id ? ' selected' : ''}${lockedClass}" data-therapy-id="${t.id}" role="button" tabindex="${isLocked ? -1 : 0}" aria-pressed="${selected === t.id}"${lockedAttr}>
       <div class="therapy-icon">${iconForTherapy(t.id)}</div>
       <div class="therapy-label">${t.label}</div>
       <div class="therapy-sub">${t.description}</div>
-      ${prednisoneCheckbox}
     </div>
   `;
   }).join('');
@@ -142,36 +153,36 @@ export function runOnboarding(): Promise<OnboardingResult> {
         titleEl.textContent = 'Choose a patient';
         nextBtn.textContent = 'Next →';
         nextBtn.disabled = selectedCase === null;
-        bodyEl.innerHTML = renderPatientCards(selectedCase);
+        bodyEl.innerHTML = renderPatientCards(selectedCase) + renderPrednisoneToggle(selectedWithPrednisone);
         wireCards('.case-card', (id) => { selectedCase = id as CaseId; });
-      } else {
-        titleEl.textContent = 'Choose a therapy mode';
-        nextBtn.textContent = 'Start simulation';
-        nextBtn.disabled = selectedTherapy === null;
-        bodyEl.innerHTML = renderTherapyCards(selectedTherapy, selectedWithPrednisone);
-        wireCards('.therapy-card', (id) => { selectedTherapy = id as TherapyChoice; });
-        // Wire the embedded Prednisone checkbox in the MDI card. Click on the
-        // label/checkbox must NOT bubble up to the card click handler — that
-        // would re-fire card selection on every toggle.
-        const prednisoneToggle = bodyEl.querySelector<HTMLLabelElement>('[data-mdi-prednisone]');
-        const prednisoneInput  = prednisoneToggle?.querySelector<HTMLInputElement>('input');
-        if (prednisoneToggle && prednisoneInput) {
-          prednisoneToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // Toggling implies the user wants MDI — auto-select that card.
-            selectedTherapy = 'mdi';
-            bodyEl.querySelectorAll<HTMLElement>('.therapy-card').forEach(c => {
-              const isMDI = c.dataset['therapyId'] === 'mdi';
-              c.classList.toggle('selected', isMDI);
-              c.setAttribute('aria-pressed', String(isMDI));
-            });
-            nextBtn.disabled = false;
-          });
+        // Wire the standalone Prednisone tickbox below the cards. The label
+        // wraps the checkbox so a click anywhere on the row toggles it.
+        const prednisoneInput = bodyEl.querySelector<HTMLInputElement>('[data-prednisone-toggle] input');
+        if (prednisoneInput) {
           prednisoneInput.addEventListener('change', () => {
             selectedWithPrednisone = prednisoneInput.checked;
           });
-          prednisoneInput.addEventListener('keydown', (e) => { e.stopPropagation(); });
         }
+      } else {
+        titleEl.textContent = 'Choose a therapy mode';
+        nextBtn.textContent = 'Start simulation';
+        // When the prednisone flag is on, MDI is the only valid choice — pre-select
+        // it so the teacher just hits Next. AID/Pump cards render disabled.
+        if (selectedWithPrednisone && selectedTherapy !== 'mdi') selectedTherapy = 'mdi';
+        nextBtn.disabled = selectedTherapy === null;
+        bodyEl.innerHTML = renderTherapyCards(selectedTherapy, selectedWithPrednisone);
+        // wireCards binds clicks on every .therapy-card; the disabled cards
+        // (.locked) need their click to be a no-op so they can't be picked.
+        wireCards('.therapy-card', (id) => {
+          if (selectedWithPrednisone && (id === 'aid' || id === 'pump')) return;
+          selectedTherapy = id as TherapyChoice;
+        });
+        bodyEl.querySelectorAll<HTMLElement>('.therapy-card.locked').forEach(card => {
+          card.addEventListener('click', (e) => { e.stopPropagation(); }, true);
+          card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); }
+          }, true);
+        });
       }
     }
 

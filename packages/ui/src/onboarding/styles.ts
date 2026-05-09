@@ -118,22 +118,38 @@ export const onboardingCSS = `
 .case-label, .therapy-label { font-size: 14px; font-weight: 600; margin-bottom: 4px; line-height: 1.3; }
 .case-sub, .therapy-sub { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 
-/* "Prednisone" tickbox embedded inside the MDI therapy card. Sits below the
-   description, visually indented so it reads as a sub-option of MDI. */
-.therapy-prednisone-toggle {
-  display: inline-flex;
+/* Standalone Prednisone tickbox row — sits below the patient-case grid,
+   spans all 3 columns. Case-agnostic (applies to whichever case is picked). */
+.prednisone-toggle-row {
+  grid-column: 1 / -1;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--bg);
+  gap: 10px;
+  padding: 10px 14px;
+  margin-top: 4px;
+  border-radius: 8px;
+  background: var(--bg-surface);
   border: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--text);
   cursor: pointer;
   user-select: none;
 }
-.therapy-prednisone-toggle:hover { border-color: var(--accent); }
-.therapy-prednisone-toggle input { cursor: pointer; }
+.prednisone-toggle-row:hover { border-color: var(--accent); }
+.prednisone-toggle-row input { cursor: pointer; flex: 0 0 auto; }
+.prednisone-toggle-text {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.prednisone-toggle-label { font-size: 14px; color: var(--text); font-weight: 500; }
+.prednisone-toggle-help  { font-size: 12px; color: var(--text-muted); }
+
+/* Therapy cards locked to MDI when the Prednisone scenario is on — visually
+   greyed and not clickable. The browser tooltip explains why. */
+.therapy-card.locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: auto; /* keep tooltip working */
+}
+.therapy-card.locked:hover {
+  border-color: var(--border);
+  transform: none;
+}
 `;
