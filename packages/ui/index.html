@@ -118,12 +118,47 @@
       font-size: 19.2px;
       overflow: hidden;
     }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Pre-release marquee — sits above the whole UI to remind viewers this
+       is a work-in-progress build hosted on surge, not a final product. */
+    #dev-banner {
+      flex: 0 0 auto;
+      height: 22px;
+      background: #b91c1c;
+      color: #ffffff;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      width: 100%;
+    }
+    .dev-banner-track {
+      display: flex;
+      flex-shrink: 0;
+      white-space: nowrap;
+      animation: dev-banner-scroll 30s linear infinite;
+    }
+    .dev-banner-track > span {
+      padding-right: 60px;
+    }
+    @keyframes dev-banner-scroll {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
 
     #app {
+      flex: 1 1 0;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto 1fr auto;     /* strips grow when they wrap */
       grid-template-columns: 1fr;
-      height: 100vh;
       width: 100vw;
     }
 
@@ -451,8 +486,7 @@
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
       pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.12s ease;
+      opacity: 1;
       z-index: 5;
     }
     #throttle-bubble::after {
@@ -464,10 +498,9 @@
       border: 4px solid transparent;
       border-top-color: var(--accent);
     }
-    #throttle-bubble.visible { opacity: 1; }
 
     #throttle-label {
-      font-size: 11px;
+      font-size: 14px;
       color: var(--text-muted);
       display: flex;
       justify-content: space-between;
@@ -1116,6 +1149,12 @@
   </style>
 </head>
 <body>
+  <div id="dev-banner" role="status" aria-label="Development build notice">
+    <div class="dev-banner-track" aria-hidden="true">
+      <span>Development version, work in progress, not production ready&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+      <span>Development version, work in progress, not production ready&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+    </div>
+  </div>
   <div id="app">
     <!-- Top strip — IOB / COB / scenario / unit toggle pillboxes -->
     <div id="top-strip">
@@ -1387,12 +1426,11 @@
 
       <div id="throttle-area">
         <div id="throttle-label">
-          <span>Speed</span>
-          <span id="throttle-val">×10</span>
+          <span>Acceleration factor</span>
         </div>
         <input type="range" id="throttle-slider"
-               min="0" max="1000" step="1" value="281" />
-        <div id="throttle-bubble">×10</div>
+               min="0" max="1000" step="1" value="719" />
+        <div id="throttle-bubble" class="visible">×360</div>
       </div>
 
       <div id="time-block">

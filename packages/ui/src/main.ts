@@ -99,7 +99,7 @@ const uiPrefs = loadUIPrefs();
 
 const appState = {
   running:        false,
-  throttle:       10 as number,
+  throttle:       360 as number,
   displayUnit:    uiPrefs.displayUnit,
   panelOpen:      uiPrefs.panelOpen,
   fullScreen:     false,
@@ -119,7 +119,6 @@ function getEl<T extends Element>(id: string): T {
 const canvas           = getEl<HTMLCanvasElement>('cgm-canvas');
 const btnPause         = getEl<HTMLButtonElement>('btn-pause');
 const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
-const throttleVal      = getEl<HTMLElement>('throttle-val');
 const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
 const skyIcon          = getEl<SVGSVGElement>('sky-icon');
@@ -388,24 +387,17 @@ function updateThrottleBubble(label: string): void {
 throttleSlider.addEventListener('input', () => {
   const t = posToThrottle(parseInt(throttleSlider.value));
   appState.throttle = t;
-  const label = formatThrottle(t);
-  throttleVal.textContent = label;
-  updateThrottleBubble(label);
+  updateThrottleBubble(formatThrottle(t));
   bridge.setThrottle(t);
   if (appState.compareRunning) compare.setThrottle(t);
   renderer.setPlayback(t, appState.running);
 });
 
-const showBubble = (): void => { throttleBubble.classList.add('visible'); updateThrottleBubble(throttleVal.textContent ?? ''); };
-const hideBubble = (): void => { throttleBubble.classList.remove('visible'); };
-throttleSlider.addEventListener('pointerenter', showBubble);
-throttleSlider.addEventListener('pointerleave', hideBubble);
-throttleSlider.addEventListener('focus', showBubble);
-throttleSlider.addEventListener('blur', hideBubble);
-window.addEventListener('resize', () => updateThrottleBubble(throttleVal.textContent ?? ''));
+// Bubble is permanently visible (CSS); only its position needs to stay
+// aligned with the slider thumb across resizes.
+window.addEventListener('resize', () => updateThrottleBubble(throttleBubble.textContent ?? ''));
 
-throttleVal.textContent = formatThrottle(posToThrottle(parseInt(throttleSlider.value)));
-updateThrottleBubble(throttleVal.textContent);
+updateThrottleBubble(formatThrottle(posToThrottle(parseInt(throttleSlider.value))));
 
 // ── Zoom and pan controls ─────────────────────────────────────────────────────
 
@@ -1065,8 +1057,10 @@ btnReset.addEventListener('click', () => {
     activeBoluses:[],activeLongActing:[],
     resolvedMeals:[],pumpMicroBoluses:[],tempBasal:null,events:[],rngState:seed,
     lastMorningDay:-1,lastEveningDay:-1,prescriptionLastFiredDay:{},
-    pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
+    pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:360,running:false,
   });
+  throttleSlider.value = String(throttleToPos(360));
+  throttleSlider.dispatchEvent(new Event('input'));
   setSlot('morning', null);
   setSlot('evening', null);
   renderer.clearHistory();
@@ -1215,8 +1209,10 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
     activeBoluses: [], activeLongActing: [],
     resolvedMeals: [], pumpMicroBoluses: [], tempBasal: null, events: [], rngState: seed,
     lastMorningDay: -1, lastEveningDay: -1, prescriptionLastFiredDay: {},
-    pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999, throttle: 10, running: false,
+    pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999, throttle: 360, running: false,
   });
+  throttleSlider.value = String(throttleToPos(360));
+  throttleSlider.dispatchEvent(new Event('input'));
   renderer.clearHistory();
 
   suppressPersist = true;
@@ -1226,6 +1222,11 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
   onTherapyChange();
   onPatientChange();
   pushBasalProfile();
+  // bridge.reset stamped the simulator with a fresh DEFAULT_PRESCRIPTION (all
+  // bolusUnits 0) and submode LIVE. Re-push the user's persisted prescription
+  // and submode so PRESCRIPTION mode keeps firing the user's bolus values.
+  bridge.setTherapyParam({ prescription: currentPrescription });
+  setSubmode(currentSubmode, true);
   suppressPersist = false;
   localStorage.setItem(CASE_KEY, JSON.stringify({ caseId: result.caseId, therapy: result.therapy }));
   document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
@@ -1299,7 +1300,7 @@ void (async () => {
   setSubmode(currentSubmode, true);
   onPatientChange();
   pushBasalProfile();
-  bridge.setThrottle(10);
+  bridge.setThrottle(360);
   setRunning(false);
 
   // ── Apply persisted UI prefs ──
