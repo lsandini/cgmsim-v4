@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "fic prescription mode, make acceleration bubble permamanent, add top banner-track"
-git push -u origin onboarding-v2
+git commit -m "add prednisone and premix insulin options"
+git push -u origin cortisone-nph
