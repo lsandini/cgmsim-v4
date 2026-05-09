@@ -94,6 +94,118 @@ The prescription (`TherapyProfile.prescription`) holds:
 
 Edited via the **📋 Edit prescription** pill in the top strip (visible only in MDI mode), which opens a modal.
 
+## Prednisone scenario (Novomix premix + oral prednisone, MDI-only)
+
+A dedicated teaching scenario for "MDI patient on a hospital steroid course." Teachers
+demo how a morning prednisone tablet drives afternoon hyperglycemia and how stacked
+premix Novomix coverage plus stronger correction boluses are needed to compensate.
+
+**Activation.** A single tickbox `Prednisone scenario` lives below the three patient
+cards in the onboarding step 2. Case-agnostic — the teacher picks lean/average/larger
+adult independently of the steroid scenario. When ticked, step 3 (therapy) renders
+AID and Pump cards visually disabled (`.therapy-card.locked`, opacity 0.4, tooltip)
+and pre-selects MDI. Stored as `withPrednisone: boolean` on the `cgmsim.case` JSON
+alongside `caseId` and `therapy`. Defaults to `false` on missing field (back-compat).
+Switching scenarios mid-session requires Reopen Onboarding (full sim reset). Mid-case
+scenario menu hides AID/PUMP entries via `applyPrednisoneScenarioGating`, so no path
+exists for the simulator to drift into a mode that doesn't support the scenario.
+
+**Therapy panel layout (MDI + withPrednisone).** Three subsections in this order:
+- Long-acting (existing) — Glargine/Detemir/Degludec morning + evening
+- Premix insulin (Novomix 30) — morning + evening, dose-units + time + Set
+- Prednisone — single morning slot, dose-mg + time clamped 06:00–11:59 + Set
+
+All three sections share the same `.long-acting-row` grid + `.la-*` classes so columns
+align vertically. Premix and Prednisone rows render an italic muted
+`.la-type-placeholder` ("Novomix 30" / "Prednisone (mg)") in the type-select column
+so dose / time / button line up with the long-acting rows above. Defaults when the
+scenario activates: Novomix 16 U @ 07:30 morning + 12 U @ 16:30 evening; prednisone
+40 mg @ 09:00.
+
+**Novomix engine (Option B decomposition).** Each scheduled `injectNovomix(units, slot)`
+emits ONE `SimEvent { kind: 'novomix' }` but spawns TWO active records:
+- 30% rapid Aspart pushed into `activeBoluses` with `analogue: 'Aspart'`,
+  `dia: patient.dia`, `source: 'novomix'`. The `source` tag attributes the activity
+  to the rose strip but is invisible to IOB and BG calculations — they sum all
+  boluses regardless of origin, so IOB pill correctly jumps by 30% at injection.
+- 70% protaminated slow component pushed into `activeLongActing` with
+  `type: 'NovomixSlow'`. NPH-style PK profile in `LONG_ACTING_PROFILES`:
+  `duration = (12 + 20·U/wt)·60 min`, `peak = duration / 3.5`. Engine-spawned
+  only — users can't pick `NovomixSlow` directly (the user-facing
+  `LongActingType` excludes it; the broader `LongActingPKType` alias is internal).
+
+`calculateLongActingActivity` filters NovomixSlow OUT (so the teal strip shows
+"true" long-acting only); `calculatePremixSlowActivity` and
+`calculateNovomixRapidActivity` pull each component separately. The bottom-of-chart
+strip stacks the rose `premixActivity` (= rapid + slow) layer on top of the teal
+LA layer — total height = sum, color split shows which drug is providing background
+coverage. `computeDeltaBG` re-sums them in `basalActivity` so the BG calculation
+correctly accounts for all background insulin.
+
+**Prednisone engine.** Oral tablet, scheduled daily morning fire from
+`prednisoneSchedule` via forward-only `firePrednisoneIfDue`. PK is **fixed window**,
+NOT dose- or weight-scaled (clinically prednisone has a property-of-the-drug effect
+duration independent of dose):
+- `duration = 15 * 60` min (900 min, 15 h)
+- `peak = duration / 3` = 300 min (5 h post-dose)
+
+For an 08:00 dose: peak ≈ 13:00, fade-out ≈ 23:00. Activity magnitude scales linearly
+with mg via the biexponential's `units` term; time profile is invariant. Stamped
+into `activePrednisoneDoses` at injection; purged in tick when elapsed > duration.
+`SimEvent { kind: 'prednisone' }` emitted for the canvas tick mark.
+
+**Model C (hybrid effect) in `computeDeltaBG`.** Prednisone activity (mg-eq/min)
+drives two coupled mechanisms — pedagogically rich because students can't fix
+either with a single corrective bolus:
+
+```
+prednisoneActivity   = sum of getExpTreatmentActivity over activePrednisoneDoses
+isfResistanceDivider = 1 + prednisoneActivity · K1_PREDNISONE_RESISTANCE   (K1 = 14)
+effectiveISF         = trueISF / isfResistanceDivider                       ← halved at peak
+egpMultiplier        = 1 + prednisoneActivity · K2_PREDNISONE_HEPATIC      (K2 = 14)
+
+insulinEffect = -(totalInsulinActivity · effectiveISF · TICK_MINUTES)     ← uses effective
+carbEffect    = calculateCarbEffect(meals, isf, ...)                       ← uses TRUE
+baseEGP       = calculateEGP(patient, ..., isf, ...)                       ← uses TRUE
+egpEffect     = baseEGP · egpMultiplier                                     ← K2 boost on top
+```
+
+**Critical** — only the insulin BG-lowering term uses `effectiveISF`. Carbs use true
+ISF (the physical glucose load is unchanged by insulin sensitivity); EGP baseline
+uses true ISF (the formula `egpPerMin = (isf/trueCR)·…` scales linearly with ISF,
+so passing `effectiveISF` would halve the baseline and the K2 multiplier would
+restore it — net zero hepatic boost, the bug we hit during initial calibration).
+The teaching takeaway "carbs hit harder on prednisone" emerges from the smaller
+negative `insulinEffect`, not from inflating `carbEffect`.
+
+**Calibration target at peak of a 40 mg dose, 75 kg patient:**
+- peak activity ≈ 0.072 (mg-eq/min)
+- `1 + 14·0.072 = 2.0` → effective ISF halved (insulin at 50% potency, matches the
+  clinical "doubled insulin needs" rule of thumb)
+- EGP × 2.0 (~+30 mg/dL/h additional fasted-state rise on top of baseline)
+
+Cumulative differential over the day vs no-prednisone baseline ≈ +80–100 mg/dL (~5
+mmol/L) at peak. Tunable: `K1_PREDNISONE_RESISTANCE` and `K2_PREDNISONE_HEPATIC` in
+`packages/simulator/src/deltaBG.{ts,js}`.
+
+**Canvas rendering.**
+- Novomix marker: rose `#e11d48` filled circle on the BG curve at injection time,
+  dose-scaled (`treatmentRadius(units, 'insulin')`), label "Nx Nu" below.
+  One marker per injection (the engine's two records share one event).
+- Novomix activity strip: rose layer `premixActivity` stacked on top of the teal
+  long-acting layer in the bottom panel. Same `MAX_RATE = 2 U/hr` scale as the
+  teal layer. Skipped entirely when no Novomix is on board.
+- Prednisone tick: small forest-green `#15803d` inverted triangle (▼) just below
+  the top axis, mirroring the SMB upward triangle at the bottom. Fixed ~6-8 px,
+  no dose scaling. Label "N mg" below the apex.
+
+**Persistence.** All scheduled fields (`premixMorning`, `premixEvening`,
+`prednisoneSchedule`) live on `TherapyProfile` and round-trip via the v2 session
+envelope (`getCurrentState` deep-clones `activePrednisoneDoses` along with the
+`lastPremixMorningDay` / `lastPremixEveningDay` / `lastPrednisoneDay` daily-fire
+trackers). Form-state mirrors persist in `cgmsim.panel-overrides` under
+`therapy.premix*` and `therapy.prednisone*` for F5 survival of mid-edit form values.
+
 ## Canvas overlays
 
 - **CGM trace**: dots, radius 3px at 3h zoom / 2.5px at wider zooms, ATTD zone colours (TIR green / amber / red)
@@ -131,13 +243,15 @@ Core functions ported from `@lsandini/cgmsim-lib` (v3 npm package). Nightscout i
 - **UI preferences** (overlay toggles, zoom, display unit, panel open state, MDI prescription) are persisted in `localStorage` under `cgmsim.ui-prefs`. Theme uses `cgmsim.theme`. Onboarded flag + chosen case live under `cgmsim.onboarded` / `cgmsim.case`.
 - **Panel overrides** (manual edits to therapy + patient form fields — therapy mode, programmed DIA, rapid analogue, SMB toggle, basal segments, long-acting morning/evening, temp basal inputs, true ISF/CR/DIA, weight, diabetes duration, carbs absorption time, gastric emptying rate) are persisted in `localStorage` under `cgmsim.panel-overrides`. True ISF stored in **mg/dL canonical** so the snapshot survives unit toggles. Applied on top of the case template at init. Cleared on first-time onboarding, on **↻ Restart onboarding**, and via the **↺ Reset to case defaults** button (next to Restart in the Patient tab). A `suppressPersist` flag wraps init / reset / re-onboarding so programmatic form-writes don't clobber a clear. **Glucose target is intentionally NOT persisted** — it always comes from the case template on reload / reset, so the AID-vs-PUMP/MDI defaults (110 vs 100 mg/dL) are restored cleanly. MDI submode, throttle, and running-state are **not** persisted — they reset on F5 by design.
 
-## Current state (as of 2026-05-06)
+## Current state (as of 2026-05-09)
 
 - **Visual refresh**: cooler palette (off GitHub-dark), distinct CGM/IOB/COB hues, solid TIR threshold lines at 3.9 and 10 mmol/L, taller basal strip with bold readout, sun/moon time-of-day indicator next to sim-time, BG digit flash on update with rapid-update debouncing, header rebuilt as IOB/COB stat chips with scenario badge promoted to readable.
+- **Dev banner**: thin red marquee at the very top of the page with the message "Development version, work in progress, not production ready" sliding right→left in an infinite seamless loop. Body uses flex-column so `#app` fills the remaining viewport. Wrapper has `role="status"` and the inner duplicated track is `aria-hidden="true"` so screen readers don't read the message twice.
 - **Onboarding case cards**: three human silhouette figures (lean / average / larger) replace the earlier circle placeholders. Cropped from a public-domain figure set (`uIKXf01.svg`); each variant has its own viewBox into the source coordinate space and shares the standard `translate(0,196) scale(0.1,-0.1)` transform. Filled with `currentColor` so they adapt to theme. All three render at the same display height with proportionally narrower/wider bodies — same person, different fatness. `patientFigureHTML(size, px)` in `packages/ui/src/onboarding/icons.ts`; `px` is the display **height**.
+- **Prednisone scenario tickbox**: a single case-agnostic toggle row below the patient cards in onboarding step 2, with help text warning that ticking it locks therapy to MDI. See the dedicated **Prednisone scenario** section above for the full feature spec.
 - **Default therapy mode**: MDI (default submode: LIVE; PRESCRIPTION available for hospital-tray scenarios). **Default display unit**: mmol/L. **Default zoom**: 12h. **Default evening LA injection time**: 21:00 in MDI LIVE, 22:00 in MDI PRESCRIPTION — `setSubmode` auto-flips between the two on user toggle, with a no-clobber rule (only flips when the current value is exactly the *other* submode's default; manual edits like 23:30 are preserved). Init / session-import call `setSubmode(submode, fromInit=true)` to skip the flip.
 - Zoom levels: **3h / 6h / 12h / 24h**. Scroll wheel and pinch snap to these four levels.
-- Throttle slider: continuous logarithmic slider, ×1 to ×3600, default ×10. Floating bubble follows the thumb on hover/drag. Arrow keys snap along ladder `[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600]`.
+- Throttle slider: continuous logarithmic slider labeled **"Acceleration factor"**, ×1 to ×3600, **default ×360** on start / reset / reopen-onboarding. Permanent floating bubble shows the current value above the slider thumb (no longer hover-only). Arrow keys snap along ladder `[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600]`.
 - AID mode: v3-faithful PID-IFB with corrected `calculateEquilibriumIOB` (numerical, matches actual pump steady-state IOB ~1.28 U at 0.8 U/hr Fiasp). SMB optional.
 - **AR2 forecast**: faithful Nightscout port at `coneFactor = 0`, 13 hollow grey ring dots, 65-min horizon, opacity fade per Nightscout's `futureOpacity` curve. On by default.
 - **BG display chip**: big Nightscout-style current BG, centered overlay on the chart, semi-transparent. On by default.
