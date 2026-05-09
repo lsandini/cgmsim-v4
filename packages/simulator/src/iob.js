@@ -40,8 +40,23 @@ export function calculateBolusIOB(boluses, nowSimTimeMs) {
     }, 0));
 }
 // ── Long-acting MDI IOB ──────────────────────────────────────────────────────
+/** Activity from "true" long-acting agonists only — excludes NovomixSlow. */
 export function calculateLongActingActivity(doses, nowSimTimeMs) {
     return roundTo8Decimals(doses.reduce((sum, d) => {
+        if (d.type === 'NovomixSlow') return sum;
+        const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
+        return sum + getExpTreatmentActivity({
+            peak: d.peak,
+            duration: d.duration,
+            minutesAgo: minAgo,
+            units: d.units,
+        });
+    }, 0));
+}
+/** Activity from the NovomixSlow component only — for stacked strip rendering. */
+export function calculatePremixSlowActivity(doses, nowSimTimeMs) {
+    return roundTo8Decimals(doses.reduce((sum, d) => {
+        if (d.type !== 'NovomixSlow') return sum;
         const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
         return sum + getExpTreatmentActivity({
             peak: d.peak,

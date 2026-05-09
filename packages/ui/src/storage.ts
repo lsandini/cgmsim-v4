@@ -11,7 +11,7 @@
  * flags this with "(legacy)".
  */
 
-import type { WorkerState, DisplayUnit, Prescription, LongActingSchedule } from '@cgmsim/shared';
+import type { WorkerState, DisplayUnit, Prescription, LongActingSchedule, PremixSchedule } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 
 const ENVELOPE_VERSION = 2;
@@ -112,6 +112,11 @@ export interface PanelOverrides {
     laEveningInputs: { type: string; dose: string; time: string };
     tempBasalRate: string;
     tempBasalDuration: string;
+    /** Premix (Novomix) BID schedules — null when scenario is off or slot unset. */
+    premixMorning?: PremixSchedule | null;
+    premixEvening?: PremixSchedule | null;
+    premixMorningInputs?: { dose: string; time: string };
+    premixEveningInputs?: { dose: string; time: string };
   };
   patient: {
     trueISFMgdl: number;

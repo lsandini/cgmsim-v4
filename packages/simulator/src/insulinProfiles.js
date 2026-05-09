@@ -37,4 +37,10 @@ export const LONG_ACTING_PROFILES = {
         duration: () => 42 * 60,
         peak: (dur) => dur / 3,
     },
+    /** Novomix slow component — protaminated aspart, NPH-like PK. v3 NPH:
+     *  dur = (12 + 20·U/wt)·60 min; peak = dur/3.5. Engine-spawned only. */
+    NovomixSlow: {
+        duration: (units, weightKg) => (12 + 20 * units / weightKg) * 60,
+        peak: (dur) => dur / 3.5,
+    },
 };

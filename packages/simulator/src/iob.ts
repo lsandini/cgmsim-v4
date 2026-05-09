@@ -52,9 +52,30 @@ export function calculateBolusIOB(boluses: ActiveBolus[], nowSimTimeMs: number):
 
 // ── Long-acting MDI IOB ──────────────────────────────────────────────────────
 
+/** Activity from "true" long-acting agonists only (Glargine/Detemir/Degludec).
+ *  Excludes Novomix slow component — that's reported separately so the
+ *  bottom-of-chart activity strip can stack the two layers in different colors. */
 export function calculateLongActingActivity(doses: ActiveLongActing[], nowSimTimeMs: number): number {
   return roundTo8Decimals(
     doses.reduce((sum, d) => {
+      if (d.type === 'NovomixSlow') return sum;
+      const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
+      return sum + getExpTreatmentActivity({
+        peak: d.peak,
+        duration: d.duration,
+        minutesAgo: minAgo,
+        units: d.units,
+      });
+    }, 0),
+  );
+}
+
+/** Activity from the NovomixSlow protaminated 70% component only — companion
+ *  to calculateLongActingActivity for the stacked bottom-strip rendering. */
+export function calculatePremixSlowActivity(doses: ActiveLongActing[], nowSimTimeMs: number): number {
+  return roundTo8Decimals(
+    doses.reduce((sum, d) => {
+      if (d.type !== 'NovomixSlow') return sum;
       const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
       return sum + getExpTreatmentActivity({
         peak: d.peak,

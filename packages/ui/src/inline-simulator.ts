@@ -19,6 +19,7 @@ import type {
   ActiveLongActing,
   ActivePrednisone,
   LongActingSchedule,
+  PremixSchedule,
   SimEvent,
   TempBasal,
 } from '@cgmsim/shared';
@@ -32,6 +33,7 @@ import {
   calculateBolusIOB,
   calculatePumpBasalIOB,
   calculateLongActingActivity,
+  calculatePremixSlowActivity,
 } from '../../simulator/src/iob.js';
 import type { PumpBasalBolus } from '../../simulator/src/iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from '../../simulator/src/carbs.js';
@@ -144,6 +146,65 @@ export class InlineSimulator {
 
     this.fireSlotIfDue('morning', s.therapy.longActingMorning, minuteOfDay, simDay);
     this.fireSlotIfDue('evening', s.therapy.longActingEvening, minuteOfDay, simDay);
+
+    // Premix (Novomix 30) daily-fire — same forward-only rule as long-acting.
+    this.firePremixSlotIfDue('morning', s.therapy.premixMorning, minuteOfDay, simDay);
+    this.firePremixSlotIfDue('evening', s.therapy.premixEvening, minuteOfDay, simDay);
+  }
+
+  private firePremixSlotIfDue(
+    slot: 'morning' | 'evening',
+    schedule: PremixSchedule | null,
+    minuteOfDay: number,
+    simDay: number,
+  ): void {
+    if (schedule === null) return;
+    const s = this.s;
+    const lastDayKey = slot === 'morning' ? 'lastPremixMorningDay' : 'lastPremixEveningDay';
+    if (minuteOfDay < schedule.injectionMinute) return;
+    if (simDay === s[lastDayKey]) return;
+    s[lastDayKey] = simDay;
+    this.injectNovomix(schedule.units, slot);
+  }
+
+  /**
+   * Novomix 30 injection — decomposes 30/70 into a rapid Aspart bolus and
+   * a slow NPH-style component. ONE event marker is emitted (kind:'novomix')
+   * but TWO active records are pushed so IOB correctly counts the rapid
+   * fraction and the long-acting activity strip shows the slow tail.
+   */
+  injectNovomix(totalUnits: number, slot: 'morning' | 'evening', simTimeMs?: number): void {
+    const s = this.s;
+    const t = simTimeMs ?? s.simTimeMs;
+
+    const rapidUnits = totalUnits * 0.30;
+    const slowUnits  = totalUnits * 0.70;
+
+    // 30% rapid Aspart — pushed directly into activeBoluses (counts toward IOB).
+    s.activeBoluses.push({
+      id: `nx-rapid-${slot}-${t}`,
+      simTimeMs: t,
+      units: rapidUnits,
+      analogue: 'Aspart',
+      dia: s.patient.dia,
+    });
+
+    // 70% protaminated slow component — NovomixSlow PK profile.
+    const pk = LONG_ACTING_PROFILES['NovomixSlow'];
+    const duration = pk.duration(slowUnits, s.patient.weight);
+    const peak = pk.peak(duration);
+    s.activeLongActing.push({
+      id: `nx-slow-${slot}-${t}`,
+      simTimeMs: t,
+      units: slowUnits,
+      type: 'NovomixSlow',
+      peak,
+      duration,
+    });
+
+    const ev: SimEvent = { kind: 'novomix', simTimeMs: t, units: totalUnits, slot };
+    s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
   }
 
   /**
@@ -363,17 +424,21 @@ export class InlineSimulator {
     s.simTimeMs   = nowMs + TICK_SIM_MS;
 
     // Long-acting activity in U/hr-equivalent (calculate* returns U/min). Always
-    // computed; the renderer only displays it in MDI mode.
+    // computed; the renderer only displays it in MDI mode. NovomixSlow doses
+    // are reported separately as premixSlowActivity for the stacked strip.
     const longActingActivity = isPump
       ? 0
       : calculateLongActingActivity(s.activeLongActing, nowMs) * 60;
+    const premixSlowActivity = isPump
+      ? 0
+      : calculatePremixSlowActivity(s.activeLongActing, nowMs) * 60;
 
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
       deltaMinutes: 5, trend: delta.deltaBG / TICK_SIM_MINUTES, basalRate,
       longActingActivity: Math.round(longActingActivity * 1000) / 1000,
-      premixSlowActivity: 0,  // populated in Phase 2
+      premixSlowActivity: Math.round(premixSlowActivity * 1000) / 1000,
     };
     for (const h of this.tickHandlers) h(snap);
   }

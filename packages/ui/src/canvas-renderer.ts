@@ -42,7 +42,9 @@ type ColorPalette = {
   cobFill: string; cobFillTop: string; cobLine: string;
   basalFill: string; basalLine: string;
   longActingActivityFill: string; longActingActivityLine: string;
+  premixSlowActivityFill: string; premixSlowActivityLine: string;
   bolusMarker: string; mealMarker: string; smbMarker: string; longActingMarker: string;
+  novomixMarker: string; novomixMarkerBottom: string;
   bolusMarkerBottom: string; mealMarkerBottom: string; smbMarkerBottom: string; longActingMarkerBottom: string;
   markerStroke: string;
   markerLabelBg: string;
@@ -79,10 +81,14 @@ const DARK_PALETTE: ColorPalette = {
   basalLine:  'rgba(217, 119, 6, 0.85)',
   longActingActivityFill: 'rgba(20, 184, 166, 0.22)',  // teal-500 translucent
   longActingActivityLine: 'rgba(13, 148, 136, 0.90)',  // teal-600
+  premixSlowActivityFill: 'rgba(225, 29, 72, 0.22)',   // rose-600 translucent — Novomix slow component
+  premixSlowActivityLine: 'rgba(190, 18, 60, 0.90)',   // rose-700
   bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
   mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
   longActingMarker: '#14b8a6',                   // teal — distinct hue family from bolus sky-blue
+  novomixMarker: '#e11d48',                      // rose-600 — distinct from danger reds and meal amber
+  novomixMarkerBottom: '#be123c',                // rose-700 — gradient bottom
   bolusMarkerBottom:      '#2563eb',             // gradient bottom — deeper blue
   mealMarkerBottom:       '#d97706',             // gradient bottom — deeper amber, pulls hue away from yellow
   smbMarkerBottom:        '#9333ea',             // gradient bottom — deeper purple
@@ -122,10 +128,14 @@ const LIGHT_PALETTE: ColorPalette = {
   basalLine:  'rgba(217, 119, 6, 0.85)',
   longActingActivityFill: 'rgba(20, 184, 166, 0.20)',
   longActingActivityLine: 'rgba(13, 148, 136, 0.90)',
+  premixSlowActivityFill: 'rgba(225, 29, 72, 0.20)',   // rose-600 — Novomix slow component
+  premixSlowActivityLine: 'rgba(190, 18, 60, 0.90)',
   bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
   mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
   longActingMarker: '#14b8a6',                   // teal — distinct hue family from bolus sky-blue
+  novomixMarker: '#e11d48',                      // rose-600 — theme-unified
+  novomixMarkerBottom: '#be123c',
   bolusMarkerBottom:      '#2563eb',
   mealMarkerBottom:       '#d97706',
   smbMarkerBottom:        '#9333ea',
@@ -1125,19 +1135,22 @@ export class CGMRenderer {
     ctx.fillText('LA act.', 0, 0);
     ctx.restore();
 
-    // Collect visible (offset, activity) points. Same lookahead/cull pattern as
-    // the IOB/COB overlays — one extra tick past the left edge so the leftmost
-    // segment slides smoothly under the clip.
-    const pts: { x: number; y: number }[] = [];
+    // Collect visible (offset, yLA, yPremix) points. Same lookahead/cull pattern
+    // as the IOB/COB overlays — one extra tick past the left edge so the
+    // leftmost segment slides smoothly under the clip. Each point carries both
+    // the long-acting curve y AND the premix-slow stacked y for the rose layer.
+    const pts: { x: number; yLA: number; yPremix: number }[] = [];
     let lastVisible: RingEntry | null = null;
     this.ring.forEach((entry) => {
       const offsetMin = entry.simTimeMs / 60_000 - winStartMin;
       if (offsetMin < -TICK_INTERVAL_MIN || offsetMin > this.viewWindowMinutes) return;
       if (entry.simTimeMs > this.displayedSimMs) return;
-      pts.push({
-        x: this.timeX(offsetMin),
-        y: panelBot - Math.min(entry.longActingActivity / MAX_RATE, 1) * this.BASAL_PANEL_H,
-      });
+      const yLA = panelBot - Math.min(entry.longActingActivity / MAX_RATE, 1) * this.BASAL_PANEL_H;
+      // Premix slow component stacks ON TOP of the LA activity. Clamp the
+      // additional height so it never crosses the panel top.
+      const premixH = Math.min(entry.premixSlowActivity / MAX_RATE, 1) * this.BASAL_PANEL_H;
+      const yPremix = Math.max(panelTop, yLA - premixH);
+      pts.push({ x: this.timeX(offsetMin), yLA, yPremix });
       lastVisible = entry;
     });
     if (pts.length === 0) return;
@@ -1148,30 +1161,56 @@ export class CGMRenderer {
     if (last && last.simTimeMs < this.displayedSimMs) {
       const nowOffsetMin = this.displayedSimMs / 60_000 - winStartMin;
       const lastPt = pts[pts.length - 1]!;
-      pts.push({ x: this.timeX(nowOffsetMin), y: lastPt.y });
+      pts.push({ x: this.timeX(nowOffsetMin), yLA: lastPt.yLA, yPremix: lastPt.yPremix });
     }
 
     this.withBasalClip(panelTop, () => {
-      // Filled area
+      // Teal LA layer: bounded below by panelBot, above by yLA.
       ctx.beginPath();
       ctx.moveTo(pts[0]!.x, panelBot);
-      for (const p of pts) ctx.lineTo(p.x, p.y);
+      for (const p of pts) ctx.lineTo(p.x, p.yLA);
       ctx.lineTo(pts[pts.length - 1]!.x, panelBot);
       ctx.closePath();
       ctx.fillStyle = COLORS.longActingActivityFill;
       ctx.fill();
 
-      // Smooth line on top
+      // Rose Novomix-slow layer: stacked on top, bounded below by yLA, above by yPremix.
+      // Skipped entirely when no Novomix is on board (premixH = 0 → yPremix === yLA → empty).
+      const hasPremix = pts.some(p => p.yPremix < p.yLA - 0.5);
+      if (hasPremix) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x, pts[0]!.yLA);
+        for (const p of pts) ctx.lineTo(p.x, p.yPremix);
+        for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i]!.x, pts[i]!.yLA);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.premixSlowActivityFill;
+        ctx.fill();
+      }
+
+      // Teal smooth line — at the LA boundary.
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i]!;
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+        if (i === 0) ctx.moveTo(p.x, p.yLA);
+        else ctx.lineTo(p.x, p.yLA);
       }
       ctx.strokeStyle = COLORS.longActingActivityLine;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([]);
       ctx.stroke();
+
+      // Rose smooth line — at the top of the stacked Novomix layer.
+      if (hasPremix) {
+        ctx.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i]!;
+          if (i === 0) ctx.moveTo(p.x, p.yPremix);
+          else ctx.lineTo(p.x, p.yPremix);
+        }
+        ctx.strokeStyle = COLORS.premixSlowActivityLine;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
     });
 
     // Current activity readout inside the panel (bottom-left).
@@ -1483,6 +1522,21 @@ export class CGMRenderer {
         ctx.fill();
         ctx.stroke();
         this.drawLabelChip(`${ev.units} U`, x, y + 8, 'center', 'top', COLORS.smbMarker);
+      } else if (ev.kind === 'novomix') {
+        // Novomix premix injection — rose circle on the BG curve, dose-scaled
+        // like bolus/longActing. ev.units is the TOTAL premix dose (engine
+        // splits 30/70 internally; one marker per injection).
+        const cy = this.bgYAtEventTime(ev.simTimeMs);
+        const r  = this.treatmentRadius(ev.units, 'insulin');
+        const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
+        grad.addColorStop(0, COLORS.novomixMarkerBottom + 'D9');
+        grad.addColorStop(1, COLORS.novomixMarker + 'D9');
+        ctx.beginPath();
+        ctx.arc(x, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.stroke();
+        this.drawLabelChip(`Nx ${ev.units}U`, x, cy + r + 4, 'center', 'top', COLORS.novomixMarker);
       }
     }
     ctx.textAlign = 'left';

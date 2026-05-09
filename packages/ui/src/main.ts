@@ -3,7 +3,7 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile, Prescription, MDISubmode, VirtualPatient } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, PremixSchedule, TherapyProfile, Prescription, MDISubmode, VirtualPatient } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
@@ -289,6 +289,10 @@ function readPanelSnapshot(): PanelOverrides {
       laEveningInputs:    { type: eveningRefs.type.value, dose: eveningRefs.dose.value, time: eveningRefs.time.value },
       tempBasalRate:      tempBasalRate.value,
       tempBasalDuration:  tempBasalDur.value,
+      premixMorning:      activePremix.morning,
+      premixEvening:      activePremix.evening,
+      premixMorningInputs: { dose: premixMorningRefs.dose.value, time: premixMorningRefs.time.value },
+      premixEveningInputs: { dose: premixEveningRefs.dose.value, time: premixEveningRefs.time.value },
     },
     patient: {
       trueISFMgdl:         fromDisplay(parseFloat(trueISF.value)),
@@ -327,6 +331,17 @@ function applyPanelSnapshot(snap: PanelOverrides): void {
   eveningRefs.time.value = snap.therapy.laEveningInputs.time;
   setSlot('morning', snap.therapy.longActingMorning);
   setSlot('evening', snap.therapy.longActingEvening);
+
+  if (snap.therapy.premixMorningInputs) {
+    premixMorningRefs.dose.value = snap.therapy.premixMorningInputs.dose;
+    premixMorningRefs.time.value = snap.therapy.premixMorningInputs.time;
+  }
+  if (snap.therapy.premixEveningInputs) {
+    premixEveningRefs.dose.value = snap.therapy.premixEveningInputs.dose;
+    premixEveningRefs.time.value = snap.therapy.premixEveningInputs.time;
+  }
+  setPremixSlot('morning', snap.therapy.premixMorning ?? null);
+  setPremixSlot('evening', snap.therapy.premixEvening ?? null);
 
   tempBasalRate.value = snap.therapy.tempBasalRate;
   tempBasalDur.value  = snap.therapy.tempBasalDuration;
@@ -614,11 +629,11 @@ function setSlotActiveState(refs: SlotRowRefs, schedule: LongActingSchedule | nu
   refs.setBtn.textContent = isActive ? 'Edit' : 'Set';
 }
 
-function shakeRow(refs: SlotRowRefs): void {
-  refs.row.classList.remove('invalid');
+function shakeRow(row: HTMLDivElement): void {
+  row.classList.remove('invalid');
   // Force reflow so the animation re-triggers on the next add
-  void refs.row.offsetWidth;
-  refs.row.classList.add('invalid');
+  void row.offsetWidth;
+  row.classList.add('invalid');
 }
 
 const morningRefs = getSlotRowRefs(laRowMorning);
@@ -657,7 +672,7 @@ function onSetUnsetClick(slot: SlotName): void {
   // Currently Unset → validate and Set
   const schedule = readSlotSchedule(refs, slot);
   if (schedule === null) {
-    shakeRow(refs);
+    shakeRow(refs.row);
     return;
   }
   setSlot(slot, schedule);
@@ -685,7 +700,106 @@ function syncSlotsFromTherapy(therapy: TherapyProfile): void {
   };
   apply('morning', therapy.longActingMorning);
   apply('evening', therapy.longActingEvening);
+
+  // Premix slots — fewer fields (no type dropdown).
+  const applyPremix = (slot: SlotName, schedule: PremixSchedule | null): void => {
+    const refs = premixRefs[slot];
+    if (schedule !== null) {
+      refs.dose.value = String(schedule.units);
+      refs.time.value = minutesToTimeString(schedule.injectionMinute);
+    }
+    activePremix[slot] = schedule;
+    setPremixActiveState(refs, schedule);
+  };
+  applyPremix('morning', therapy.premixMorning);
+  applyPremix('evening', therapy.premixEvening);
 }
+
+// ── Premix (Novomix 30) slot machinery ───────────────────────────────────────
+// Mirrors the long-acting slot pattern but with fewer fields (no type select)
+// since Novomix 30 is the only premix variant for v1.
+
+interface PremixSlotRefs {
+  row:    HTMLDivElement;
+  dose:   HTMLInputElement;
+  time:   HTMLInputElement;
+  setBtn: HTMLButtonElement;
+}
+
+function getPremixRowRefs(row: HTMLDivElement): PremixSlotRefs {
+  return {
+    row,
+    dose:   row.querySelector<HTMLInputElement>('.premix-dose')!,
+    time:   row.querySelector<HTMLInputElement>('.premix-time')!,
+    setBtn: row.querySelector<HTMLButtonElement>('.premix-set-btn')!,
+  };
+}
+
+function readPremixSchedule(refs: PremixSlotRefs, slot: SlotName): PremixSchedule | null {
+  const dose = parseFloat(refs.dose.value);
+  if (!Number.isFinite(dose) || dose < 1 || dose > 80) return null;
+  const minute = timeStringToMinutes(refs.time.value);
+  if (!Number.isFinite(minute)) return null;
+  const lo = slot === 'morning' ? 0 : 12 * 60;
+  const hi = slot === 'morning' ? 12 * 60 - 1 : 24 * 60 - 1;
+  if (minute < lo || minute > hi) return null;
+  return { units: dose, injectionMinute: minute };
+}
+
+function setPremixActiveState(refs: PremixSlotRefs, schedule: PremixSchedule | null): void {
+  const isActive = schedule !== null;
+  refs.row.classList.toggle('active', isActive);
+  refs.dose.disabled = isActive;
+  refs.time.disabled = isActive;
+  const timeWidget = (refs.time as unknown as { _time24?: HTMLElement })._time24;
+  if (timeWidget) {
+    timeWidget.classList.toggle('disabled', isActive);
+    timeWidget.tabIndex = isActive ? -1 : 0;
+  }
+  refs.setBtn.textContent = isActive ? 'Edit' : 'Set';
+}
+
+const premixMorningRefs = getPremixRowRefs(getEl<HTMLDivElement>('premix-row-morning'));
+const premixEveningRefs = getPremixRowRefs(getEl<HTMLDivElement>('premix-row-evening'));
+enhanceTimeInput(premixMorningRefs.time);
+enhanceTimeInput(premixEveningRefs.time);
+
+const premixRefs: Record<SlotName, PremixSlotRefs> = {
+  morning: premixMorningRefs,
+  evening: premixEveningRefs,
+};
+
+const activePremix: Record<SlotName, PremixSchedule | null> = {
+  morning: null,
+  evening: null,
+};
+
+function setPremixSlot(slot: SlotName, schedule: PremixSchedule | null): void {
+  activePremix[slot] = schedule;
+  setPremixActiveState(premixRefs[slot], schedule);
+  bridge.setTherapyParam({
+    premixMorning: activePremix.morning,
+    premixEvening: activePremix.evening,
+  });
+  persistPanelOverrides();
+}
+
+function onPremixSetUnsetClick(slot: SlotName): void {
+  const refs = premixRefs[slot];
+  if (activePremix[slot] !== null) {
+    setPremixSlot(slot, null);
+    return;
+  }
+  const schedule = readPremixSchedule(refs, slot);
+  if (schedule === null) {
+    shakeRow(refs.row);
+    return;
+  }
+  setPremixSlot(slot, schedule);
+}
+
+premixMorningRefs.setBtn.addEventListener('click', () => onPremixSetUnsetClick('morning'));
+premixEveningRefs.setBtn.addEventListener('click', () => onPremixSetUnsetClick('evening'));
 
 // ── Therapy changes ───────────────────────────────────────────────────────────
 
@@ -1223,9 +1337,19 @@ function writeTherapyToForm(c: PatientCase, choice: TherapyChoice, withPrednison
     eveningRefs.time.value = minutesToTimeString(therapy.longActingEvening.injectionMinute);
     setSlot('evening', therapy.longActingEvening);
   }
-  // Premix + Prednisone slot defaults are populated in Phase 2/3 — for now
-  // buildTherapyForCase carries them in the TherapyProfile; the UI rows that
-  // consume them don't exist yet.
+  // Premix slots (only meaningful when MDI + withPrednisone).
+  setPremixSlot('morning', null);
+  setPremixSlot('evening', null);
+  if (therapy.premixMorning) {
+    premixMorningRefs.dose.value = String(therapy.premixMorning.units);
+    premixMorningRefs.time.value = minutesToTimeString(therapy.premixMorning.injectionMinute);
+    setPremixSlot('morning', therapy.premixMorning);
+  }
+  if (therapy.premixEvening) {
+    premixEveningRefs.dose.value = String(therapy.premixEvening.units);
+    premixEveningRefs.time.value = minutesToTimeString(therapy.premixEvening.injectionMinute);
+    setPremixSlot('evening', therapy.premixEvening);
+  }
 }
 
 getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', async () => {

@@ -7,7 +7,7 @@
  * getExpTreatmentActivity / getExpTreatmentIOB in utils.ts.
  */
 
-import type { RapidAnalogueType, LongActingType } from '@cgmsim/shared';
+import type { RapidAnalogueType, LongActingPKType } from '@cgmsim/shared';
 
 export interface InsulinProfile {
   /** Time to peak activity (minutes). */
@@ -41,7 +41,7 @@ export const RAPID_PROFILES: Record<RapidAnalogueType, InsulinProfile> = {
 
 // ── Long-acting analogues (v3-faithful, dose- and weight-dependent) ──────────
 
-export const LONG_ACTING_PROFILES: Record<LongActingType, LongActingPKProfile> = {
+export const LONG_ACTING_PROFILES: Record<LongActingPKType, LongActingPKProfile> = {
   /** Glargine U100 (Lantus). v3 GLA: dur = (22 + 12·U/wt)·60 min; peak = dur/2.5 */
   GlargineU100: {
     duration: (units, weightKg) => (22 + 12 * units / weightKg) * 60,
@@ -61,5 +61,13 @@ export const LONG_ACTING_PROFILES: Record<LongActingType, LongActingPKProfile> =
   Degludec: {
     duration: () => 42 * 60,
     peak: (dur) => dur / 3,
+  },
+  /** Novomix slow component — protaminated aspart, NPH-like PK. v3 NPH:
+   *  dur = (12 + 20·U/wt)·60 min; peak = dur/3.5. Engine-spawned only;
+   *  users schedule "Novomix" (the whole premix), and at injection time the
+   *  engine pushes 30% as rapid Aspart bolus + 70% under this profile. */
+  NovomixSlow: {
+    duration: (units, weightKg) => (12 + 20 * units / weightKg) * 60,
+    peak: (dur) => dur / 3.5,
   },
 };
