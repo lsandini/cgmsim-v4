@@ -11,7 +11,7 @@
  * flags this with "(legacy)".
  */
 
-import type { WorkerState, DisplayUnit, Prescription, LongActingSchedule, PremixSchedule } from '@cgmsim/shared';
+import type { WorkerState, DisplayUnit, Prescription, LongActingSchedule, PremixSchedule, PrednisoneSchedule } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 
 const ENVELOPE_VERSION = 2;
@@ -117,6 +117,9 @@ export interface PanelOverrides {
     premixEvening?: PremixSchedule | null;
     premixMorningInputs?: { dose: string; time: string };
     premixEveningInputs?: { dose: string; time: string };
+    /** Oral prednisone schedule — null when scenario is off or slot unset. */
+    prednisoneSchedule?: PrednisoneSchedule | null;
+    prednisoneInputs?: { dose: string; time: string };
   };
   patient: {
     trueISFMgdl: number;

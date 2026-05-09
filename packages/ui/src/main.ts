@@ -3,7 +3,7 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, PremixSchedule, TherapyProfile, Prescription, MDISubmode, VirtualPatient } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, PremixSchedule, PrednisoneSchedule, TherapyProfile, Prescription, MDISubmode, VirtualPatient } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
@@ -293,6 +293,8 @@ function readPanelSnapshot(): PanelOverrides {
       premixEvening:      activePremix.evening,
       premixMorningInputs: { dose: premixMorningRefs.dose.value, time: premixMorningRefs.time.value },
       premixEveningInputs: { dose: premixEveningRefs.dose.value, time: premixEveningRefs.time.value },
+      prednisoneSchedule:  activePrednisone,
+      prednisoneInputs:    { dose: prednisoneRefs.dose.value, time: prednisoneRefs.time.value },
     },
     patient: {
       trueISFMgdl:         fromDisplay(parseFloat(trueISF.value)),
@@ -342,6 +344,12 @@ function applyPanelSnapshot(snap: PanelOverrides): void {
   }
   setPremixSlot('morning', snap.therapy.premixMorning ?? null);
   setPremixSlot('evening', snap.therapy.premixEvening ?? null);
+
+  if (snap.therapy.prednisoneInputs) {
+    prednisoneRefs.dose.value = snap.therapy.prednisoneInputs.dose;
+    prednisoneRefs.time.value = snap.therapy.prednisoneInputs.time;
+  }
+  setPrednisoneSchedule(snap.therapy.prednisoneSchedule ?? null);
 
   tempBasalRate.value = snap.therapy.tempBasalRate;
   tempBasalDur.value  = snap.therapy.tempBasalDuration;
@@ -713,6 +721,14 @@ function syncSlotsFromTherapy(therapy: TherapyProfile): void {
   };
   applyPremix('morning', therapy.premixMorning);
   applyPremix('evening', therapy.premixEvening);
+
+  // Prednisone single morning slot.
+  if (therapy.prednisoneSchedule !== null) {
+    prednisoneRefs.dose.value = String(therapy.prednisoneSchedule.doseMg);
+    prednisoneRefs.time.value = minutesToTimeString(therapy.prednisoneSchedule.injectionMinute);
+  }
+  activePrednisone = therapy.prednisoneSchedule;
+  setPrednisoneActiveState(prednisoneRefs, therapy.prednisoneSchedule);
 }
 
 // ── Premix (Novomix 30) slot machinery ───────────────────────────────────────
@@ -727,11 +743,14 @@ interface PremixSlotRefs {
 }
 
 function getPremixRowRefs(row: HTMLDivElement): PremixSlotRefs {
+  // Premix rows use the same .la-* classes as long-acting rows for shared
+  // styling. Queries are scoped to `row`, so they pick up only this row's
+  // children (no cross-talk with the actual long-acting rows above).
   return {
     row,
-    dose:   row.querySelector<HTMLInputElement>('.premix-dose')!,
-    time:   row.querySelector<HTMLInputElement>('.premix-time')!,
-    setBtn: row.querySelector<HTMLButtonElement>('.premix-set-btn')!,
+    dose:   row.querySelector<HTMLInputElement>('.la-dose')!,
+    time:   row.querySelector<HTMLInputElement>('.la-time')!,
+    setBtn: row.querySelector<HTMLButtonElement>('.la-set-btn')!,
   };
 }
 
@@ -800,6 +819,76 @@ function onPremixSetUnsetClick(slot: SlotName): void {
 
 premixMorningRefs.setBtn.addEventListener('click', () => onPremixSetUnsetClick('morning'));
 premixEveningRefs.setBtn.addEventListener('click', () => onPremixSetUnsetClick('evening'));
+
+// ── Prednisone slot machinery ────────────────────────────────────────────────
+// Single morning slot (06:00–11:59 enforced). Mirrors the long-acting slot
+// pattern but with mg dosing instead of units, and no insulin-type dropdown.
+
+interface PrednisoneSlotRefs {
+  row:    HTMLDivElement;
+  dose:   HTMLInputElement;
+  time:   HTMLInputElement;
+  setBtn: HTMLButtonElement;
+}
+
+function getPrednisoneRowRefs(row: HTMLDivElement): PrednisoneSlotRefs {
+  return {
+    row,
+    dose:   row.querySelector<HTMLInputElement>('.la-dose')!,
+    time:   row.querySelector<HTMLInputElement>('.la-time')!,
+    setBtn: row.querySelector<HTMLButtonElement>('.la-set-btn')!,
+  };
+}
+
+function readPrednisoneSchedule(refs: PrednisoneSlotRefs): PrednisoneSchedule | null {
+  const mg = parseFloat(refs.dose.value);
+  if (!Number.isFinite(mg) || mg < 1 || mg > 100) return null;
+  const minute = timeStringToMinutes(refs.time.value);
+  if (!Number.isFinite(minute)) return null;
+  // Morning-only: 06:00 (360) to 11:59 (719) inclusive.
+  if (minute < 6 * 60 || minute > 12 * 60 - 1) return null;
+  return { doseMg: mg, injectionMinute: minute };
+}
+
+function setPrednisoneActiveState(refs: PrednisoneSlotRefs, schedule: PrednisoneSchedule | null): void {
+  const isActive = schedule !== null;
+  refs.row.classList.toggle('active', isActive);
+  refs.dose.disabled = isActive;
+  refs.time.disabled = isActive;
+  const timeWidget = (refs.time as unknown as { _time24?: HTMLElement })._time24;
+  if (timeWidget) {
+    timeWidget.classList.toggle('disabled', isActive);
+    timeWidget.tabIndex = isActive ? -1 : 0;
+  }
+  refs.setBtn.textContent = isActive ? 'Edit' : 'Set';
+}
+
+const prednisoneRefs = getPrednisoneRowRefs(getEl<HTMLDivElement>('prednisone-row'));
+enhanceTimeInput(prednisoneRefs.time);
+
+let activePrednisone: PrednisoneSchedule | null = null;
+
+function setPrednisoneSchedule(schedule: PrednisoneSchedule | null): void {
+  activePrednisone = schedule;
+  setPrednisoneActiveState(prednisoneRefs, schedule);
+  bridge.setTherapyParam({ prednisoneSchedule: schedule });
+  persistPanelOverrides();
+}
+
+function onPrednisoneSetUnsetClick(): void {
+  if (activePrednisone !== null) {
+    setPrednisoneSchedule(null);
+    return;
+  }
+  const schedule = readPrednisoneSchedule(prednisoneRefs);
+  if (schedule === null) {
+    shakeRow(prednisoneRefs.row);
+    return;
+  }
+  setPrednisoneSchedule(schedule);
+}
+
+prednisoneRefs.setBtn.addEventListener('click', onPrednisoneSetUnsetClick);
 
 // ── Therapy changes ───────────────────────────────────────────────────────────
 
@@ -1170,7 +1259,7 @@ btnImport.addEventListener('click', async () => {
       trend: last?.trend ?? 0,
       basalRate: last?.basalRate ?? 0,
       longActingActivity: last?.longActingActivity ?? 0,
-      premixSlowActivity: last?.premixSlowActivity ?? 0,
+      premixActivity: last?.premixActivity ?? 0,
     };
     appState.lastSnap = hudSnap;
     updateHUD(hudSnap);
@@ -1349,6 +1438,13 @@ function writeTherapyToForm(c: PatientCase, choice: TherapyChoice, withPrednison
     premixEveningRefs.dose.value = String(therapy.premixEvening.units);
     premixEveningRefs.time.value = minutesToTimeString(therapy.premixEvening.injectionMinute);
     setPremixSlot('evening', therapy.premixEvening);
+  }
+  // Prednisone slot (also MDI + withPrednisone only).
+  setPrednisoneSchedule(null);
+  if (therapy.prednisoneSchedule) {
+    prednisoneRefs.dose.value = String(therapy.prednisoneSchedule.doseMg);
+    prednisoneRefs.time.value = minutesToTimeString(therapy.prednisoneSchedule.injectionMinute);
+    setPrednisoneSchedule(therapy.prednisoneSchedule);
   }
 }
 

@@ -20,6 +20,7 @@ import type {
   ActivePrednisone,
   LongActingSchedule,
   PremixSchedule,
+  PrednisoneSchedule,
   SimEvent,
   TempBasal,
 } from '@cgmsim/shared';
@@ -34,6 +35,7 @@ import {
   calculatePumpBasalIOB,
   calculateLongActingActivity,
   calculatePremixSlowActivity,
+  calculateNovomixRapidActivity,
 } from '../../simulator/src/iob.js';
 import type { PumpBasalBolus } from '../../simulator/src/iob.js';
 import { calculateCOB, purgeAbsorbedMeals, resolveMealSplit } from '../../simulator/src/carbs.js';
@@ -150,6 +152,46 @@ export class InlineSimulator {
     // Premix (Novomix 30) daily-fire — same forward-only rule as long-acting.
     this.firePremixSlotIfDue('morning', s.therapy.premixMorning, minuteOfDay, simDay);
     this.firePremixSlotIfDue('evening', s.therapy.premixEvening, minuteOfDay, simDay);
+
+    // Prednisone daily-fire — single morning dose, same forward-only rule.
+    this.firePrednisoneIfDue(s.therapy.prednisoneSchedule, minuteOfDay, simDay);
+  }
+
+  private firePrednisoneIfDue(
+    schedule: PrednisoneSchedule | null,
+    minuteOfDay: number,
+    simDay: number,
+  ): void {
+    if (schedule === null) return;
+    const s = this.s;
+    if (minuteOfDay < schedule.injectionMinute) return;
+    if (simDay === s.lastPrednisoneDay) return;
+    s.lastPrednisoneDay = simDay;
+    this.injectPrednisone(schedule.doseMg);
+  }
+
+  /**
+   * Oral prednisone dose. Stamps PK params from a v3-faithful biexponential
+   * formula keyed on mg: duration = (16 + 0.3·mg)·60 min, peak = duration / 3.
+   * Pushed into activePrednisoneDoses; the BG-effect is applied via Model C
+   * in computeDeltaBG (resistance multiplier on ISF + hepatic-output boost).
+   * One SimEvent { kind:'prednisone' } is emitted for the canvas tick mark.
+   */
+  injectPrednisone(doseMg: number, simTimeMs?: number): void {
+    const s = this.s;
+    const t = simTimeMs ?? s.simTimeMs;
+    const duration = (16 + 0.3 * doseMg) * 60;
+    const peak     = duration / 3;
+    s.activePrednisoneDoses.push({
+      id: `pred-${t}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: t,
+      doseMg,
+      peak,
+      duration,
+    });
+    const ev: SimEvent = { kind: 'prednisone', simTimeMs: t, doseMg };
+    s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
   }
 
   private firePremixSlotIfDue(
@@ -181,12 +223,15 @@ export class InlineSimulator {
     const slowUnits  = totalUnits * 0.70;
 
     // 30% rapid Aspart — pushed directly into activeBoluses (counts toward IOB).
+    // The `source: 'novomix'` tag attributes its activity to the rose premix
+    // strip; IOB and BG calculations still treat it as a regular Aspart bolus.
     s.activeBoluses.push({
       id: `nx-rapid-${slot}-${t}`,
       simTimeMs: t,
       units: rapidUnits,
       analogue: 'Aspart',
       dia: s.patient.dia,
+      source: 'novomix',
     });
 
     // 70% protaminated slow component — NovomixSlow PK profile.
@@ -364,6 +409,9 @@ export class InlineSimulator {
     s.activeLongActing = s.activeLongActing.filter(d =>
       (nowMs - d.simTimeMs) / 60_000 <= d.duration,
     );
+    s.activePrednisoneDoses = s.activePrednisoneDoses.filter(d =>
+      (nowMs - d.simTimeMs) / 60_000 <= d.duration,
+    );
     s.resolvedMeals    = purgeAbsorbedMeals(s.resolvedMeals, s.patient.carbsAbsTime, nowMs);
     s.pumpMicroBoluses = s.pumpMicroBoluses.filter(mb => (nowMs - mb.simTimeMs) / 60_000 <= mb.dia * 60);
 
@@ -406,6 +454,7 @@ export class InlineSimulator {
     const delta = computeDeltaBG({
       patient: s.patient, isf: s.patient.trueISF, cr: s.patient.trueCR,
       boluses: s.activeBoluses, longActing: s.activeLongActing,
+      prednisoneDoses: s.activePrednisoneDoses,
       pumpMicroBoluses: s.pumpMicroBoluses, meals: s.resolvedMeals,
       nowSimTimeMs: nowMs, isPump,
       currentGlucose: s.trueGlucose,
@@ -425,20 +474,23 @@ export class InlineSimulator {
 
     // Long-acting activity in U/hr-equivalent (calculate* returns U/min). Always
     // computed; the renderer only displays it in MDI mode. NovomixSlow doses
-    // are reported separately as premixSlowActivity for the stacked strip.
+    // are excluded from longActingActivity and reported as part of premixActivity
+    // (which sums the rapid 30% Aspart + slow 70% NPH-like components) so the
+    // bottom strip can stack rose-on-teal.
     const longActingActivity = isPump
       ? 0
       : calculateLongActingActivity(s.activeLongActing, nowMs) * 60;
-    const premixSlowActivity = isPump
+    const premixActivity = isPump
       ? 0
-      : calculatePremixSlowActivity(s.activeLongActing, nowMs) * 60;
+      : (calculateNovomixRapidActivity(s.activeBoluses, nowMs)
+       + calculatePremixSlowActivity(s.activeLongActing, nowMs)) * 60;
 
     const snap: TickSnapshot = {
       type: 'TICK', simTimeMs: s.simTimeMs, cgm, trueGlucose: newTrue,
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
       deltaMinutes: 5, trend: delta.deltaBG / TICK_SIM_MINUTES, basalRate,
       longActingActivity: Math.round(longActingActivity * 1000) / 1000,
-      premixSlowActivity: Math.round(premixSlowActivity * 1000) / 1000,
+      premixActivity: Math.round(premixActivity * 1000) / 1000,
     };
     for (const h of this.tickHandlers) h(snap);
   }

@@ -42,9 +42,10 @@ type ColorPalette = {
   cobFill: string; cobFillTop: string; cobLine: string;
   basalFill: string; basalLine: string;
   longActingActivityFill: string; longActingActivityLine: string;
-  premixSlowActivityFill: string; premixSlowActivityLine: string;
+  premixActivityFill: string; premixActivityLine: string;
   bolusMarker: string; mealMarker: string; smbMarker: string; longActingMarker: string;
   novomixMarker: string; novomixMarkerBottom: string;
+  prednisoneMarker: string;
   bolusMarkerBottom: string; mealMarkerBottom: string; smbMarkerBottom: string; longActingMarkerBottom: string;
   markerStroke: string;
   markerLabelBg: string;
@@ -81,14 +82,15 @@ const DARK_PALETTE: ColorPalette = {
   basalLine:  'rgba(217, 119, 6, 0.85)',
   longActingActivityFill: 'rgba(20, 184, 166, 0.22)',  // teal-500 translucent
   longActingActivityLine: 'rgba(13, 148, 136, 0.90)',  // teal-600
-  premixSlowActivityFill: 'rgba(225, 29, 72, 0.22)',   // rose-600 translucent — Novomix slow component
-  premixSlowActivityLine: 'rgba(190, 18, 60, 0.90)',   // rose-700
+  premixActivityFill: 'rgba(225, 29, 72, 0.22)',   // rose-600 translucent — Novomix slow component
+  premixActivityLine: 'rgba(190, 18, 60, 0.90)',   // rose-700
   bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
   mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
   longActingMarker: '#14b8a6',                   // teal — distinct hue family from bolus sky-blue
   novomixMarker: '#e11d48',                      // rose-600 — distinct from danger reds and meal amber
   novomixMarkerBottom: '#be123c',                // rose-700 — gradient bottom
+  prednisoneMarker: '#15803d',                   // green-700 (forest) — distinct from CGM bright green
   bolusMarkerBottom:      '#2563eb',             // gradient bottom — deeper blue
   mealMarkerBottom:       '#d97706',             // gradient bottom — deeper amber, pulls hue away from yellow
   smbMarkerBottom:        '#9333ea',             // gradient bottom — deeper purple
@@ -128,14 +130,15 @@ const LIGHT_PALETTE: ColorPalette = {
   basalLine:  'rgba(217, 119, 6, 0.85)',
   longActingActivityFill: 'rgba(20, 184, 166, 0.20)',
   longActingActivityLine: 'rgba(13, 148, 136, 0.90)',
-  premixSlowActivityFill: 'rgba(225, 29, 72, 0.20)',   // rose-600 — Novomix slow component
-  premixSlowActivityLine: 'rgba(190, 18, 60, 0.90)',
+  premixActivityFill: 'rgba(225, 29, 72, 0.20)',   // rose-600 — Novomix slow component
+  premixActivityLine: 'rgba(190, 18, 60, 0.90)',
   bolusMarker: '#60a5fa',                        // matches IOB overlay sky-blue (gradient top + label)
   mealMarker:  '#fbbf24',                        // matches COB overlay amber (gradient top + label)
   smbMarker:   '#c084fc',
   longActingMarker: '#14b8a6',                   // teal — distinct hue family from bolus sky-blue
   novomixMarker: '#e11d48',                      // rose-600 — theme-unified
   novomixMarkerBottom: '#be123c',
+  prednisoneMarker: '#15803d',                   // green-700 (forest) — theme-unified
   bolusMarkerBottom:      '#2563eb',
   mealMarkerBottom:       '#d97706',
   smbMarkerBottom:        '#9333ea',
@@ -367,7 +370,7 @@ export class CGMRenderer {
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
       longActingActivity: snap.longActingActivity,
-      premixSlowActivity: snap.premixSlowActivity,
+      premixActivity: snap.premixActivity,
     });
     this.lastTickWallMs = performance.now();
     this.updateForecast();
@@ -385,7 +388,7 @@ export class CGMRenderer {
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
       longActingActivity: snap.longActingActivity,
-      premixSlowActivity: snap.premixSlowActivity,
+      premixActivity: snap.premixActivity,
     });
     this.dirty = true;
   }
@@ -1148,7 +1151,7 @@ export class CGMRenderer {
       const yLA = panelBot - Math.min(entry.longActingActivity / MAX_RATE, 1) * this.BASAL_PANEL_H;
       // Premix slow component stacks ON TOP of the LA activity. Clamp the
       // additional height so it never crosses the panel top.
-      const premixH = Math.min(entry.premixSlowActivity / MAX_RATE, 1) * this.BASAL_PANEL_H;
+      const premixH = Math.min(entry.premixActivity / MAX_RATE, 1) * this.BASAL_PANEL_H;
       const yPremix = Math.max(panelTop, yLA - premixH);
       pts.push({ x: this.timeX(offsetMin), yLA, yPremix });
       lastVisible = entry;
@@ -1183,7 +1186,7 @@ export class CGMRenderer {
         for (const p of pts) ctx.lineTo(p.x, p.yPremix);
         for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i]!.x, pts[i]!.yLA);
         ctx.closePath();
-        ctx.fillStyle = COLORS.premixSlowActivityFill;
+        ctx.fillStyle = COLORS.premixActivityFill;
         ctx.fill();
       }
 
@@ -1207,7 +1210,7 @@ export class CGMRenderer {
           if (i === 0) ctx.moveTo(p.x, p.yPremix);
           else ctx.lineTo(p.x, p.yPremix);
         }
-        ctx.strokeStyle = COLORS.premixSlowActivityLine;
+        ctx.strokeStyle = COLORS.premixActivityLine;
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
@@ -1537,6 +1540,22 @@ export class CGMRenderer {
         ctx.fill();
         ctx.stroke();
         this.drawLabelChip(`Nx ${ev.units}U`, x, cy + r + 4, 'center', 'top', COLORS.novomixMarker);
+      } else if (ev.kind === 'prednisone') {
+        // Oral prednisone tablet — small forest-green inverted triangle (▼)
+        // tacked just below the top axis. Mirrors the SMB tick at the bottom,
+        // visually parallel: both are "edge ticks" for events whose effect
+        // plays out over time. Fixed size (no dose scaling — mg variation is
+        // narrow). Label sits under the apex.
+        const y = this.PAD_TOP + 4;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 8);          // apex pointing down
+        ctx.lineTo(x - 5, y);
+        ctx.lineTo(x + 5, y);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.prednisoneMarker;
+        ctx.fill();
+        ctx.stroke();
+        this.drawLabelChip(`${ev.doseMg} mg`, x, y + 12, 'center', 'top', COLORS.prednisoneMarker);
       }
     }
     ctx.textAlign = 'left';

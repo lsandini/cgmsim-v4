@@ -228,6 +228,11 @@ export interface ActiveBolus {
   analogue: RapidAnalogueType;
   /** DIA in hours stamped at injection time from patient.dia (true physiological DIA). */
   dia: number;
+  /** Origin tag — present only on the rapid component spawned by a Novomix
+   *  injection. Used to attribute its activity to the rose premix strip
+   *  separately from regular manual/AID/prescription boluses. IOB and BG
+   *  calculations treat all boluses identically regardless of source. */
+  source?: 'novomix';
 }
 
 export interface ActiveMeal {
@@ -311,8 +316,10 @@ export interface CGMTracePoint {
   basalRate: number;
   /** MDI long-acting insulin activity (U/hr-equivalent). 0 in PUMP/AID mode. */
   longActingActivity: number;
-  /** Premix slow-component (Novomix NPH-like) activity (U/hr-equivalent). 0 unless Novomix is on board. */
-  premixSlowActivity: number;
+  /** Total Novomix premix activity (U/hr-equivalent) — sum of the rapid 30%
+   *  Aspart component AND the slow 70% NPH-like component. 0 unless Novomix
+   *  is on board. Renderer stacks this in rose on top of longActingActivity. */
+  premixActivity: number;
 }
 
 // ------------------------------------------------------------
@@ -413,8 +420,8 @@ export interface TickSnapshot {
   basalRate: number;
   /** MDI long-acting insulin activity (U/hr-equivalent). 0 in PUMP/AID mode. */
   longActingActivity: number;
-  /** Premix slow-component (Novomix) activity (U/hr-equivalent). 0 unless on board. */
-  premixSlowActivity: number;
+  /** Total Novomix premix activity (U/hr-equivalent) — sum of rapid + slow components. 0 unless on board. */
+  premixActivity: number;
 }
 
 // ------------------------------------------------------------

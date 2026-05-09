@@ -9,7 +9,7 @@
  * All times in simulated ms. All amounts in units.
  */
 
-import type { ActiveBolus, ActiveLongActing } from '@cgmsim/shared';
+import type { ActiveBolus, ActiveLongActing, ActivePrednisone } from '@cgmsim/shared';
 import { RAPID_PROFILES } from './insulinProfiles.js';
 import { getExpTreatmentActivity, getExpTreatmentIOB, getDeltaMinutes, roundTo8Decimals } from './utils.js';
 import type { PumpBasalBolus } from '@cgmsim/shared';
@@ -21,6 +21,26 @@ export type { PumpBasalBolus };
 export function calculateBolusActivity(boluses: ActiveBolus[], nowSimTimeMs: number): number {
   return roundTo8Decimals(
     boluses.reduce((sum, b) => {
+      const profile = RAPID_PROFILES[b.analogue];
+      if (!profile) return sum;
+      const minAgo = getDeltaMinutes(b.simTimeMs, nowSimTimeMs);
+      return sum + getExpTreatmentActivity({
+        peak: profile.peak,
+        duration: b.dia * 60,
+        minutesAgo: minAgo,
+        units: b.units,
+      });
+    }, 0),
+  );
+}
+
+/** Activity from the rapid 30% component of Novomix injections only —
+ *  filtered by `source === 'novomix'`. Companion to calculatePremixSlowActivity:
+ *  the renderer sums them for the rose stacked strip. */
+export function calculateNovomixRapidActivity(boluses: ActiveBolus[], nowSimTimeMs: number): number {
+  return roundTo8Decimals(
+    boluses.reduce((sum, b) => {
+      if (b.source !== 'novomix') return sum;
       const profile = RAPID_PROFILES[b.analogue];
       if (!profile) return sum;
       const minAgo = getDeltaMinutes(b.simTimeMs, nowSimTimeMs);
@@ -96,6 +116,27 @@ export function calculateLongActingIOB(doses: ActiveLongActing[], nowSimTimeMs: 
         duration: d.duration,
         minutesAgo: minAgo,
         units: d.units,
+      });
+    }, 0),
+  );
+}
+
+// ── Prednisone activity ──────────────────────────────────────────────────────
+
+/** Prednisone biexponential activity in mg-equivalent per minute. The
+ *  "units" field of the underlying activity curve carries the mg dose, so
+ *  the return value scales linearly with mg. Used by Model C in deltaBG /
+ *  egp as a coefficient that scales the hepatic-output multiplier and the
+ *  insulin-resistance divisor. */
+export function calculatePrednisoneActivity(doses: ActivePrednisone[], nowSimTimeMs: number): number {
+  return roundTo8Decimals(
+    doses.reduce((sum, d) => {
+      const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
+      return sum + getExpTreatmentActivity({
+        peak: d.peak,
+        duration: d.duration,
+        minutesAgo: minAgo,
+        units: d.doseMg,
       });
     }, 0),
   );

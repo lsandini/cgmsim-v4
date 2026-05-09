@@ -25,6 +25,21 @@ export function calculateBolusActivity(boluses, nowSimTimeMs) {
         });
     }, 0));
 }
+/** Activity from Novomix-rapid boluses only (30% Aspart component) — filtered by source tag. */
+export function calculateNovomixRapidActivity(boluses, nowSimTimeMs) {
+    return roundTo8Decimals(boluses.reduce((sum, b) => {
+        if (b.source !== 'novomix') return sum;
+        const profile = RAPID_PROFILES[b.analogue];
+        if (!profile) return sum;
+        const minAgo = getDeltaMinutes(b.simTimeMs, nowSimTimeMs);
+        return sum + getExpTreatmentActivity({
+            peak: profile.peak,
+            duration: b.dia * 60,
+            minutesAgo: minAgo,
+            units: b.units,
+        });
+    }, 0));
+}
 export function calculateBolusIOB(boluses, nowSimTimeMs) {
     return roundTo8Decimals(boluses.reduce((sum, b) => {
         const profile = RAPID_PROFILES[b.analogue];
@@ -74,6 +89,19 @@ export function calculateLongActingIOB(doses, nowSimTimeMs) {
             duration: d.duration,
             minutesAgo: minAgo,
             units: d.units,
+        });
+    }, 0));
+}
+// ── Prednisone activity ──────────────────────────────────────────────────────
+/** Prednisone biexponential activity (mg-equivalent / min). Used by Model C. */
+export function calculatePrednisoneActivity(doses, nowSimTimeMs) {
+    return roundTo8Decimals(doses.reduce((sum, d) => {
+        const minAgo = getDeltaMinutes(d.simTimeMs, nowSimTimeMs);
+        return sum + getExpTreatmentActivity({
+            peak: d.peak,
+            duration: d.duration,
+            minutesAgo: minAgo,
+            units: d.doseMg,
         });
     }, 0));
 }
