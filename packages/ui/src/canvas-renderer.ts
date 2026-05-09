@@ -30,6 +30,7 @@ const SESSION_START_MIN = 6 * 60;                     // matches INITIAL_SIM_TIM
 // ATTD glucose thresholds (mg/dL)
 const TIR_LOW = 70;
 const TIR_HIGH = 180;
+const TIR_VERY_HIGH = 250;       // ATTD level-2 hyperglycemia threshold
 const HYPO_L1 = 54;
 
 // Canvas colour palettes — swapped wholesale on theme change.
@@ -405,6 +406,26 @@ export class CGMRenderer {
     const out: CGMTracePoint[] = [];
     this.ring.forEach((e) => { out.push({ ...e }); });
     return out;
+  }
+
+  /**
+   * Time-in-range stats over the entire CGM ring (full session, up to the
+   * 7-day retention window). Buckets follow ATTD: low <70, in-range 70-180,
+   * high 181-250, very-high >250 (mg/dL). Counts are sample-counts; with the
+   * 5-min tick cadence each sample weight is identical so percentages are
+   * simply count/total. Returns zeros when the ring is empty.
+   */
+  getTIRStats(): { low: number; inRange: number; high: number; veryHigh: number; total: number } {
+    let low = 0, inRange = 0, high = 0, veryHigh = 0, total = 0;
+    this.ring.forEach((e) => {
+      const v = e.cgm;
+      if      (v < TIR_LOW)        low++;
+      else if (v <= TIR_HIGH)      inRange++;
+      else if (v <= TIR_VERY_HIGH) high++;
+      else                         veryHigh++;
+      total++;
+    });
+    return { low, inRange, high, veryHigh, total };
   }
 
   /** Replace the chart trace wholesale — for session import. Recomputes the AR2 forecast. */
