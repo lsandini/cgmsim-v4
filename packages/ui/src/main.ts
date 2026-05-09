@@ -73,15 +73,34 @@ function formatSimTime(ms: number): string {
   return `D+${String(d).padStart(2,'0')}:${String(h).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
-function updateSkyIcon(simTimeMs: number): void {
-  const totalMin = Math.floor(simTimeMs / 60_000);
-  const hourOfDay = (Math.floor(totalMin / 60) % 24 + 24) % 24;
-  let tod: 'day' | 'dawn' | 'dusk' | 'night';
-  if (hourOfDay >= 7  && hourOfDay < 17) tod = 'day';
-  else if (hourOfDay >= 5 && hourOfDay < 7)  tod = 'dawn';
-  else if (hourOfDay >= 17 && hourOfDay < 20) tod = 'dusk';
-  else tod = 'night';
-  skyIcon.setAttribute('data-tod', tod);
+/**
+ * Refresh the bottom-strip TIR widget. Reads the renderer's CGM ring buffer
+ * (full-session retention) and bucketizes samples into 4 ATTD ranges, then
+ * updates the four colored segment heights and the green-band % label.
+ *
+ * Segments are listed top-to-bottom in DOM order: very-high (orange), high
+ * (yellow), in-range (green), low (red). Heights are set in percent — when
+ * a bucket is empty the segment collapses to 0 height and disappears.
+ */
+function updateTIRWidget(): void {
+  const stats = renderer.getTIRStats();
+  if (stats.total === 0) {
+    tirSegVeryHigh.style.height = '0%';
+    tirSegHigh.style.height     = '0%';
+    tirSegInRange.style.height  = '0%';
+    tirSegLow.style.height      = '0%';
+    tirLabel.textContent = '--';
+    return;
+  }
+  const pctLow      = (stats.low      / stats.total) * 100;
+  const pctInRange  = (stats.inRange  / stats.total) * 100;
+  const pctHigh     = (stats.high     / stats.total) * 100;
+  const pctVeryHigh = (stats.veryHigh / stats.total) * 100;
+  tirSegVeryHigh.style.height = `${pctVeryHigh}%`;
+  tirSegHigh.style.height     = `${pctHigh}%`;
+  tirSegInRange.style.height  = `${pctInRange}%`;
+  tirSegLow.style.height      = `${pctLow}%`;
+  tirLabel.textContent = `${Math.round(pctInRange)}%`;
 }
 
 function timeStringToMinutes(t: string): number {
@@ -121,7 +140,12 @@ const btnPause         = getEl<HTMLButtonElement>('btn-pause');
 const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
 const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
-const skyIcon          = getEl<SVGSVGElement>('sky-icon');
+const tirLabel         = getEl<HTMLSpanElement>('tir-label');
+const tirBar           = document.querySelector<HTMLDivElement>('#tir-widget .tir-bar')!;
+const tirSegVeryHigh   = tirBar.querySelector<HTMLDivElement>('.tir-veryhigh')!;
+const tirSegHigh       = tirBar.querySelector<HTMLDivElement>('.tir-high')!;
+const tirSegInRange    = tirBar.querySelector<HTMLDivElement>('.tir-inrange')!;
+const tirSegLow        = tirBar.querySelector<HTMLDivElement>('.tir-low')!;
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
 const bgOverlay        = getEl<HTMLElement>('bg-overlay');
 const bgOverlayValue   = getEl<HTMLElement>('bg-overlay-value');
@@ -229,7 +253,7 @@ compare.onTick((snap) => {
 let cgmFlashTimeout: number | undefined;
 function updateHUD(snap: TickSnapshot): void {
   simTimeEl.textContent = formatSimTime(snap.simTimeMs);
-  updateSkyIcon(snap.simTimeMs);
+  updateTIRWidget();
   const newCgmText = appState.displayUnit === 'mmoll'
     ? (snap.cgm / 18.0182).toFixed(1) : String(Math.round(snap.cgm));
   const valueChanged = currentCGMEl.textContent !== newCgmText;

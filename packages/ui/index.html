@@ -387,33 +387,43 @@
       white-space: nowrap;
     }
 
-    /* Sun / moon time-of-day indicator */
-    #sky-icon {
-      width: 22px;
-      height: 22px;
+    /* Time in Range stacked-bar widget — replaces the old sun/moon icon.
+       Vertical bar with 4 segments stacked bottom-to-top by BG range:
+       red (low) → green (in range) → yellow (high) → orange (very high).
+       Segment heights are set inline in % via JS on each tick. The TIR %
+       label sits to the right and shows the green-band fraction. */
+    #tir-widget {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       flex-shrink: 0;
-      transition: filter 0.6s ease, transform 0.6s ease;
     }
-    #sky-icon .disc {
-      transition: fill 0.6s ease;
+    .tir-bar {
+      width: 14px;
+      height: 38px;
+      display: flex;
+      flex-direction: column;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg);
     }
-    #sky-icon .crescent {
-      fill: var(--bg);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-      transform-origin: center;
+    .tir-seg {
+      width: 100%;
+      transition: height 0.4s ease;
     }
-    /* Day → bright yellow disc, crescent hidden */
-    #sky-icon[data-tod="day"]   .disc      { fill: #fbbf24; filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.55)); }
-    #sky-icon[data-tod="day"]   .crescent  { opacity: 0; }
-    /* Dawn → soft orange disc, low crescent */
-    #sky-icon[data-tod="dawn"]  .disc      { fill: #fb923c; }
-    #sky-icon[data-tod="dawn"]  .crescent  { opacity: 0.25; }
-    /* Dusk → warm pink disc */
-    #sky-icon[data-tod="dusk"]  .disc      { fill: #f472b6; }
-    #sky-icon[data-tod="dusk"]  .crescent  { opacity: 0.35; }
-    /* Night → cool moon disc, crescent shadow */
-    #sky-icon[data-tod="night"] .disc      { fill: #cbd5e1; filter: drop-shadow(0 0 3px rgba(203, 213, 225, 0.45)); }
-    #sky-icon[data-tod="night"] .crescent  { opacity: 1; }
+    .tir-veryhigh { background: #f97316; }      /* orange-500 */
+    .tir-high     { background: #facc15; }      /* yellow-400 */
+    .tir-inrange  { background: var(--green); } /* in-range */
+    .tir-low      { background: var(--red); }   /* hypo */
+    .tir-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--green);
+      font-variant-numeric: tabular-nums;
+      min-width: 4ch;
+      text-align: left;
+    }
 
     /* Group sim-time + sky icon together */
     #time-block {
@@ -1434,10 +1444,15 @@
       </div>
 
       <div id="time-block">
-        <svg id="sky-icon" data-tod="day" viewBox="0 0 24 24" aria-hidden="true">
-          <circle class="disc" cx="12" cy="12" r="7" />
-          <circle class="crescent" cx="15" cy="10" r="6" />
-        </svg>
+        <div id="tir-widget" title="Time in Range (full session)" aria-label="Time in Range">
+          <div class="tir-bar" aria-hidden="true">
+            <div class="tir-seg tir-veryhigh" style="height:0%"></div>
+            <div class="tir-seg tir-high"     style="height:0%"></div>
+            <div class="tir-seg tir-inrange"  style="height:0%"></div>
+            <div class="tir-seg tir-low"      style="height:0%"></div>
+          </div>
+          <span class="tir-label" id="tir-label">--</span>
+        </div>
         <div id="sim-time">D+00:00</div>
       </div>
 
