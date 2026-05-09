@@ -5,6 +5,10 @@ import { onboardingCSS } from './styles.js';
 export interface OnboardingResult {
   caseId: CaseId | null;
   therapy: TherapyChoice | null;
+  /** True iff the user ticked the "Prednisone" checkbox embedded in the MDI
+   *  therapy card. Only meaningful when therapy === 'mdi'; coerced to false
+   *  on close otherwise. */
+  withPrednisone: boolean;
 }
 
 let stylesInjected = false;
@@ -41,14 +45,23 @@ function renderPatientCards(selected: CaseId | null): string {
   `).join('');
 }
 
-function renderTherapyCards(selected: TherapyChoice | null): string {
-  return Object.values(THERAPY_OPTIONS).map(t => `
+function renderTherapyCards(selected: TherapyChoice | null, withPrednisone: boolean): string {
+  return Object.values(THERAPY_OPTIONS).map(t => {
+    const prednisoneCheckbox = t.id === 'mdi' ? `
+      <label class="therapy-prednisone-toggle" data-mdi-prednisone>
+        <input type="checkbox" ${withPrednisone ? 'checked' : ''} />
+        <span>Prednisone</span>
+      </label>
+    ` : '';
+    return `
     <div class="therapy-card${selected === t.id ? ' selected' : ''}" data-therapy-id="${t.id}" role="button" tabindex="0" aria-pressed="${selected === t.id}">
       <div class="therapy-icon">${iconForTherapy(t.id)}</div>
       <div class="therapy-label">${t.label}</div>
       <div class="therapy-sub">${t.description}</div>
+      ${prednisoneCheckbox}
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 export function runOnboarding(): Promise<OnboardingResult> {
@@ -58,6 +71,7 @@ export function runOnboarding(): Promise<OnboardingResult> {
     let step: 1 | 2 | 3 = 1;
     let selectedCase: CaseId | null = null;
     let selectedTherapy: TherapyChoice | null = null;
+    let selectedWithPrednisone = false;
 
     const overlay = document.createElement('div');
     overlay.className = 'onboarding-overlay';
@@ -134,8 +148,30 @@ export function runOnboarding(): Promise<OnboardingResult> {
         titleEl.textContent = 'Choose a therapy mode';
         nextBtn.textContent = 'Start simulation';
         nextBtn.disabled = selectedTherapy === null;
-        bodyEl.innerHTML = renderTherapyCards(selectedTherapy);
+        bodyEl.innerHTML = renderTherapyCards(selectedTherapy, selectedWithPrednisone);
         wireCards('.therapy-card', (id) => { selectedTherapy = id as TherapyChoice; });
+        // Wire the embedded Prednisone checkbox in the MDI card. Click on the
+        // label/checkbox must NOT bubble up to the card click handler — that
+        // would re-fire card selection on every toggle.
+        const prednisoneToggle = bodyEl.querySelector<HTMLLabelElement>('[data-mdi-prednisone]');
+        const prednisoneInput  = prednisoneToggle?.querySelector<HTMLInputElement>('input');
+        if (prednisoneToggle && prednisoneInput) {
+          prednisoneToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Toggling implies the user wants MDI — auto-select that card.
+            selectedTherapy = 'mdi';
+            bodyEl.querySelectorAll<HTMLElement>('.therapy-card').forEach(c => {
+              const isMDI = c.dataset['therapyId'] === 'mdi';
+              c.classList.toggle('selected', isMDI);
+              c.setAttribute('aria-pressed', String(isMDI));
+            });
+            nextBtn.disabled = false;
+          });
+          prednisoneInput.addEventListener('change', () => {
+            selectedWithPrednisone = prednisoneInput.checked;
+          });
+          prednisoneInput.addEventListener('keydown', (e) => { e.stopPropagation(); });
+        }
       }
     }
 
@@ -147,11 +183,11 @@ export function runOnboarding(): Promise<OnboardingResult> {
 
     function onKey(e: KeyboardEvent): void {
       if (e.key === 'Escape') {
-        close({ caseId: null, therapy: null });
+        close({ caseId: null, therapy: null, withPrednisone: false });
       }
     }
 
-    skipBtn.addEventListener('click', () => close({ caseId: null, therapy: null }));
+    skipBtn.addEventListener('click', () => close({ caseId: null, therapy: null, withPrednisone: false }));
     backBtn.addEventListener('click', () => {
       if (step === 3) step = 2;
       else if (step === 2) step = 1;
@@ -160,7 +196,11 @@ export function runOnboarding(): Promise<OnboardingResult> {
     nextBtn.addEventListener('click', () => {
       if (step === 1)      { step = 2; renderStep(); }
       else if (step === 2) { step = 3; renderStep(); }
-      else                 { close({ caseId: selectedCase, therapy: selectedTherapy }); }
+      else                 {
+        // Prednisone scenario is MDI-only — coerce to false for AID/Pump.
+        const withPred = selectedTherapy === 'mdi' && selectedWithPrednisone;
+        close({ caseId: selectedCase, therapy: selectedTherapy, withPrednisone: withPred });
+      }
     });
 
     document.addEventListener('keydown', onKey);

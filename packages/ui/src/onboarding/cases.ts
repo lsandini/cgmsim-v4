@@ -118,14 +118,23 @@ const BASAL_PUMP_U_PER_HOUR: Record<CaseId, number> = {
  * Build a TherapyProfile preset for the chosen patient + therapy.
  * MDI gets a single evening Toujeo (GlargineU300) shot at 22:00; pump/AID
  * use a flat basal program at the calibrated hourly rate.
+ *
+ * `withPrednisone` is the MDI-only "hospital steroid course" scenario flag.
+ * When true (and choice === 'mdi'), populates default Novomix BID schedule
+ * and a daily morning prednisone dose. Ignored for non-MDI therapies.
  */
-export function buildTherapyForCase(c: PatientCase, choice: TherapyChoice): TherapyProfile {
+export function buildTherapyForCase(
+  c: PatientCase,
+  choice: TherapyChoice,
+  withPrednisone: boolean = false,
+): TherapyProfile {
   const basalRate  = BASAL_PUMP_U_PER_HOUR[c.id];
   const basalDaily = BASAL_MDI_U_PER_DAY[c.id];
 
   const basalProfile: BasalEntry[] = [{ timeMinutes: 0, rateUPerHour: basalRate }];
 
   const isMDI = choice === 'mdi';
+  const enablePrednisoneScenario = isMDI && withPrednisone;
 
   return {
     mode: THERAPY_OPTIONS[choice].mode,
@@ -140,5 +149,8 @@ export function buildTherapyForCase(c: PatientCase, choice: TherapyChoice): Ther
     enableSMB: false,
     mdiSubmode: 'LIVE',
     prescription: JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION)),
+    premixMorning:      enablePrednisoneScenario ? { units: 16, injectionMinute:  7 * 60 + 30 } : null,
+    premixEvening:      enablePrednisoneScenario ? { units: 12, injectionMinute: 16 * 60 + 30 } : null,
+    prednisoneSchedule: enablePrednisoneScenario ? { doseMg: 40, injectionMinute:  9 * 60     } : null,
   };
 }

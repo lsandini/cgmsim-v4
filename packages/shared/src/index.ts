@@ -61,6 +61,10 @@ export type LongActingType =
   | 'Detemir'        // Levemir
   | 'Degludec';      // Tresiba
 
+/** Engine-internal PK type union. NovomixSlow is the protaminated 70%
+ *  component spawned at injection time; users can't pick it directly. */
+export type LongActingPKType = LongActingType | 'NovomixSlow';
+
 export type DisplayUnit = 'mgdl' | 'mmoll';
 
 // ------------------------------------------------------------
@@ -117,6 +121,23 @@ export interface LongActingSchedule {
   injectionMinute: number;
 }
 
+/** Premix insulin (Novomix 30) BID schedule slot. Type is implicit — Novomix
+ *  is the only premix variant in v1. Each injection decomposes 30/70 into
+ *  rapid Aspart bolus + NPH-style slow long-acting at engine inject time. */
+export interface PremixSchedule {
+  units: number;
+  injectionMinute: number;
+}
+
+/** Oral prednisone tablet schedule. One daily morning dose; time clamped
+ *  to 06:00–11:59 in the UI to prevent evening dosing. */
+export interface PrednisoneSchedule {
+  /** Dose in mg of prednisone-equivalent. */
+  doseMg: number;
+  /** Minute of day (360..719 enforced by UI). */
+  injectionMinute: number;
+}
+
 export interface TherapyProfile {
   mode: TherapyMode;
 
@@ -141,6 +162,14 @@ export interface TherapyProfile {
   mdiSubmode: MDISubmode;
   /** Pre-programmed regimen used when mdiSubmode === 'PRESCRIPTION'. */
   prescription: Prescription;
+
+  /** Novomix 30 premix injection — morning slot. null = unset. MDI-only. */
+  premixMorning: PremixSchedule | null;
+  /** Novomix 30 premix injection — evening slot. null = unset. MDI-only. */
+  premixEvening: PremixSchedule | null;
+
+  /** Oral prednisone tablet — daily morning dose. null = unset. MDI-only. */
+  prednisoneSchedule: PrednisoneSchedule | null;
 }
 
 export const DEFAULT_PRESCRIPTION: Prescription = {
@@ -167,6 +196,9 @@ export const DEFAULT_THERAPY_PROFILE: TherapyProfile = {
   enableSMB: false,
   mdiSubmode: 'LIVE',
   prescription: DEFAULT_PRESCRIPTION,
+  premixMorning: null,
+  premixEvening: null,
+  prednisoneSchedule: null,
 };
 
 // ------------------------------------------------------------
@@ -210,10 +242,23 @@ export interface ActiveLongActing {
   id: string;
   simTimeMs: SimTimeMs;
   units: number;
-  type: LongActingType;
+  /** Engine-internal PK type. Includes 'NovomixSlow' for the 70% protaminated
+   *  component spawned by Novomix injections. */
+  type: LongActingPKType;
   /** Stamped at injection time from v3 PK formulas + patient.weight. Minutes. */
   peak: number;
   /** Stamped at injection time. Total duration of action in minutes. */
+  duration: number;
+}
+
+/** Active oral prednisone dose. PK params stamped at ingestion time. */
+export interface ActivePrednisone {
+  id: string;
+  simTimeMs: SimTimeMs;
+  doseMg: number;
+  /** Peak in minutes (= duration / 3). */
+  peak: number;
+  /** Total duration in minutes ((16 + 0.3·mg)·60). */
   duration: number;
 }
 
@@ -244,7 +289,9 @@ export type SimEvent =
   | { kind: 'bolus';      simTimeMs: SimTimeMs; units: number }
   | { kind: 'meal';       simTimeMs: SimTimeMs; carbsG: number }
   | { kind: 'longActing'; simTimeMs: SimTimeMs; units: number; insulinType: LongActingType; slot: 'morning' | 'evening' }
-  | { kind: 'smb';        simTimeMs: SimTimeMs; units: number };
+  | { kind: 'smb';        simTimeMs: SimTimeMs; units: number }
+  | { kind: 'novomix';    simTimeMs: SimTimeMs; units: number; slot: 'morning' | 'evening' }
+  | { kind: 'prednisone'; simTimeMs: SimTimeMs; doseMg: number };
 
 /** Active temporary basal override (set via setTempBasal). */
 export interface TempBasal {
@@ -264,6 +311,8 @@ export interface CGMTracePoint {
   basalRate: number;
   /** MDI long-acting insulin activity (U/hr-equivalent). 0 in PUMP/AID mode. */
   longActingActivity: number;
+  /** Premix slow-component (Novomix NPH-like) activity (U/hr-equivalent). 0 unless Novomix is on board. */
+  premixSlowActivity: number;
 }
 
 // ------------------------------------------------------------
@@ -289,6 +338,9 @@ export interface WorkerState {
   activeBoluses: ActiveBolus[];
   activeLongActing: ActiveLongActing[];
 
+  /** Active oral prednisone doses still resolving. Empty unless prednisone scenario active. */
+  activePrednisoneDoses: ActivePrednisone[];
+
   /** Meals after fast/slow split has been resolved — drives carb effect & COB. */
   resolvedMeals: ResolvedMeal[];
 
@@ -312,6 +364,13 @@ export interface WorkerState {
   lastMorningDay: number;
   /** Same for the evening slot. */
   lastEveningDay: number;
+
+  /** Last sim-day on which the morning premix slot fired (-1 = never). */
+  lastPremixMorningDay: number;
+  /** Last sim-day on which the evening premix slot fired (-1 = never). */
+  lastPremixEveningDay: number;
+  /** Last sim-day on which the prednisone slot fired (-1 = never). */
+  lastPrednisoneDay: number;
 
   /**
    * Per-slot last-fired sim-day for PRESCRIPTION submode. Keys are stable slot
@@ -354,6 +413,8 @@ export interface TickSnapshot {
   basalRate: number;
   /** MDI long-acting insulin activity (U/hr-equivalent). 0 in PUMP/AID mode. */
   longActingActivity: number;
+  /** Premix slow-component (Novomix) activity (U/hr-equivalent). 0 unless on board. */
+  premixSlowActivity: number;
 }
 
 // ------------------------------------------------------------

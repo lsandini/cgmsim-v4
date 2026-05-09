@@ -187,6 +187,8 @@ const btnAddBasal      = getEl<HTMLButtonElement>('btn-add-basal');
 const sectionMDI       = getEl<HTMLElement>('section-mdi');
 const sectionBasal     = getEl<HTMLElement>('section-basal');
 const sectionTempBasal = getEl<HTMLElement>('section-temp-basal');
+const sectionPremix    = getEl<HTMLElement>('section-premix');
+const sectionPrednisone = getEl<HTMLElement>('section-prednisone');
 
 // MDI submode + prescription modal
 const mdiSubmodeGroup  = getEl<HTMLElement>('mdi-submode-group');
@@ -707,12 +709,38 @@ function onTherapyChange(): void {
   rowSMB.style.display           = mode === 'AID'  ? 'flex'  : 'none';
   rowTarget.style.display        = mode === 'AID'  ? 'flex'  : 'none';
   rowOverlayBasal.style.display  = mode !== 'MDI'  ? 'flex'  : 'none';
+  // Prednisone scenario sections — MDI-only AND require the case-level flag.
+  const showPrednisoneSections = mode === 'MDI' && currentWithPrednisone;
+  sectionPremix.style.display      = showPrednisoneSections ? 'block' : 'none';
+  sectionPrednisone.style.display  = showPrednisoneSections ? 'block' : 'none';
   renderer.options.therapyMode   = mode;
   renderer.markDirty();
   // MDI-only submode chrome
   mdiSubmodeGroup.hidden = mode !== 'MDI';
   applyPrescriptionLockUI();
   persistPanelOverrides();
+}
+
+// ── Prednisone scenario flag ─────────────────────────────────────────────────
+// Mirrors the per-case `withPrednisone` flag from cgmsim.case. Drives the
+// visibility of the Premix and Prednisone panel sections AND locks the
+// scenario menu to MDI. Set during onboarding/init/reset; never toggled
+// from the panel — switching scenarios requires Reopen Onboarding.
+let currentWithPrednisone = false;
+
+function applyPrednisoneScenarioGating(): void {
+  // Scenario menu: when prednisone scenario is on, hide AID/PUMP options so
+  // the teacher (or anyone scanning the dropdown) can't switch the patient
+  // off the MDI track mid-case.
+  scenarioModeMenu.querySelectorAll<HTMLElement>('li[role="option"]').forEach((li) => {
+    const v = li.dataset.value;
+    const lock = currentWithPrednisone && (v === 'AID' || v === 'PUMP');
+    li.style.display = lock ? 'none' : '';
+  });
+  // Section visibility (Premix + Prednisone) is recomputed by onTherapyChange,
+  // which reads currentWithPrednisone. We just need to re-run it.
+  // — Caller is responsible for calling onTherapyChange afterward when the
+  //   gating change should also push therapy state to the simulator.
 }
 
 // ── MDI submode (LIVE / PRESCRIPTION) ────────────────────────────────────────
@@ -1028,6 +1056,7 @@ btnImport.addEventListener('click', async () => {
       trend: last?.trend ?? 0,
       basalRate: last?.basalRate ?? 0,
       longActingActivity: last?.longActingActivity ?? 0,
+      premixSlowActivity: last?.premixSlowActivity ?? 0,
     };
     appState.lastSnap = hudSnap;
     updateHUD(hudSnap);
@@ -1052,11 +1081,14 @@ btnReset.addEventListener('click', () => {
              rapidAnalogue:'Fiasp',rapidDia:5,longActingMorning:null,longActingEvening:null,
              glucoseTarget:100,enableSMB:false,
              mdiSubmode:'LIVE',
-             prescription: JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION))},
+             prescription: JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION)),
+             premixMorning:null,premixEvening:null,prednisoneSchedule:null},
     g6State:{v:[0,0],cc:[0,0],tCalib:0,rng:{jsr:123456789^seed,seed}},
-    activeBoluses:[],activeLongActing:[],
+    activeBoluses:[],activeLongActing:[],activePrednisoneDoses:[],
     resolvedMeals:[],pumpMicroBoluses:[],tempBasal:null,events:[],rngState:seed,
-    lastMorningDay:-1,lastEveningDay:-1,prescriptionLastFiredDay:{},
+    lastMorningDay:-1,lastEveningDay:-1,
+    lastPremixMorningDay:-1,lastPremixEveningDay:-1,lastPrednisoneDay:-1,
+    prescriptionLastFiredDay:{},
     pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:360,running:false,
   });
   throttleSlider.value = String(throttleToPos(360));
@@ -1146,7 +1178,7 @@ document.addEventListener('keydown', (e) => {
 const ONBOARDING_KEY = 'cgmsim.onboarded';
 const CASE_KEY       = 'cgmsim.case';
 
-interface SavedCase { caseId: CaseId; therapy: TherapyChoice; }
+interface SavedCase { caseId: CaseId; therapy: TherapyChoice; withPrednisone: boolean; }
 
 function loadSavedCase(): SavedCase | null {
   const raw = localStorage.getItem(CASE_KEY);
@@ -1155,7 +1187,10 @@ function loadSavedCase(): SavedCase | null {
     const obj = JSON.parse(raw) as Partial<SavedCase>;
     if (!obj.caseId || !obj.therapy) return null;
     if (!(obj.caseId in PATIENT_CASES)) return null;
-    return { caseId: obj.caseId, therapy: obj.therapy };
+    // Old saved cases without `withPrednisone` default safely to false.
+    // Coerce to false for non-MDI therapies (the scenario is MDI-only).
+    const withPred = obj.therapy === 'mdi' && obj.withPrednisone === true;
+    return { caseId: obj.caseId, therapy: obj.therapy, withPrednisone: withPred };
   } catch { return null; }
 }
 
@@ -1170,8 +1205,8 @@ function writePatientToForm(p: VirtualPatient): void {
   gastricRate.value      = String(p.gastricEmptyingRate);
 }
 
-function writeTherapyToForm(c: PatientCase, choice: TherapyChoice): void {
-  const therapy = buildTherapyForCase(c, choice);
+function writeTherapyToForm(c: PatientCase, choice: TherapyChoice, withPrednisone: boolean = false): void {
+  const therapy = buildTherapyForCase(c, choice, withPrednisone);
   therapyMode.value = therapy.mode;
   // Glucose target is stored canonical mg/dL, but the form may be displaying mmol/L.
   const isMmol = appState.displayUnit === 'mmoll';
@@ -1188,6 +1223,9 @@ function writeTherapyToForm(c: PatientCase, choice: TherapyChoice): void {
     eveningRefs.time.value = minutesToTimeString(therapy.longActingEvening.injectionMinute);
     setSlot('evening', therapy.longActingEvening);
   }
+  // Premix + Prednisone slot defaults are populated in Phase 2/3 — for now
+  // buildTherapyForCase carries them in the TherapyProfile; the UI rows that
+  // consume them don't exist yet.
 }
 
 getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', async () => {
@@ -1204,11 +1242,13 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
   bridge.reset({
     simTimeMs: 6*60*60_000, trueGlucose: 100, lastCGM: 100,
     patient: { ...c.patient },
-    therapy: buildTherapyForCase(c, result.therapy),
+    therapy: buildTherapyForCase(c, result.therapy, result.withPrednisone),
     g6State: { v:[0,0], cc:[0,0], tCalib:0, rng:{ jsr:123456789^seed, seed } },
-    activeBoluses: [], activeLongActing: [],
+    activeBoluses: [], activeLongActing: [], activePrednisoneDoses: [],
     resolvedMeals: [], pumpMicroBoluses: [], tempBasal: null, events: [], rngState: seed,
-    lastMorningDay: -1, lastEveningDay: -1, prescriptionLastFiredDay: {},
+    lastMorningDay: -1, lastEveningDay: -1,
+    lastPremixMorningDay: -1, lastPremixEveningDay: -1, lastPrednisoneDay: -1,
+    prescriptionLastFiredDay: {},
     pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999, throttle: 360, running: false,
   });
   throttleSlider.value = String(throttleToPos(360));
@@ -1218,7 +1258,9 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
   suppressPersist = true;
   clearPanelOverrides();
   writePatientToForm(c.patient);
-  writeTherapyToForm(c, result.therapy);
+  writeTherapyToForm(c, result.therapy, result.withPrednisone);
+  currentWithPrednisone = result.withPrednisone;
+  applyPrednisoneScenarioGating();
   onTherapyChange();
   onPatientChange();
   pushBasalProfile();
@@ -1228,7 +1270,11 @@ getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', asyn
   bridge.setTherapyParam({ prescription: currentPrescription });
   setSubmode(currentSubmode, true);
   suppressPersist = false;
-  localStorage.setItem(CASE_KEY, JSON.stringify({ caseId: result.caseId, therapy: result.therapy }));
+  localStorage.setItem(CASE_KEY, JSON.stringify({
+    caseId: result.caseId,
+    therapy: result.therapy,
+    withPrednisone: result.withPrednisone,
+  }));
   document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
   setStatus(`Loaded case: ${c.shortLabel} · ${result.therapy.toUpperCase()}`);
 });
@@ -1244,7 +1290,9 @@ getEl<HTMLButtonElement>('btn-reset-defaults').addEventListener('click', () => {
   suppressPersist = true;
   clearPanelOverrides();
   writePatientToForm(c.patient);
-  writeTherapyToForm(c, sc.therapy);
+  writeTherapyToForm(c, sc.therapy, sc.withPrednisone);
+  currentWithPrednisone = sc.withPrednisone;
+  applyPrednisoneScenarioGating();
   onTherapyChange();
   onPatientChange();
   pushBasalProfile();
@@ -1271,7 +1319,11 @@ void (async () => {
     const result = await runOnboarding();
     localStorage.setItem(ONBOARDING_KEY, 'true');
     if (result.caseId && result.therapy) {
-      savedCase = { caseId: result.caseId, therapy: result.therapy };
+      savedCase = {
+        caseId: result.caseId,
+        therapy: result.therapy,
+        withPrednisone: result.withPrednisone,
+      };
       localStorage.setItem(CASE_KEY, JSON.stringify(savedCase));
       justOnboarded = true;
     }
@@ -1279,9 +1331,11 @@ void (async () => {
 
   if (savedCase) {
     const c = PATIENT_CASES[savedCase.caseId];
+    currentWithPrednisone = savedCase.withPrednisone;
     writePatientToForm(c.patient);
-    writeTherapyToForm(c, savedCase.therapy);
+    writeTherapyToForm(c, savedCase.therapy, savedCase.withPrednisone);
   }
+  applyPrednisoneScenarioGating();
 
   // First-time onboarding wipes any stale overrides; otherwise apply the
   // user's saved panel edits on top of the case template.

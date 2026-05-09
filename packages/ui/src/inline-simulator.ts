@@ -17,6 +17,7 @@ import type {
   ActiveBolus,
   ActiveMeal,
   ActiveLongActing,
+  ActivePrednisone,
   LongActingSchedule,
   SimEvent,
   TempBasal,
@@ -65,7 +66,11 @@ interface SimState {
   rngState:          number;
   lastMorningDay: number;
   lastEveningDay: number;
+  lastPremixMorningDay: number;
+  lastPremixEveningDay: number;
+  lastPrednisoneDay: number;
   prescriptionLastFiredDay: Record<string, number>;
+  activePrednisoneDoses: ActivePrednisone[];
   tempBasal:         TempBasal | null;
   events:            SimEvent[];
 }
@@ -90,7 +95,11 @@ function createInitialState(): SimState {
     rngState:          randomSeed(),
     lastMorningDay: -1,
     lastEveningDay: -1,
+    lastPremixMorningDay: -1,
+    lastPremixEveningDay: -1,
+    lastPrednisoneDay: -1,
     prescriptionLastFiredDay: {},
+    activePrednisoneDoses: [],
     tempBasal:         null,
     events:            [],
   };
@@ -364,6 +373,7 @@ export class InlineSimulator {
       iob: Math.round(iob * 100) / 100, cob: Math.round(cob * 10) / 10,
       deltaMinutes: 5, trend: delta.deltaBG / TICK_SIM_MINUTES, basalRate,
       longActingActivity: Math.round(longActingActivity * 1000) / 1000,
+      premixSlowActivity: 0,  // populated in Phase 2
     };
     for (const h of this.tickHandlers) h(snap);
   }
@@ -452,6 +462,7 @@ export class InlineSimulator {
       g6State: this.s.g6.getState(),
       activeBoluses: [...this.s.activeBoluses],
       activeLongActing: [...this.s.activeLongActing],
+      activePrednisoneDoses: this.s.activePrednisoneDoses.map((d) => ({ ...d })),
       resolvedMeals: this.s.resolvedMeals.map((m) => ({ ...m })),
       pumpMicroBoluses: this.s.pumpMicroBoluses.map((b) => ({ ...b })),
       tempBasal: this.s.tempBasal ? { ...this.s.tempBasal } : null,
@@ -459,6 +470,9 @@ export class InlineSimulator {
       rngState: this.s.rngState,
       lastMorningDay: this.s.lastMorningDay,
       lastEveningDay: this.s.lastEveningDay,
+      lastPremixMorningDay: this.s.lastPremixMorningDay,
+      lastPremixEveningDay: this.s.lastPremixEveningDay,
+      lastPrednisoneDay: this.s.lastPrednisoneDay,
       prescriptionLastFiredDay: { ...this.s.prescriptionLastFiredDay },
       pidCGMHistory: [...this.s.pidCGMHistory],
       pidPrevRate: this.s.pidPrevRate,
@@ -474,6 +488,7 @@ export class InlineSimulator {
       patient: { ...state.patient }, therapy: { ...state.therapy },
       activeBoluses: [...(state.activeBoluses ?? [])],
       activeLongActing: [...(state.activeLongActing ?? [])],
+      activePrednisoneDoses: (state.activePrednisoneDoses ?? []).map((d) => ({ ...d })),
       resolvedMeals: (state.resolvedMeals ?? []).map((m) => ({ ...m })),
       pumpMicroBoluses: (state.pumpMicroBoluses ?? []).map((b) => ({ ...b })),
       pidCGMHistory: [...(state.pidCGMHistory ?? [])],
@@ -484,6 +499,9 @@ export class InlineSimulator {
       rngState: state.rngState ?? randomSeed(),
       lastMorningDay: state.lastMorningDay ?? -1,
       lastEveningDay: state.lastEveningDay ?? -1,
+      lastPremixMorningDay: state.lastPremixMorningDay ?? -1,
+      lastPremixEveningDay: state.lastPremixEveningDay ?? -1,
+      lastPrednisoneDay: state.lastPrednisoneDay ?? -1,
       prescriptionLastFiredDay: { ...(state.prescriptionLastFiredDay ?? {}) },
       tempBasal: state.tempBasal ? { ...state.tempBasal } : null,
       events: (state.events ?? []).map((e) => ({ ...e })),

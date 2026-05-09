@@ -357,6 +357,7 @@ export class CGMRenderer {
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
       longActingActivity: snap.longActingActivity,
+      premixSlowActivity: snap.premixSlowActivity,
     });
     this.lastTickWallMs = performance.now();
     this.updateForecast();
@@ -374,6 +375,7 @@ export class CGMRenderer {
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
       iob: snap.iob, cob: snap.cob, trend: snap.trend, basalRate: snap.basalRate,
       longActingActivity: snap.longActingActivity,
+      premixSlowActivity: snap.premixSlowActivity,
     });
     this.dirty = true;
   }

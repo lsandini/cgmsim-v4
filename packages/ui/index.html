@@ -1317,6 +1317,40 @@
               <button type="button" class="la-set-btn">Set</button>
             </div>
           </div>
+          <!--
+            Premix (Novomix 30) — visible only when MDI + withPrednisone scenario.
+            Two slots, BID dosing pattern. Mirrors long-acting row markup minus
+            the type dropdown (Novomix 30 is the only variant in v1).
+            Wired in Phase 2.
+          -->
+          <div class="panel-section" id="section-premix" style="display:none;">
+            <h3>Premix insulin (Novomix 30)</h3>
+            <div class="long-acting-row" id="premix-row-morning" data-slot="morning">
+              <span class="la-row-label">Morning</span>
+              <input type="number" class="premix-dose" min="1" max="80" step="1" value="16" title="Dose (U)" />
+              <input type="time" class="premix-time" min="00:00" max="11:59" value="07:30" />
+              <button type="button" class="premix-set-btn">Set</button>
+            </div>
+            <div class="long-acting-row" id="premix-row-evening" data-slot="evening">
+              <span class="la-row-label">Evening</span>
+              <input type="number" class="premix-dose" min="1" max="80" step="1" value="12" title="Dose (U)" />
+              <input type="time" class="premix-time" min="12:00" max="23:59" value="16:30" />
+              <button type="button" class="premix-set-btn">Set</button>
+            </div>
+          </div>
+          <!--
+            Prednisone (oral) — single morning dose, time clamped 06:00-11:59.
+            Visible only when MDI + withPrednisone scenario. Wired in Phase 3.
+          -->
+          <div class="panel-section" id="section-prednisone" style="display:none;">
+            <h3>Prednisone</h3>
+            <div class="long-acting-row" id="prednisone-row" data-slot="morning">
+              <span class="la-row-label">Morning</span>
+              <input type="number" class="prednisone-dose" min="1" max="100" step="5" value="40" title="Dose (mg)" />
+              <input type="time" class="prednisone-time" min="06:00" max="11:59" value="09:00" />
+              <button type="button" class="prednisone-set-btn">Set</button>
+            </div>
+          </div>
           <div class="panel-section" id="section-basal">
             <h3>Basal profile</h3>
             <div id="basal-profile-rows"></div>

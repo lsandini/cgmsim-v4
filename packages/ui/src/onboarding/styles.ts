@@ -117,4 +117,23 @@ export const onboardingCSS = `
 }
 .case-label, .therapy-label { font-size: 14px; font-weight: 600; margin-bottom: 4px; line-height: 1.3; }
 .case-sub, .therapy-sub { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+/* "Prednisone" tickbox embedded inside the MDI therapy card. Sits below the
+   description, visually indented so it reads as a sub-option of MDI. */
+.therapy-prednisone-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.therapy-prednisone-toggle:hover { border-color: var(--accent); }
+.therapy-prednisone-toggle input { cursor: pointer; }
 `;
