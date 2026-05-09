@@ -16,6 +16,7 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "@lsandini/cgmsim-lib": "^0.10.2"
+    "@lsandini/cgmsim-lib": "^0.10.2",
+    "terser": "^5.46.2"
   }
 }

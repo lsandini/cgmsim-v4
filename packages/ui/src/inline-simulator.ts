@@ -420,9 +420,10 @@ export class InlineSimulator {
       simTimeMs: t, carbsG,
       gastricEmptyingRate: gastricEmptyingRate ?? this.s.patient.gastricEmptyingRate,
     };
-    const { value, nextState } = lcgNext(this.s.rngState);
-    this.s.rngState = nextState;
-    this.s.resolvedMeals.push(resolveMealSplit(meal, value));
+    const draw1 = lcgNext(this.s.rngState);
+    const draw2 = lcgNext(draw1.nextState);
+    this.s.rngState = draw2.nextState;
+    this.s.resolvedMeals.push(resolveMealSplit(meal, draw1.value, draw2.value));
     const ev: SimEvent = { kind: 'meal', simTimeMs: t, carbsG };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);

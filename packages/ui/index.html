@@ -118,12 +118,47 @@
       font-size: 19.2px;
       overflow: hidden;
     }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Pre-release marquee — sits above the whole UI to remind viewers this
+       is a work-in-progress build hosted on surge, not a final product. */
+    #dev-banner {
+      flex: 0 0 auto;
+      height: 22px;
+      background: #b91c1c;
+      color: #ffffff;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      width: 100%;
+    }
+    .dev-banner-track {
+      display: flex;
+      flex-shrink: 0;
+      white-space: nowrap;
+      animation: dev-banner-scroll 30s linear infinite;
+    }
+    .dev-banner-track > span {
+      padding-right: 60px;
+    }
+    @keyframes dev-banner-scroll {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
 
     #app {
+      flex: 1 1 0;
+      min-height: 0;
       display: grid;
-      grid-template-rows: var(--top-strip-height) 1fr var(--control-height);
+      grid-template-rows: auto 1fr auto;     /* strips grow when they wrap */
       grid-template-columns: 1fr;
-      height: 100vh;
       width: 100vw;
     }
 
@@ -131,11 +166,13 @@
     #top-strip {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 10px;
-      padding: 0 16px;
+      row-gap: 6px;
+      padding: 6px 16px;
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border-strong);
-      height: var(--top-strip-height);
+      min-height: var(--top-strip-height);
     }
     #top-strip .spacer { flex: 1; }
 
@@ -178,6 +215,14 @@
     .pill.cob { text-transform: uppercase; }
     .pill.iob .val { color: var(--iob); }
     .pill.cob .val { color: var(--cob); }
+
+    /* IOB and COB pills wrap together as a unit. */
+    .iob-cob-pair {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
     .pill.scenario {
       text-transform: none;
       letter-spacing: 0.02em;
@@ -323,11 +368,13 @@
     #control-strip {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 14px;
-      padding: 0 20px;
+      row-gap: 8px;
+      padding: 8px 20px;
       background: var(--bg-panel);
       border-top: 1px solid var(--border-strong);
-      height: var(--control-height);
+      min-height: var(--control-height);
     }
 
     /* Sim time display */
@@ -336,8 +383,8 @@
       font-size: var(--fs-readout);
       font-weight: 600;
       color: var(--text);
-      min-width: 110px;
       letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
     /* Sun / moon time-of-day indicator */
@@ -373,6 +420,8 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 0;
+      overflow: hidden;
     }
 
     /* Current CGM */
@@ -380,8 +429,10 @@
       font-family: var(--font-mono);
       font-size: var(--fs-bg);
       font-weight: 700;
-      min-width: 96px;
       color: var(--cgm);
+      white-space: nowrap;
+      min-width: 0;
+      overflow: hidden;
       transition: color 0.25s ease, text-shadow 0.25s ease;
     }
     #current-cgm.hypo-l1 { color: var(--amber); }
@@ -391,20 +442,6 @@
     }
     #current-cgm.flash.hypo-l1 { text-shadow: 0 0 14px rgba(245, 158, 11, 0.55); }
     #current-cgm.flash.hypo-l2 { text-shadow: 0 0 14px rgba(239, 68, 68, 0.60); }
-
-    #cgm-unit {
-      font-size: 14px;
-      letter-spacing: 0.04em;
-      color: var(--text-muted);
-      margin-left: -8px;
-      align-self: flex-end;
-      padding-bottom: 4px;
-    }
-
-    #trend-arrow {
-      font-size: 22px;
-      min-width: 24px;
-    }
 
     /* Pause/play button */
     #btn-pause {
@@ -430,8 +467,8 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      flex: 1;
-      min-width: 0;
+      flex: 0 1 50%;
+      min-width: 60px;
       position: relative;
     }
 
@@ -449,8 +486,7 @@
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
       pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.12s ease;
+      opacity: 1;
       z-index: 5;
     }
     #throttle-bubble::after {
@@ -462,10 +498,9 @@
       border: 4px solid transparent;
       border-top-color: var(--accent);
     }
-    #throttle-bubble.visible { opacity: 1; }
 
     #throttle-label {
-      font-size: 11px;
+      font-size: 14px;
       color: var(--text-muted);
       display: flex;
       justify-content: space-between;
@@ -523,6 +558,103 @@
     .quick-btn.bolus { color: var(--iob); }
     .quick-btn.bolus:hover { border-color: var(--iob); background: rgba(59, 130, 246, 0.12); }
 
+    /* Strip-resident dose entry (button + ▲▼ flanks) */
+    .strip-dose-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    /* Carbs + bolus stay together as one atomic unit and wrap together to a
+       new row when the strip can't fit them on the first line. The pair acts
+       as the divider between the left info cluster and the right action
+       cluster — its auto-left margin absorbs free space at wide widths. */
+    .strip-dose-pair {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    /* Bigger emoji on the carbs/bolus buttons without affecting the dose label. */
+    .dose-icon {
+      font-size: 20px;
+      line-height: 1;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    /* The 🍽 glyph sits in the lower half of its design canvas — nudge up so
+       it visually matches the bolus icon's optical centre. */
+    #btn-strip-carbs .dose-icon {
+      transform: translateY(-2px);
+    }
+    .strip-dose-arrows {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .strip-dose-arrow {
+      width: 22px;
+      height: 21px;
+      padding: 0;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      font-size: 9px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.12s, color 0.12s, background 0.12s;
+    }
+    .strip-dose-group.carbs .strip-dose-arrow,
+    .strip-dose-group.carbs #btn-strip-carbs {
+      border-color: var(--cob);
+      color: var(--cob);
+    }
+    .strip-dose-group.carbs .strip-dose-arrow:hover,
+    .strip-dose-group.carbs #btn-strip-carbs:hover {
+      background: rgba(251, 191, 36, 0.12);
+    }
+    .strip-dose-group.carbs .strip-dose-arrow:active,
+    .strip-dose-group.carbs #btn-strip-carbs:active {
+      background: rgba(251, 191, 36, 0.28);
+    }
+    .strip-dose-group.bolus .strip-dose-arrow,
+    .strip-dose-group.bolus #btn-strip-bolus {
+      border-color: var(--iob);
+      color: var(--iob);
+    }
+    .strip-dose-group.bolus .strip-dose-arrow:hover,
+    .strip-dose-group.bolus #btn-strip-bolus:hover {
+      background: rgba(59, 130, 246, 0.12);
+    }
+    .strip-dose-group.bolus .strip-dose-arrow:active,
+    .strip-dose-group.bolus #btn-strip-bolus:active {
+      background: rgba(59, 130, 246, 0.28);
+    }
+    .strip-dose-arrow:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    /* Fix button widths so the label changing (e.g. 3U → 3.5U) doesn't reflow.
+       Flex layout centres the emoji and the dose label on the cross axis,
+       overriding the default baseline alignment that puts the larger emoji
+       below the number. */
+    #btn-strip-carbs,
+    #btn-strip-bolus {
+      min-width: 96px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #strip-carbs-label,
+    #strip-bolus-label {
+      font-variant-numeric: tabular-nums;
+    }
+
     /* Panel toggle */
     #btn-panel,
     #btn-fullscreen {
@@ -539,6 +671,16 @@
       justify-content: center;
       flex-shrink: 0;
       transition: border-color 0.15s, color 0.15s;
+    }
+    /* Visually separate the system controls (settings + fullscreen) from the
+       treatment action group (carbs + bolus). */
+    #btn-panel { margin-left: 16px; }
+    /* Active state: gear lights up while the side panel is open, signalling
+       it can be clicked again to close. */
+    #btn-panel.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
     }
     #btn-fullscreen { font-size: 16px; }
     #btn-panel:hover,
@@ -628,6 +770,53 @@
     .panel-row select:focus {
       outline: none;
       border-color: var(--accent);
+    }
+
+    /* Custom 24h time picker (replaces native <input type="time"> UI). */
+    .time24 {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      cursor: ns-resize;
+      user-select: none;
+      padding: 0 6px;
+      height: 28px;
+      font-size: 13px;
+      font-family: var(--font);
+      gap: 1px;
+    }
+    .time24.focused { outline: none; border-color: var(--accent); }
+    .time24 .t24-h, .time24 .t24-m {
+      padding: 0 3px;
+      border-radius: 3px;
+      transition: background 80ms ease;
+    }
+    .time24 .t24-h:hover, .time24 .t24-m:hover {
+      background: rgba(96, 165, 250, 0.18);
+    }
+    .time24 .t24-h.active, .time24 .t24-m.active {
+      background: rgba(96, 165, 250, 0.28);
+    }
+    .time24 .t24-sep { opacity: 0.6; padding: 0 1px; }
+    .time24.disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .time24.disabled .t24-h:hover, .time24.disabled .t24-m:hover {
+      background: transparent;
+    }
+    /* In the long-acting grid column, fill the cell. */
+    .long-acting-row .time24 {
+      display: flex;
+      width: 100%;
+      font-size: 13px;
+      height: 28px;
     }
 
     .long-acting-row input[type="number"],
@@ -744,6 +933,7 @@
     #view-controls {
       display: flex;
       gap: 4px;
+      flex-shrink: 0;
     }
 
     .view-btn {
@@ -770,6 +960,7 @@
       align-items: center;
       gap: 8px;
       margin-left: 8px;
+      flex-shrink: 0;
     }
     #mdi-submode-group[hidden] { display: none !important; }
     .seg-toggle {
@@ -958,11 +1149,19 @@
   </style>
 </head>
 <body>
+  <div id="dev-banner" role="status" aria-label="Development build notice">
+    <div class="dev-banner-track" aria-hidden="true">
+      <span>Development version, work in progress, not production ready&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+      <span>Development version, work in progress, not production ready&nbsp;&nbsp;·&nbsp;&nbsp;</span>
+    </div>
+  </div>
   <div id="app">
     <!-- Top strip — IOB / COB / scenario / unit toggle pillboxes -->
     <div id="top-strip">
-      <div class="pill iob" id="iob-cob-iob">IOB <span class="val" id="iob-val">0.00</span><span class="unit">U</span></div>
-      <div class="pill cob" id="iob-cob-cob">COB <span class="val" id="cob-val">0</span><span class="unit">g</span></div>
+      <div class="iob-cob-pair">
+        <div class="pill iob" id="iob-cob-iob">IOB <span class="val" id="iob-val">0.00</span><span class="unit">U</span></div>
+        <div class="pill cob" id="iob-cob-cob">COB <span class="val" id="cob-val">0</span><span class="unit">g</span></div>
+      </div>
       <div class="pill scenario" id="scenario-badge">
         <span class="who">Default patient</span><span class="dot">·</span>
         <div class="dropdown" id="scenario-mode-dd">
@@ -1013,25 +1212,14 @@
 
         <!-- Tab bar -->
         <div id="panel-tabs">
-          <button class="tab-btn active" data-tab="events">Events</button>
-          <button class="tab-btn" data-tab="therapy">Therapy</button>
+          <button class="tab-btn active" data-tab="therapy">Therapy</button>
           <button class="tab-btn" data-tab="patient">Patient</button>
           <button class="tab-btn" data-tab="session">Session</button>
+          <button class="tab-btn" data-tab="view">View</button>
         </div>
 
-        <!-- Events tab -->
-        <div class="tab-content active" id="tab-events">
-          <div class="panel-section">
-            <h3>Inject</h3>
-            <div class="bolus-row">
-              <input type="number" id="bolus-amount" min="0.5" max="20" step="0.5" value="4" />
-              <button id="btn-bolus">💉 Bolus</button>
-            </div>
-            <div class="bolus-row" style="margin-top: 8px;">
-              <input type="number" id="meal-carbs" min="5" max="150" step="5" value="60" />
-              <button id="btn-meal" style="border-color: var(--amber); color: var(--amber);">🍽 Meal</button>
-            </div>
-          </div>
+        <!-- View tab -->
+        <div class="tab-content" id="tab-view">
           <div class="panel-section">
             <h3>Overlays</h3>
             <div class="panel-row" id="row-overlay-basal">
@@ -1066,7 +1254,7 @@
         </div>
 
         <!-- Therapy tab -->
-        <div class="tab-content" id="tab-therapy">
+        <div class="tab-content active" id="tab-therapy">
           <div class="panel-section">
             <h3>Therapy mode</h3>
             <div class="panel-row">
@@ -1125,7 +1313,7 @@
                 <option value="Degludec">Degludec (Tresiba)</option>
               </select>
               <input type="number" class="la-dose" min="1" max="80" step="1" value="8" title="Dose (U)" />
-              <input type="time" class="la-time" min="12:00" max="23:59" value="20:00" />
+              <input type="time" class="la-time" min="12:00" max="23:59" value="21:00" />
               <button type="button" class="la-set-btn">Set</button>
             </div>
           </div>
@@ -1147,6 +1335,13 @@
 
         <!-- Patient tab -->
         <div class="tab-content" id="tab-patient">
+          <div class="panel-section">
+            <h3>Onboarding</h3>
+            <div style="display:flex;gap:6px;">
+              <button id="btn-reopen-onboarding" class="session-btn" type="button" style="flex:1;width:auto;margin-bottom:0;" title="Reopen the patient + therapy picker">↻ Restart onboarding</button>
+              <button id="btn-reset-defaults" class="session-btn" type="button" style="flex:1;width:auto;margin-bottom:0;" title="Discard panel edits and revert to the current case's defaults">↺ Reset to case defaults</button>
+            </div>
+          </div>
           <div class="panel-section">
             <h3>True physiology</h3>
             <div class="panel-row">
@@ -1231,12 +1426,11 @@
 
       <div id="throttle-area">
         <div id="throttle-label">
-          <span>Speed</span>
-          <span id="throttle-val">×10</span>
+          <span>Acceleration factor</span>
         </div>
         <input type="range" id="throttle-slider"
-               min="0" max="1000" step="1" value="281" />
-        <div id="throttle-bubble">×10</div>
+               min="0" max="1000" step="1" value="719" />
+        <div id="throttle-bubble" class="visible">×360</div>
       </div>
 
       <div id="time-block">
@@ -1247,14 +1441,24 @@
         <div id="sim-time">D+00:00</div>
       </div>
 
-      <div style="display:flex; align-items:baseline; gap:2px;">
-        <div id="current-cgm">---</div>
-        <div id="cgm-unit">mmol/L</div>
-      </div>
-      <div id="trend-arrow">→</div>
+      <div id="current-cgm">---</div>
 
-      <button class="quick-btn meal" id="btn-quick-meal" title="60g meal">🍽 60g</button>
-      <button class="quick-btn bolus" id="btn-quick-bolus" title="4U bolus">💉 4U</button>
+      <div class="strip-dose-pair">
+        <div class="strip-dose-group carbs">
+          <div class="strip-dose-arrows">
+            <button class="strip-dose-arrow" data-dir="up"   data-target="carbs" aria-label="Increase carbs">▲</button>
+            <button class="strip-dose-arrow" data-dir="down" data-target="carbs" aria-label="Decrease carbs">▼</button>
+          </div>
+          <button class="quick-btn" id="btn-strip-carbs" title="Inject carbs"><span class="dose-icon">🍽</span><span id="strip-carbs-label">40g</span></button>
+        </div>
+        <div class="strip-dose-group bolus">
+          <button class="quick-btn" id="btn-strip-bolus" title="Inject bolus"><span class="dose-icon">💉</span><span id="strip-bolus-label">3U</span></button>
+          <div class="strip-dose-arrows">
+            <button class="strip-dose-arrow" data-dir="up"   data-target="bolus" aria-label="Increase bolus">▲</button>
+            <button class="strip-dose-arrow" data-dir="down" data-target="bolus" aria-label="Decrease bolus">▼</button>
+          </div>
+        </div>
+      </div>
       <button id="btn-panel" title="Toggle panel" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg></button>
       <button id="btn-fullscreen" title="Full screen trace (F)">⛶</button>
     </div>

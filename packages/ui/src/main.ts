@@ -3,11 +3,16 @@
  * Adds: comparison runs, full-screen mode, diabetes duration control
  */
 
-import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile, Prescription, MDISubmode } from '@cgmsim/shared';
+import type { TickSnapshot, DisplayUnit, WorkerState, LongActingSchedule, LongActingType, TherapyProfile, Prescription, MDISubmode, VirtualPatient } from '@cgmsim/shared';
 import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from './inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from './canvas-renderer.js';
-import { exportSession, importSession, loadUIPrefs, saveUIPrefs } from './storage.js';
+import { exportSession, importSession, loadUIPrefs, saveUIPrefs,
+         loadPanelOverrides, savePanelOverrides, clearPanelOverrides,
+         type PanelOverrides } from './storage.js';
+import { runOnboarding, ensureOnboardingStyles } from './onboarding/onboarding.js';
+import { PATIENT_CASES, buildTherapyForCase, type CaseId, type TherapyChoice, type PatientCase } from './onboarding/cases.js';
+import { enhanceTimeInput } from './time24.js';
 
 // ── Global error surface ──────────────────────────────────────────────────────
 
@@ -60,16 +65,6 @@ function formatThrottle(t: number): string {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function trendArrow(mgdlPerMin: number): string {
-  if (mgdlPerMin >  3)   return '↑↑';
-  if (mgdlPerMin >  1)   return '↑';
-  if (mgdlPerMin >  0.3) return '↗';
-  if (mgdlPerMin < -3)   return '↓↓';
-  if (mgdlPerMin < -1)   return '↓';
-  if (mgdlPerMin < -0.3) return '↘';
-  return '→';
-}
-
 function formatSimTime(ms: number): string {
   const m = Math.floor(ms / 60_000);
   const d = Math.floor(m / 1440);
@@ -104,7 +99,7 @@ const uiPrefs = loadUIPrefs();
 
 const appState = {
   running:        false,
-  throttle:       10 as number,
+  throttle:       360 as number,
   displayUnit:    uiPrefs.displayUnit,
   panelOpen:      uiPrefs.panelOpen,
   fullScreen:     false,
@@ -124,13 +119,10 @@ function getEl<T extends Element>(id: string): T {
 const canvas           = getEl<HTMLCanvasElement>('cgm-canvas');
 const btnPause         = getEl<HTMLButtonElement>('btn-pause');
 const throttleSlider   = getEl<HTMLInputElement>('throttle-slider');
-const throttleVal      = getEl<HTMLElement>('throttle-val');
 const throttleBubble   = getEl<HTMLElement>('throttle-bubble');
 const simTimeEl        = getEl<HTMLElement>('sim-time');
 const skyIcon          = getEl<SVGSVGElement>('sky-icon');
 const currentCGMEl     = getEl<HTMLElement>('current-cgm');
-const cgmUnitEl        = getEl<HTMLElement>('cgm-unit');
-const trendArrowEl     = getEl<HTMLElement>('trend-arrow');
 const bgOverlay        = getEl<HTMLElement>('bg-overlay');
 const bgOverlayValue   = getEl<HTMLElement>('bg-overlay-value');
 const iobVal           = getEl<HTMLElement>('iob-val');
@@ -140,12 +132,10 @@ const themeToggle      = getEl<HTMLButtonElement>('theme-toggle');
 const btnPanel         = getEl<HTMLButtonElement>('btn-panel');
 const btnFullscreen    = getEl<HTMLButtonElement>('btn-fullscreen');
 const sidePanel        = getEl<HTMLElement>('side-panel');
-const btnBolus         = getEl<HTMLButtonElement>('btn-bolus');
-const btnMeal          = getEl<HTMLButtonElement>('btn-meal');
-const btnQuickMeal     = getEl<HTMLButtonElement>('btn-quick-meal');
-const btnQuickBolus    = getEl<HTMLButtonElement>('btn-quick-bolus');
-const bolusAmount      = getEl<HTMLInputElement>('bolus-amount');
-const mealCarbs        = getEl<HTMLInputElement>('meal-carbs');
+const btnStripCarbs    = getEl<HTMLButtonElement>('btn-strip-carbs');
+const btnStripBolus    = getEl<HTMLButtonElement>('btn-strip-bolus');
+const stripCarbsLabel  = getEl<HTMLSpanElement>('strip-carbs-label');
+const stripBolusLabel  = getEl<HTMLSpanElement>('strip-bolus-label');
 const therapyMode      = getEl<HTMLSelectElement>('therapy-mode');
 const glucoseTarget    = getEl<HTMLInputElement>('glucose-target');
 const rapidAnalogue    = getEl<HTMLSelectElement>('rapid-analogue');
@@ -165,6 +155,7 @@ const carbsAbsTime     = getEl<HTMLInputElement>('carbs-abs-time');
 const gastricRate      = getEl<HTMLInputElement>('gastric-rate');
 const enableSMB        = getEl<HTMLInputElement>('enable-smb');
 const rowSMB           = getEl<HTMLElement>('row-smb');
+const rowTarget        = getEl<HTMLElement>('row-target');
 const rowOverlayBasal  = getEl<HTMLElement>('row-overlay-basal');
 const overlayBasal     = getEl<HTMLInputElement>('overlay-basal');
 const overlayIOB       = getEl<HTMLInputElement>('overlay-iob');
@@ -256,7 +247,6 @@ function updateHUD(snap: TickSnapshot): void {
       bgOverlay.classList.remove('flash');
     }, 250);
   }
-  trendArrowEl.textContent = trendArrow(snap.trend);
   iobVal.textContent = snap.iob.toFixed(2);
   cobVal.textContent = snap.cob.toFixed(0);
 }
@@ -277,6 +267,86 @@ function persistUIPrefs(): void {
     panelOpen:         appState.panelOpen,
     prescription:      currentPrescription,
   });
+}
+
+// ── Panel overrides (manual edits to therapy + patient tabs) ────────────────
+// Glucose target and trueISF are converted to mg/dL canonical so the snapshot
+// stays valid across unit toggles. All other fields are unitless.
+
+function readPanelSnapshot(): PanelOverrides {
+  return {
+    therapy: {
+      mode:               therapyMode.value as 'AID' | 'PUMP' | 'MDI',
+      progDIA:            parseFloat(progDIA.value),
+      rapidAnalogue:      rapidAnalogue.value as 'Fiasp' | 'Lispro' | 'Aspart',
+      enableSMB:          enableSMB.checked,
+      basalSegments:      basalSegments.map(s => ({ ...s })),
+      longActingMorning:  activeSchedule.morning,
+      longActingEvening:  activeSchedule.evening,
+      laMorningInputs:    { type: morningRefs.type.value, dose: morningRefs.dose.value, time: morningRefs.time.value },
+      laEveningInputs:    { type: eveningRefs.type.value, dose: eveningRefs.dose.value, time: eveningRefs.time.value },
+      tempBasalRate:      tempBasalRate.value,
+      tempBasalDuration:  tempBasalDur.value,
+    },
+    patient: {
+      trueISFMgdl:         fromDisplay(parseFloat(trueISF.value)),
+      trueCR:              parseFloat(trueCR.value),
+      trueDIA:             parseFloat(trueDIA.value),
+      weight:              parseFloat(patientWeight.value),
+      diabetesDuration:    parseFloat(diabetesDuration.value),
+      carbsAbsTime:        parseFloat(carbsAbsTime.value),
+      gastricEmptyingRate: parseFloat(gastricRate.value),
+    },
+  };
+}
+
+/** Write a snapshot back into the form fields. Caller is responsible for
+ *  re-running onTherapyChange / onPatientChange / pushBasalProfile so the
+ *  simulator picks up the new values. */
+function applyPanelSnapshot(snap: PanelOverrides): void {
+  const isMmol = appState.displayUnit === 'mmoll';
+  const toDisplay = (mgdl: number): string =>
+    isMmol ? (mgdl / 18.0182).toFixed(1) : String(Math.round(mgdl));
+
+  // Therapy. Glucose target is intentionally NOT restored from the snapshot —
+  // it is reset to the case template default on every reload / reset.
+  therapyMode.value   = snap.therapy.mode;
+  progDIA.value       = String(snap.therapy.progDIA);
+  rapidAnalogue.value = snap.therapy.rapidAnalogue;
+  enableSMB.checked   = snap.therapy.enableSMB;
+  basalSegments       = snap.therapy.basalSegments.map(s => ({ ...s }));
+  renderBasalRows();
+
+  morningRefs.type.value = snap.therapy.laMorningInputs.type;
+  morningRefs.dose.value = snap.therapy.laMorningInputs.dose;
+  morningRefs.time.value = snap.therapy.laMorningInputs.time;
+  eveningRefs.type.value = snap.therapy.laEveningInputs.type;
+  eveningRefs.dose.value = snap.therapy.laEveningInputs.dose;
+  eveningRefs.time.value = snap.therapy.laEveningInputs.time;
+  setSlot('morning', snap.therapy.longActingMorning);
+  setSlot('evening', snap.therapy.longActingEvening);
+
+  tempBasalRate.value = snap.therapy.tempBasalRate;
+  tempBasalDur.value  = snap.therapy.tempBasalDuration;
+
+  // Patient
+  trueISF.value          = toDisplay(snap.patient.trueISFMgdl);
+  trueCR.value           = String(snap.patient.trueCR);
+  trueDIA.value          = String(snap.patient.trueDIA);
+  patientWeight.value    = String(snap.patient.weight);
+  diabetesDuration.value = String(snap.patient.diabetesDuration);
+  carbsAbsTime.value     = String(snap.patient.carbsAbsTime);
+  gastricRate.value      = String(snap.patient.gastricEmptyingRate);
+}
+
+/** True during init / reset / re-onboarding so the persist hooks below don't
+ *  re-save case defaults right after we just cleared them. Flipped to false
+ *  at the very end of the init IIFE; toggled around reset/re-onboarding. */
+let suppressPersist = true;
+
+function persistPanelOverrides(): void {
+  if (suppressPersist) return;
+  savePanelOverrides(readPanelSnapshot());
 }
 
 // ── Pause / Resume ────────────────────────────────────────────────────────────
@@ -317,24 +387,17 @@ function updateThrottleBubble(label: string): void {
 throttleSlider.addEventListener('input', () => {
   const t = posToThrottle(parseInt(throttleSlider.value));
   appState.throttle = t;
-  const label = formatThrottle(t);
-  throttleVal.textContent = label;
-  updateThrottleBubble(label);
+  updateThrottleBubble(formatThrottle(t));
   bridge.setThrottle(t);
   if (appState.compareRunning) compare.setThrottle(t);
   renderer.setPlayback(t, appState.running);
 });
 
-const showBubble = (): void => { throttleBubble.classList.add('visible'); updateThrottleBubble(throttleVal.textContent ?? ''); };
-const hideBubble = (): void => { throttleBubble.classList.remove('visible'); };
-throttleSlider.addEventListener('pointerenter', showBubble);
-throttleSlider.addEventListener('pointerleave', hideBubble);
-throttleSlider.addEventListener('focus', showBubble);
-throttleSlider.addEventListener('blur', hideBubble);
-window.addEventListener('resize', () => updateThrottleBubble(throttleVal.textContent ?? ''));
+// Bubble is permanently visible (CSS); only its position needs to stay
+// aligned with the slider thumb across resizes.
+window.addEventListener('resize', () => updateThrottleBubble(throttleBubble.textContent ?? ''));
 
-throttleVal.textContent = formatThrottle(posToThrottle(parseInt(throttleSlider.value)));
-updateThrottleBubble(throttleVal.textContent);
+updateThrottleBubble(formatThrottle(posToThrottle(parseInt(throttleSlider.value))));
 
 // ── Zoom and pan controls ─────────────────────────────────────────────────────
 
@@ -396,7 +459,6 @@ unitToggle.addEventListener('click', () => {
   appState.displayUnit = prev === 'mgdl' ? 'mmoll' : 'mgdl';
   renderer.options.displayUnit = appState.displayUnit;
   unitToggle.textContent = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-  cgmUnitEl.textContent  = appState.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
   syncPanelUnits(prev);
   if (appState.lastSnap) updateHUD(appState.lastSnap);
   renderer.markDirty();
@@ -423,6 +485,7 @@ themeToggle.addEventListener('click', () => {
 btnPanel.addEventListener('click', () => {
   appState.panelOpen = !appState.panelOpen;
   sidePanel.classList.toggle('open', appState.panelOpen);
+  btnPanel.classList.toggle('active', appState.panelOpen);
   persistUIPrefs();
 });
 
@@ -451,6 +514,7 @@ document.addEventListener('fullscreenchange', () => {
   appState.fullScreen = !!document.fullscreenElement;
   if (appState.fullScreen) {
     sidePanel.classList.remove('open');
+    btnPanel.classList.remove('active');
     appState.panelOpen = false;
   }
   btnFullscreen.textContent = appState.fullScreen ? '⊡' : '⛶';
@@ -464,14 +528,37 @@ btnFullscreen.addEventListener('click', toggleFullScreen);
 // actually sees on the chart — so the marker lands at the "now" line instantly
 // instead of in the lookahead zone where it'd be culled.
 
-btnQuickMeal.addEventListener('click',  () => bridge.meal(60, undefined, renderer.displayedSimTime));
-btnQuickBolus.addEventListener('click', () => bridge.bolus(parseFloat(bolusAmount.value) || 4, undefined, renderer.displayedSimTime));
-btnBolus.addEventListener('click', () => {
-  const u = parseFloat(bolusAmount.value); if (u > 0) bridge.bolus(u, undefined, renderer.displayedSimTime);
+// Strip dose state — values shown as the button labels, adjusted by ▲▼ flanks.
+let stripCarbsValue = 40;   // grams,  step 5,   bounds 5..150
+let stripBolusValue = 3;    // units,  step 0.5, bounds 0.5..20
+
+function renderStripDoses(): void {
+  stripCarbsLabel.textContent = `${stripCarbsValue}g`;
+  stripBolusLabel.textContent = `${stripBolusValue}U`;
+}
+renderStripDoses();
+
+function adjustStripDose(target: 'carbs' | 'bolus', dir: 'up' | 'down'): void {
+  if (target === 'carbs') {
+    const next = stripCarbsValue + (dir === 'up' ? 5 : -5);
+    stripCarbsValue = Math.max(5, Math.min(150, next));
+  } else {
+    const next = stripBolusValue + (dir === 'up' ? 0.5 : -0.5);
+    stripBolusValue = Math.max(0.5, Math.min(20, Math.round(next * 2) / 2));
+  }
+  renderStripDoses();
+}
+
+document.querySelectorAll<HTMLButtonElement>('.strip-dose-arrow').forEach((b) => {
+  b.addEventListener('click', () => {
+    const target = b.dataset['target'] as 'carbs' | 'bolus';
+    const dir    = b.dataset['dir']    as 'up'    | 'down';
+    adjustStripDose(target, dir);
+  });
 });
-btnMeal.addEventListener('click', () => {
-  const c = parseFloat(mealCarbs.value); if (c > 0) bridge.meal(c, undefined, renderer.displayedSimTime);
-});
+
+btnStripCarbs.addEventListener('click', () => bridge.meal(stripCarbsValue, undefined, renderer.displayedSimTime));
+btnStripBolus.addEventListener('click', () => bridge.bolus(stripBolusValue, undefined, renderer.displayedSimTime));
 
 // ── Long-acting slot helpers ──────────────────────────────────────────────────
 
@@ -517,6 +604,11 @@ function setSlotActiveState(refs: SlotRowRefs, schedule: LongActingSchedule | nu
   refs.type.disabled = isActive;
   refs.dose.disabled = isActive;
   refs.time.disabled = isActive;
+  const timeWidget = (refs.time as unknown as { _time24?: HTMLElement })._time24;
+  if (timeWidget) {
+    timeWidget.classList.toggle('disabled', isActive);
+    timeWidget.tabIndex = isActive ? -1 : 0;
+  }
   refs.setBtn.textContent = isActive ? 'Edit' : 'Set';
 }
 
@@ -529,6 +621,8 @@ function shakeRow(refs: SlotRowRefs): void {
 
 const morningRefs = getSlotRowRefs(laRowMorning);
 const eveningRefs = getSlotRowRefs(laRowEvening);
+enhanceTimeInput(morningRefs.time);
+enhanceTimeInput(eveningRefs.time);
 const slotRefs: Record<SlotName, SlotRowRefs> = {
   morning: morningRefs,
   evening: eveningRefs,
@@ -548,6 +642,7 @@ function setSlot(slot: SlotName, schedule: LongActingSchedule | null): void {
     longActingMorning: activeSchedule.morning,
     longActingEvening: activeSchedule.evening,
   });
+  persistPanelOverrides();
 }
 
 function onSetUnsetClick(slot: SlotName): void {
@@ -610,12 +705,14 @@ function onTherapyChange(): void {
   sectionBasal.style.display     = mode !== 'MDI'  ? 'block' : 'none';
   sectionTempBasal.style.display = mode !== 'MDI'  ? 'block' : 'none';
   rowSMB.style.display           = mode === 'AID'  ? 'flex'  : 'none';
+  rowTarget.style.display        = mode === 'AID'  ? 'flex'  : 'none';
   rowOverlayBasal.style.display  = mode !== 'MDI'  ? 'flex'  : 'none';
   renderer.options.therapyMode   = mode;
   renderer.markDirty();
   // MDI-only submode chrome
   mdiSubmodeGroup.hidden = mode !== 'MDI';
   applyPrescriptionLockUI();
+  persistPanelOverrides();
 }
 
 // ── MDI submode (LIVE / PRESCRIPTION) ────────────────────────────────────────
@@ -624,7 +721,7 @@ let currentSubmode: MDISubmode = 'LIVE';
 // Restore last-saved prescription from localStorage (uiPrefs); falls back to defaults.
 let currentPrescription: Prescription = JSON.parse(JSON.stringify(uiPrefs.prescription ?? DEFAULT_PRESCRIPTION));
 
-function setSubmode(submode: MDISubmode): void {
+function setSubmode(submode: MDISubmode, fromInit = false): void {
   currentSubmode = submode;
   for (const btn of mdiSubmodeGroup.querySelectorAll<HTMLButtonElement>('.seg-btn')) {
     const isActive = btn.dataset.submode === submode;
@@ -635,6 +732,20 @@ function setSubmode(submode: MDISubmode): void {
   btnEditPresc.hidden = submode !== 'PRESCRIPTION';
   bridge.setTherapyParam({ mdiSubmode: submode });
   applyPrescriptionLockUI();
+
+  // Evening LA defaults to 21:00 in both submodes. The flip block remains as a
+  // safety net: if the user manually entered 22:00 and toggles submode, normalise
+  // back to 21:00. Init / restore skips this via fromInit.
+  if (!fromInit && therapyMode.value === 'MDI' && activeSchedule.evening) {
+    const cur = activeSchedule.evening.injectionMinute;
+    const flipToPrescription = submode === 'PRESCRIPTION' && cur === 21 * 60;
+    const flipToLive         = submode === 'LIVE'         && cur === 22 * 60;
+    if (flipToPrescription || flipToLive) {
+      const desired = 21 * 60;
+      eveningRefs.time.value = minutesToTimeString(desired);
+      setSlot('evening', { ...activeSchedule.evening, injectionMinute: desired });
+    }
+  }
 }
 
 /**
@@ -644,14 +755,15 @@ function setSubmode(submode: MDISubmode): void {
  */
 function applyPrescriptionLockUI(): void {
   const lock = therapyMode.value === 'MDI' && currentSubmode === 'PRESCRIPTION';
-  const locks: HTMLButtonElement[] = [btnBolus, btnMeal, btnQuickMeal, btnQuickBolus];
+  const locks: HTMLButtonElement[] = [btnStripCarbs, btnStripBolus];
   for (const b of locks) {
     b.disabled = lock;
     b.title = lock ? 'Disabled in PRESCRIPTION submode' : '';
     b.style.opacity = lock ? '0.4' : '';
   }
-  bolusAmount.disabled = lock;
-  mealCarbs.disabled   = lock;
+  document.querySelectorAll<HTMLButtonElement>('.strip-dose-arrow').forEach((b) => {
+    b.disabled = lock;
+  });
 }
 
 mdiSubmodeGroup.addEventListener('click', (e) => {
@@ -756,7 +868,7 @@ function setScenarioMenuOpen(open: boolean): void {
 }
 scenarioModeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  setScenarioMenuOpen(scenarioModeMenu.hidden);
+  setScenarioMenuOpen(!!scenarioModeMenu.hidden);
 });
 scenarioModeMenu.addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest<HTMLElement>('li[role="option"]');
@@ -783,6 +895,7 @@ btnSetTemp.addEventListener('click', () => {
   bridge.setTempBasal(rSafe, isNaN(d) ? undefined : d);
   setStatus(`Temp basal: ${rSafe} U/hr for ${dDisplay} min`);
 });
+[tempBasalRate, tempBasalDur].forEach(el => el.addEventListener('change', persistPanelOverrides));
 btnCancelTemp.addEventListener('click', () => { bridge.cancelTempBasal(); setStatus('Temp basal cancelled'); });
 
 // ── Basal profile editor ──────────────────────────────────────────────────────
@@ -807,11 +920,14 @@ function renderBasalRows(): void {
         : '<div style="width:32px;"></div>'}
     `;
     const [timeInput, rateInput] = Array.from(row.querySelectorAll('input')) as HTMLInputElement[];
-    if (timeInput && !timeInput.disabled) {
-      timeInput.addEventListener('change', () => {
-        if (basalSegments[i]) basalSegments[i]!.timeMinutes = timeStringToMinutes(timeInput.value);
-        pushBasalProfile();
-      });
+    if (timeInput) {
+      enhanceTimeInput(timeInput, { minuteStep: 30 });
+      if (!timeInput.disabled) {
+        timeInput.addEventListener('change', () => {
+          if (basalSegments[i]) basalSegments[i]!.timeMinutes = timeStringToMinutes(timeInput.value);
+          pushBasalProfile();
+        });
+      }
     }
     if (rateInput) {
       rateInput.addEventListener('change', () => {
@@ -835,6 +951,7 @@ function pushBasalProfile(): void {
   bridge.setTherapyParam({
     basalProfile: [...basalSegments].sort((a, b) => a.timeMinutes - b.timeMinutes),
   });
+  persistPanelOverrides();
 }
 
 btnAddBasal.addEventListener('click', () => {
@@ -857,6 +974,7 @@ function onPatientChange(): void {
     carbsAbsTime:        parseFloat(carbsAbsTime.value),
     gastricEmptyingRate: parseFloat(gastricRate.value),
   });
+  persistPanelOverrides();
 }
 
 [trueISF, trueCR, trueDIA, patientWeight, diabetesDuration, carbsAbsTime, gastricRate]
@@ -895,7 +1013,7 @@ btnImport.addEventListener('click', async () => {
     currentPrescription = state.therapy.prescription
       ? JSON.parse(JSON.stringify(state.therapy.prescription))
       : JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION));
-    setSubmode(state.therapy.mdiSubmode ?? 'LIVE');
+    setSubmode(state.therapy.mdiSubmode ?? 'LIVE', true);
 
     // Manually refresh the HUD from the loaded state, since no tick will fire while paused.
     const last = history[history.length - 1];
@@ -939,8 +1057,10 @@ btnReset.addEventListener('click', () => {
     activeBoluses:[],activeLongActing:[],
     resolvedMeals:[],pumpMicroBoluses:[],tempBasal:null,events:[],rngState:seed,
     lastMorningDay:-1,lastEveningDay:-1,prescriptionLastFiredDay:{},
-    pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:10,running:false,
+    pidCGMHistory:[],pidPrevRate:0.8,pidTicksSinceLastMB:999,throttle:360,running:false,
   });
+  throttleSlider.value = String(throttleToPos(360));
+  throttleSlider.dispatchEvent(new Event('input'));
   setSlot('morning', null);
   setSlot('evening', null);
   renderer.clearHistory();
@@ -1015,52 +1135,205 @@ document.addEventListener('keydown', (e) => {
       throttleSlider.value = String(throttleToPos(prev));
       throttleSlider.dispatchEvent(new Event('input')); break;
     }
-    case 'm': bridge.meal(60, undefined, renderer.displayedSimTime); break;
-    case 'b': bridge.bolus(parseFloat(bolusAmount.value) || 4, undefined, renderer.displayedSimTime); break;
+    case 'm': bridge.meal(stripCarbsValue,  undefined, renderer.displayedSimTime); break;
+    case 'b': bridge.bolus(stripBolusValue, undefined, renderer.displayedSimTime); break;
     case 'u': unitToggle.click(); break;
     case 'f': case 'F': toggleFullScreen(); break;
   }
 });
 
-// ── Initial state ─────────────────────────────────────────────────────────────
+// ── Onboarding case persistence + form application ───────────────────────────
+const ONBOARDING_KEY = 'cgmsim.onboarded';
+const CASE_KEY       = 'cgmsim.case';
+
+interface SavedCase { caseId: CaseId; therapy: TherapyChoice; }
+
+function loadSavedCase(): SavedCase | null {
+  const raw = localStorage.getItem(CASE_KEY);
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw) as Partial<SavedCase>;
+    if (!obj.caseId || !obj.therapy) return null;
+    if (!(obj.caseId in PATIENT_CASES)) return null;
+    return { caseId: obj.caseId, therapy: obj.therapy };
+  } catch { return null; }
+}
+
+function writePatientToForm(p: VirtualPatient): void {
+  const isMmol = appState.displayUnit === 'mmoll';
+  trueISF.value          = isMmol ? (p.trueISF / 18.0182).toFixed(1) : String(p.trueISF);
+  trueCR.value           = String(p.trueCR);
+  trueDIA.value          = String(p.dia);
+  patientWeight.value    = String(p.weight);
+  diabetesDuration.value = String(p.diabetesDuration);
+  carbsAbsTime.value     = String(p.carbsAbsTime);
+  gastricRate.value      = String(p.gastricEmptyingRate);
+}
+
+function writeTherapyToForm(c: PatientCase, choice: TherapyChoice): void {
+  const therapy = buildTherapyForCase(c, choice);
+  therapyMode.value = therapy.mode;
+  // Glucose target is stored canonical mg/dL, but the form may be displaying mmol/L.
+  const isMmol = appState.displayUnit === 'mmoll';
+  glucoseTarget.value = isMmol
+    ? (therapy.glucoseTarget / 18.0182).toFixed(1)
+    : String(Math.round(therapy.glucoseTarget));
+  basalSegments = therapy.basalProfile.map(e => ({ ...e }));
+  renderBasalRows();
+  setSlot('morning', null);
+  setSlot('evening', null);
+  if (therapy.mode === 'MDI' && therapy.longActingEvening) {
+    eveningRefs.type.value = therapy.longActingEvening.type;
+    eveningRefs.dose.value = String(therapy.longActingEvening.units);
+    eveningRefs.time.value = minutesToTimeString(therapy.longActingEvening.injectionMinute);
+    setSlot('evening', therapy.longActingEvening);
+  }
+}
+
+getEl<HTMLButtonElement>('btn-reopen-onboarding').addEventListener('click', async () => {
+  const result = await runOnboarding();
+  if (!result.caseId || !result.therapy) return;
+  const c = PATIENT_CASES[result.caseId];
+
+  // Wipe the running simulation so the new case starts cleanly — matches
+  // Session > Reset simulation, but uses the chosen case's params instead
+  // of the hardcoded defaults.
+  stopCompare();
+  bridge.pause(); setRunning(false);
+  const seed = (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1;
+  bridge.reset({
+    simTimeMs: 6*60*60_000, trueGlucose: 100, lastCGM: 100,
+    patient: { ...c.patient },
+    therapy: buildTherapyForCase(c, result.therapy),
+    g6State: { v:[0,0], cc:[0,0], tCalib:0, rng:{ jsr:123456789^seed, seed } },
+    activeBoluses: [], activeLongActing: [],
+    resolvedMeals: [], pumpMicroBoluses: [], tempBasal: null, events: [], rngState: seed,
+    lastMorningDay: -1, lastEveningDay: -1, prescriptionLastFiredDay: {},
+    pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999, throttle: 360, running: false,
+  });
+  throttleSlider.value = String(throttleToPos(360));
+  throttleSlider.dispatchEvent(new Event('input'));
+  renderer.clearHistory();
+
+  suppressPersist = true;
+  clearPanelOverrides();
+  writePatientToForm(c.patient);
+  writeTherapyToForm(c, result.therapy);
+  onTherapyChange();
+  onPatientChange();
+  pushBasalProfile();
+  // bridge.reset stamped the simulator with a fresh DEFAULT_PRESCRIPTION (all
+  // bolusUnits 0) and submode LIVE. Re-push the user's persisted prescription
+  // and submode so PRESCRIPTION mode keeps firing the user's bolus values.
+  bridge.setTherapyParam({ prescription: currentPrescription });
+  setSubmode(currentSubmode, true);
+  suppressPersist = false;
+  localStorage.setItem(CASE_KEY, JSON.stringify({ caseId: result.caseId, therapy: result.therapy }));
+  document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
+  setStatus(`Loaded case: ${c.shortLabel} · ${result.therapy.toUpperCase()}`);
+});
+
+getEl<HTMLButtonElement>('btn-reset-defaults').addEventListener('click', () => {
+  const sc = loadSavedCase();
+  if (!sc) {
+    setStatus('No saved case — use ↻ Restart onboarding.');
+    return;
+  }
+  if (!window.confirm('Discard all panel edits and reset to case defaults?')) return;
+  const c = PATIENT_CASES[sc.caseId];
+  suppressPersist = true;
+  clearPanelOverrides();
+  writePatientToForm(c.patient);
+  writeTherapyToForm(c, sc.therapy);
+  onTherapyChange();
+  onPatientChange();
+  pushBasalProfile();
+  suppressPersist = false;
+  setStatus(`Reset to case defaults: ${c.shortLabel} · ${sc.therapy.toUpperCase()}`);
+});
+
+// ── Initial state (gated on onboarding modal on first launch) ────────────────
 
 // HTML default input values are written in mg/dL (e.g. glucose-target=100, true-isf=40).
 // syncPanelUnits MUST run before the change handlers, otherwise fromDisplay() treats
 // "40" as mmol/L → 720 mg/dL/U and EGP rockets BG to ceiling.
 // At this point appState.displayUnit reflects the loaded UI pref (default mmol/L).
-syncPanelUnits('mgdl');  // first: rewrite panel values from mg/dL into the current display unit
-onTherapyChange();   // then: read converted values and push to model
-// Push the persisted prescription into the simulator so it matches the UI's
-// `currentPrescription` (loaded from localStorage). Without this, the engine
-// would silently run on DEFAULT_PRESCRIPTION until the user reopens the modal.
-bridge.setTherapyParam({ prescription: currentPrescription });
-setSubmode(currentSubmode);  // sync segmented toggle state + button visibility
-onPatientChange();
-pushBasalProfile();
-bridge.setThrottle(10);
-setRunning(false);   // start paused — user presses ▶ to begin
 
-// ── Apply persisted UI prefs ──────────────────────────────────────────────────
-// Sync renderer options, checkbox states, panel + chip visibility, zoom level,
-// and unit-toggle text from the loaded prefs blob. Theme is loaded separately above.
-renderer.options.showIOB         = uiPrefs.showIOB;
-renderer.options.showCOB         = uiPrefs.showCOB;
-renderer.options.showBasal       = uiPrefs.showBasal;
-renderer.options.showEvents      = uiPrefs.showEvents;
-renderer.options.showTrueGlucose = uiPrefs.showTrueGlucose;
-renderer.options.showForecast    = uiPrefs.showForecast;
-renderer.options.displayUnit     = uiPrefs.displayUnit;
-overlayIOB.checked      = uiPrefs.showIOB;
-overlayCOB.checked      = uiPrefs.showCOB;
-overlayBasal.checked    = uiPrefs.showBasal;
-overlayEvents.checked   = uiPrefs.showEvents;
-overlayTrue.checked     = uiPrefs.showTrueGlucose;
-overlayForecast.checked = uiPrefs.showForecast;
-overlayBG.checked       = uiPrefs.showBgOverlay;
-bgOverlay.style.display = uiPrefs.showBgOverlay ? '' : 'none';
-unitToggle.textContent  = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-cgmUnitEl.textContent   = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
-sidePanel.classList.toggle('open', uiPrefs.panelOpen);
-renderer.setZoom(uiPrefs.viewWindowMinutes);
-updateZoomButtons(uiPrefs.viewWindowMinutes);
-renderer.markDirty();
+void (async () => {
+  syncPanelUnits('mgdl');
+
+  const onboarded = localStorage.getItem(ONBOARDING_KEY) === 'true';
+  let savedCase = loadSavedCase();
+  let justOnboarded = false;
+
+  if (!onboarded) {
+    ensureOnboardingStyles();
+    const result = await runOnboarding();
+    localStorage.setItem(ONBOARDING_KEY, 'true');
+    if (result.caseId && result.therapy) {
+      savedCase = { caseId: result.caseId, therapy: result.therapy };
+      localStorage.setItem(CASE_KEY, JSON.stringify(savedCase));
+      justOnboarded = true;
+    }
+  }
+
+  if (savedCase) {
+    const c = PATIENT_CASES[savedCase.caseId];
+    writePatientToForm(c.patient);
+    writeTherapyToForm(c, savedCase.therapy);
+  }
+
+  // First-time onboarding wipes any stale overrides; otherwise apply the
+  // user's saved panel edits on top of the case template.
+  if (justOnboarded) {
+    clearPanelOverrides();
+  } else {
+    const overrides = loadPanelOverrides();
+    if (overrides) applyPanelSnapshot(overrides);
+  }
+
+  onTherapyChange();
+  // Push the persisted prescription into the simulator so it matches the UI's
+  // `currentPrescription` (loaded from localStorage). Without this, the engine
+  // would silently run on DEFAULT_PRESCRIPTION until the user reopens the modal.
+  bridge.setTherapyParam({ prescription: currentPrescription });
+  setSubmode(currentSubmode, true);
+  onPatientChange();
+  pushBasalProfile();
+  bridge.setThrottle(360);
+  setRunning(false);
+
+  // ── Apply persisted UI prefs ──
+  renderer.options.showIOB         = uiPrefs.showIOB;
+  renderer.options.showCOB         = uiPrefs.showCOB;
+  renderer.options.showBasal       = uiPrefs.showBasal;
+  renderer.options.showEvents      = uiPrefs.showEvents;
+  renderer.options.showTrueGlucose = uiPrefs.showTrueGlucose;
+  renderer.options.showForecast    = uiPrefs.showForecast;
+  renderer.options.displayUnit     = uiPrefs.displayUnit;
+  overlayIOB.checked      = uiPrefs.showIOB;
+  overlayCOB.checked      = uiPrefs.showCOB;
+  overlayBasal.checked    = uiPrefs.showBasal;
+  overlayEvents.checked   = uiPrefs.showEvents;
+  overlayTrue.checked     = uiPrefs.showTrueGlucose;
+  overlayForecast.checked = uiPrefs.showForecast;
+  overlayBG.checked       = uiPrefs.showBgOverlay;
+  bgOverlay.style.display = uiPrefs.showBgOverlay ? '' : 'none';
+  unitToggle.textContent  = uiPrefs.displayUnit === 'mgdl' ? 'mg/dL' : 'mmol/L';
+  sidePanel.classList.toggle('open', uiPrefs.panelOpen);
+  btnPanel.classList.toggle('active', uiPrefs.panelOpen);
+  renderer.setZoom(uiPrefs.viewWindowMinutes);
+  updateZoomButtons(uiPrefs.viewWindowMinutes);
+  renderer.markDirty();
+
+  if (justOnboarded) {
+    appState.panelOpen = true;
+    sidePanel.classList.add('open');
+    btnPanel.classList.add('active');
+    document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="therapy"]')?.click();
+    persistUIPrefs();
+  }
+
+  // Init complete — user gestures from now on persist panel overrides.
+  suppressPersist = false;
+})();
