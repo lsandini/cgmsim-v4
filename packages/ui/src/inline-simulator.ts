@@ -171,8 +171,12 @@ export class InlineSimulator {
   }
 
   /**
-   * Oral prednisone dose. Stamps PK params from a v3-faithful biexponential
-   * formula keyed on mg: duration = (16 + 0.3·mg)·60 min, peak = duration / 3.
+   * Oral prednisone dose. PK params are CLINICALLY motivated, not dose- or
+   * weight-scaled like insulin: prednisone has a fixed pharmacological effect
+   * window of ~15 h regardless of dose. Larger mg doses produce taller activity
+   * curves (linearly scaled by mg via the biexponential's `units` term), but
+   * the time profile is invariant. For an 8:00 AM dose: peak ~1 PM, fade-out
+   * by ~11 PM.
    * Pushed into activePrednisoneDoses; the BG-effect is applied via Model C
    * in computeDeltaBG (resistance multiplier on ISF + hepatic-output boost).
    * One SimEvent { kind:'prednisone' } is emitted for the canvas tick mark.
@@ -180,8 +184,8 @@ export class InlineSimulator {
   injectPrednisone(doseMg: number, simTimeMs?: number): void {
     const s = this.s;
     const t = simTimeMs ?? s.simTimeMs;
-    const duration = (16 + 0.3 * doseMg) * 60;
-    const peak     = duration / 3;
+    const duration = 15 * 60;        // 900 min — fixed, clinical effect window
+    const peak     = duration / 3;   // 300 min = 5 h post-dose
     s.activePrednisoneDoses.push({
       id: `pred-${t}-${Math.random().toString(36).slice(2)}`,
       simTimeMs: t,

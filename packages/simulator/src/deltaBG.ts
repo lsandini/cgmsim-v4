@@ -30,20 +30,22 @@ const TICK_MINUTES = 5;
 /**
  * Prednisone Model C — hybrid effect calibration constants (mg-based activity).
  *
- *  K1: insulin-resistance coefficient. Effective ISF is divided by
- *      (1 + prednisoneActivity * K1). At peak of a 40 mg dose for a 75 kg
- *      patient, prednisoneActivity ≈ 0.04 → K1=25 yields a 50% effective-ISF
- *      reduction (insulin works half as well at peak).
+ * Activity curve is biexponential with FIXED 15 h duration (peak at 5 h post
+ * dose) — see injectPrednisone in inline-simulator.ts. Peak activity for a
+ * 40 mg dose ≈ 0.072 (mg-eq/min).
  *
- *  K2: hepatic-output multiplier. EGP is multiplied by (1 + prednisoneActivity * K2).
- *      Same peak activity, K2=25 boosts hepatic glucose output by ~100% at peak,
- *      contributing ~30 mg/dL/h additional fasted-state rise on top of baseline.
+ *  K1: insulin-resistance coefficient. Effective ISF = trueISF / (1 + activity·K1).
+ *      K1=14 at peak → divider ≈ 2.0 → effective ISF halved (insulin at 50%
+ *      potency, matches "doubled insulin needs" clinical rule of thumb).
  *
- * These are starting values from the brainstorm; tune empirically in Phase 4
- * if behaviour feels off in the classroom demo.
+ *  K2: hepatic-output multiplier. EGP × (1 + activity·K2).
+ *      K2=14 at peak → EGP ≈ 2× (matches "fasted hyperglycemia" clinical add).
+ *
+ * Both effects scale linearly with dose: 20 mg gives half the peak shift,
+ * 60 mg gives 50% more. Time profile is invariant.
  */
-export const K1_PREDNISONE_RESISTANCE = 25;
-export const K2_PREDNISONE_HEPATIC    = 25;
+export const K1_PREDNISONE_RESISTANCE = 14;
+export const K2_PREDNISONE_HEPATIC    = 14;
 
 export interface DeltaBGInputs {
   patient: VirtualPatient;
@@ -97,21 +99,26 @@ export function computeDeltaBG(inputs: DeltaBGInputs): DeltaBGResult {
       + calculatePremixSlowActivity(longActing, nowSimTimeMs);
 
   // Activity is in U/min; multiply by effective ISF × tick duration → mg/dL.
-  // Effective ISF degrades with prednisone on board (Model C resistance term).
+  // Effective ISF degrades with prednisone on board — this is the Model C
+  // resistance term (only the insulin BG-lowering uses the degraded ISF).
   const totalInsulinActivity = bolusActivity + basalActivity;
   const insulinEffect = -(totalInsulinActivity * effectiveISF * TICK_MINUTES);
 
   // ── Carbohydrate effect ─────────────────────────────────────────────────
-  // Carb response also flows through effective ISF — meals raise BG more when
-  // insulin sensitivity is degraded by prednisone.
+  // Carbs use TRUE ISF — the physical glucose load doesn't change with
+  // prednisone. The "carbs hit harder" lesson emerges naturally from the
+  // reduced insulinEffect (smaller negative), not from inflating the carb
+  // term itself. Inflating both would double-count the resistance.
   const carbEffect = calculateCarbEffect(
-    meals, effectiveISF, cr, patient.carbsAbsTime, nowSimTimeMs, TICK_MINUTES,
+    meals, isf, cr, patient.carbsAbsTime, nowSimTimeMs, TICK_MINUTES,
   );
 
   // ── Endogenous glucose production ───────────────────────────────────────
-  // v3-faithful: pass total insulin activity so EGP feels SC-insulin suppression.
-  // Model C hepatic boost: EGP is multiplied by (1 + prednisoneActivity * K2).
-  const baseEGP = calculateEGP(patient, nowSimTimeMs, effectiveISF, totalInsulinActivity, inputs.currentGlucose);
+  // calculateEGP scales linearly with ISF (egpPerMin = (isf/trueCR)·… ); so
+  // passing effectiveISF here would have HALVED baseline EGP, and the
+  // K2 multiplier would have brought it right back — net zero hepatic boost.
+  // Pass TRUE ISF as the baseline; apply the K2 multiplier separately on top.
+  const baseEGP = calculateEGP(patient, nowSimTimeMs, isf, totalInsulinActivity, inputs.currentGlucose);
   const egpEffect = baseEGP * (1 + prednisoneActivity * K2_PREDNISONE_HEPATIC);
 
   const deltaBG = insulinEffect + carbEffect + egpEffect;
