@@ -260,6 +260,7 @@ export class CGMRenderer {
   private ring = new RingBuffer(MAX_BUFFER);
   private comparisonRing = new RingBuffer(MAX_BUFFER);
   private events: SimEvent[] = [];
+  private eventsForHitTest: Array<{ kind: 'meal' | 'bolus' | 'longActing' | 'smb'; simTimeMs: number; value: number; drawX: number; drawY: number; drawR: number }> = [];
   private rafId = 0;
   private dirty = false;
   private lastTickWallMs = 0;
@@ -353,6 +354,23 @@ export class CGMRenderer {
 
   onViewChange(cb: () => void): void { this.viewChangeCallbacks.push(cb); }
 
+  /** Touch/pointer hit-test against rendered event markers. Returns the closest
+   *  marker within a minimum 16 CSS-px tap radius, or null if none. */
+  hitTestMarker(clientX: number, clientY: number): { kind: 'meal' | 'bolus' | 'longActing' | 'smb'; simTimeMs: number; value: number; unitLabel: string } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    for (const ev of this.eventsForHitTest) {
+      const dx = px - ev.drawX;
+      const dy = py - ev.drawY;
+      const r = Math.max(16, ev.drawR + 8);
+      if (dx * dx + dy * dy <= r * r) {
+        return { kind: ev.kind, simTimeMs: ev.simTimeMs, value: ev.value, unitLabel: ev.kind === 'meal' ? 'g' : 'U' };
+      }
+    }
+    return null;
+  }
+
   pushTick(snap: TickSnapshot): void {
     this.ring.push({
       simTimeMs: snap.simTimeMs, cgm: snap.cgm, trueGlucose: snap.trueGlucose,
@@ -390,6 +408,7 @@ export class CGMRenderer {
     this.ring.clear();
     this.comparisonRing.clear();
     this.events = [];
+    this.eventsForHitTest = [];
     this.forecastPoints = [];
     this.viewOffsetMs = 0;
     this.dirty = true;
@@ -1423,6 +1442,8 @@ export class CGMRenderer {
     const ctx = this.ctx;
     if (!this.ring.latest()) return;
 
+    this.eventsForHitTest = [];  // rebuild each frame
+
     ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.strokeStyle = COLORS.markerStroke;
@@ -1439,6 +1460,7 @@ export class CGMRenderer {
       if (ev.kind === 'meal') {
         const cy = this.bgYAtEventTime(ev.simTimeMs);
         const r  = this.treatmentRadius(ev.carbsG, 'carbs');
+        this.eventsForHitTest.push({ kind: 'meal', simTimeMs: ev.simTimeMs, value: ev.carbsG, drawX: x, drawY: cy, drawR: r });
         const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
         grad.addColorStop(0, COLORS.mealMarkerBottom + 'D9'); // dark stop on top, 0.85 alpha
         grad.addColorStop(1, COLORS.mealMarker + 'D9');       // light stop on bottom, 0.85 alpha
@@ -1451,6 +1473,7 @@ export class CGMRenderer {
       } else if (ev.kind === 'bolus') {
         const cy = this.bgYAtEventTime(ev.simTimeMs);
         const r  = this.treatmentRadius(ev.units, 'insulin');
+        this.eventsForHitTest.push({ kind: 'bolus', simTimeMs: ev.simTimeMs, value: ev.units, drawX: x, drawY: cy, drawR: r });
         const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
         grad.addColorStop(0, COLORS.bolusMarkerBottom + 'D9');
         grad.addColorStop(1, COLORS.bolusMarker + 'D9');
@@ -1463,6 +1486,7 @@ export class CGMRenderer {
       } else if (ev.kind === 'longActing') {
         const cy = this.bgYAtEventTime(ev.simTimeMs);
         const r  = this.treatmentRadius(ev.units, 'insulin');
+        this.eventsForHitTest.push({ kind: 'longActing', simTimeMs: ev.simTimeMs, value: ev.units, drawX: x, drawY: cy, drawR: r });
         const grad = ctx.createLinearGradient(x, cy - r, x, cy + r);
         grad.addColorStop(0, COLORS.longActingMarkerBottom + 'D9');
         grad.addColorStop(1, COLORS.longActingMarker + 'D9');
@@ -1490,6 +1514,7 @@ export class CGMRenderer {
       } else if (ev.kind === 'smb') {
         // Small upward triangle just above the bottom axis — visually distinct from manual bolus
         const y = this.PAD_TOP + this.plotH - 18;
+        this.eventsForHitTest.push({ kind: 'smb', simTimeMs: ev.simTimeMs, value: ev.units, drawX: x, drawY: y + 2, drawR: 8 });
         const grad = ctx.createLinearGradient(x, y - 2, x, y + 6);
         grad.addColorStop(0, COLORS.smbMarkerBottom + 'D9');
         grad.addColorStop(1, COLORS.smbMarker + 'D9');

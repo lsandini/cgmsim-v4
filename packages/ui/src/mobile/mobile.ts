@@ -7,6 +7,7 @@ import { createActionSheet } from './mobile-action-sheet.js';
 import { createSettingsSheet, loadPrefs } from './mobile-settings-sheet.js';
 import { mountPrescriptionSheet, loadPrescription } from './mobile-prescription-sheet.js';
 import { createSpeedControl } from './mobile-speed.js';
+import { attachCanvasGestures } from './mobile-gestures.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -54,6 +55,14 @@ const actionSheet = createActionSheet(app, {
   onLongActing: (type, units) => sim.injectLongActingNow(type, units),
 });
 layout.fab.addEventListener('click', () => actionSheet.open());
+
+// Canvas gestures: single-tap → toggle pause; tap near marker → popover; zoom persisted.
+attachCanvasGestures({
+  canvas,
+  renderer,
+  onSingleTap: () => speed.setRunning(!speed.isRunning()),
+  hostForPopover: app,
+});
 
 sim.onTick((snap) => {
   renderer.pushTick(snap);

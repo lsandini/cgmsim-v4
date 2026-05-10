@@ -462,3 +462,19 @@ html, body {
 .m-speed-readout { text-align: center; font-size: 18px; color: var(--text-primary); margin-bottom: 8px; }
 .m-speed-slider { width: 100%; }
 .m-speed-ticks { display: flex; justify-content: space-between; font-size: 8px; color: var(--text-muted); margin-top: 4px; }
+
+/* === Marker popover === */
+.m-marker-popover {
+  position: absolute;
+  background: rgba(22, 27, 34, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  z-index: 200;
+  transform: translateX(-50%);
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
