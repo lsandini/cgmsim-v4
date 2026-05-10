@@ -12,6 +12,12 @@ const renderer = new CGMRenderer(canvas);
 
 renderer.options.displayUnit = 'mmoll';
 renderer.options.therapyMode = 'MDI';
+// Mobile defaults — overlays the renderer SHOULDN'T draw on the canvas because
+// they're presented as top-pill overlays (IOB/COB) instead. The basal strip
+// (showBasal=false) leaves a wasteful ~92px PAD_BOTTOM gap because CGMRenderer
+// hardcodes PAD_BOTTOM around the assumption a basal panel is shown. Acceptable
+// for v1; if mobile chart cropping becomes visible, narrow PAD_BOTTOM via a
+// renderer-side option in a future task.
 renderer.options.showBasal = false; // Mobile drops the basal strip overlay
 renderer.options.showIOB = false;   // IOB shown as a top-pill instead of an overlay
 renderer.options.showCOB = false;   // Same as IOB

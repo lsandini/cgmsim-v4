@@ -18,9 +18,21 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; }
 
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Note: #app is sized at 100vh and absolutely covers the body, so the
+   safe-area padding here only carves space at the document level (preventing
+   pull-to-refresh on iOS Safari). The canvas itself bleeds under the notch
+   intentionally — the chart's own PAD_TOP keeps content out of the hot zone.
+   When mobile chrome (Task 4+) places text near edges, revisit either by
+   reading inset-* CSS vars in JS or switching #app to 100dvh and removing this
+   padding. */
 html, body {
   margin: 0;
-  padding: 0;
   height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
