@@ -25,28 +25,26 @@ input, textarea {
   -webkit-touch-callout: default;
 }
 
-/* Note: #app is sized at 100vh and absolutely covers the body, so the
-   safe-area padding here only carves space at the document level (preventing
-   pull-to-refresh on iOS Safari). The canvas itself bleeds under the notch
-   intentionally — the chart's own PAD_TOP keeps content out of the hot zone.
-   When mobile chrome (Task 4+) places text near edges, revisit either by
-   reading inset-* CSS vars in JS or switching #app to 100dvh and removing this
-   padding. */
 html, body {
   margin: 0;
+  padding: 0;
   height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: ui-monospace, monospace;
   overflow: hidden;
-  /* Honour the iOS safe area on notched devices */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/* #app uses 100dvh (dynamic viewport height) so the layout shrinks to fit when
+   iOS Safari shows its URL/tab bar. With plain 100vh the bottom of the app
+   would sit ~50px below the visible viewport bottom — the FAB and speed pill
+   would be hidden. Canvas bleeds edge-to-edge under the notch; safe-area
+   insets are applied to chrome overlays below so text/buttons stay out of the
+   notch and home-indicator zones. */
 #app {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -70,8 +68,19 @@ html, body {
   align-items: flex-start;
   padding: 0 12px;
 }
-.m-overlay.m-top { top: 12px; gap: 8px; }
-.m-overlay.m-bottom { bottom: 12px; align-items: flex-end; justify-content: space-between; }
+.m-overlay.m-top {
+  top: max(12px, env(safe-area-inset-top));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  gap: 8px;
+}
+.m-overlay.m-bottom {
+  bottom: max(12px, env(safe-area-inset-bottom));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  align-items: flex-end;
+  justify-content: space-between;
+}
 
 .m-overlay > * { pointer-events: auto; }
 
