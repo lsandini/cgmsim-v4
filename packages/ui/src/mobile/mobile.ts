@@ -53,7 +53,8 @@ sim.onTick((snap) => {
 });
 sim.onEvent((evs) => renderer.pushEvents(evs));
 
-let submode: 'LIVE' | 'PRESCRIPTION' = (localStorage.getItem('cgmsim.mobile.submode') as any) || 'LIVE';
+const rawSubmode = localStorage.getItem('cgmsim.mobile.submode');
+let submode: 'LIVE' | 'PRESCRIPTION' = rawSubmode === 'PRESCRIPTION' ? 'PRESCRIPTION' : 'LIVE';
 const prescription = loadPrescription();
 
 function applySubmode(s: 'LIVE' | 'PRESCRIPTION') {
@@ -99,9 +100,6 @@ function restartSim() {
   sim.resume();
 }
 
-// Apply submode on boot — runs after any applyCaseToSim calls in startSim/restartSim,
-// but we also call it here for the initial boot path (stored case loaded below).
-applySubmode(submode);
 
 const settingsSheet = createSettingsSheet(app, {
   sim,

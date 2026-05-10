@@ -2,6 +2,10 @@ import type { Prescription } from '@cgmsim/shared';
 
 const PRESC_KEY = 'cgmsim.mobile.prescription';
 
+// Mobile teaching default — pre-filled with a plausible prescription for student
+// demonstrations. Intentionally differs from DEFAULT_PRESCRIPTION in @cgmsim/shared
+// (which is zeroed as a "not configured" sentinel). When adding new fields to the
+// Prescription type, update BOTH defaults to stay aligned.
 export const DEFAULT_PRESCRIPTION: Prescription = {
   fasting: false,
   meals: [
