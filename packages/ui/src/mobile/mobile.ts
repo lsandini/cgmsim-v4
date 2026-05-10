@@ -79,33 +79,33 @@ function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
   applyCaseToSim(sim, caseId);
   applySubmode(submode);
   speed.setThrottle(360);
-  sim.resume();
+  speed.setRunning(true);
 }
 
 let teardownOnboarding: (() => void) | null = null;
 
 function openOnboarding() {
-  sim.pause();   // stop ticking while the case picker is open
+  speed.setRunning(false);   // stop ticking while the case picker is open
   teardownOnboarding?.();
   teardownOnboarding = mountOnboarding(app, (picked) => {
     setStoredCaseId(picked);
     teardownOnboarding?.();
     teardownOnboarding = null;
-    sim.pause();   // double-pause is harmless
+    speed.setRunning(false);   // double-pause is harmless
     applyCaseToSim(sim, picked);
     applySubmode(submode);
-    sim.resume();
+    speed.setRunning(true);
   });
 }
 
 function restartSim() {
   const caseId = getStoredCaseId();
   if (!caseId) { openOnboarding(); return; }
-  sim.pause();
+  speed.setRunning(false);
   applyCaseToSim(sim, caseId);
   applySubmode(submode);
   renderer.clearHistory();
-  sim.resume();
+  speed.setRunning(true);
 }
 
 

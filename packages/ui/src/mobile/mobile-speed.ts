@@ -10,7 +10,7 @@ export interface SpeedDeps {
 }
 
 export function createSpeedControl(deps: SpeedDeps) {
-  let throttle = deps.initialThrottle;
+  let throttle = snap(deps.initialThrottle);
   let running = true;
 
   function snap(t: number): number {
@@ -40,6 +40,7 @@ export function createSpeedControl(deps: SpeedDeps) {
 
   deps.pill.addEventListener('pointerdown', () => {
     longPressed = false;
+    // iOS HIG: 500ms is the standard long-press threshold; below this feels too eager.
     lpTimer = window.setTimeout(() => {
       longPressed = true;
       openSlider();
@@ -53,6 +54,7 @@ export function createSpeedControl(deps: SpeedDeps) {
   deps.pill.addEventListener('pointercancel', () => {
     if (lpTimer !== null) window.clearTimeout(lpTimer);
     lpTimer = null;
+    longPressed = false;
   });
 
   function openSlider() {
