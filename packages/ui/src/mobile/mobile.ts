@@ -2,6 +2,7 @@ import { InlineSimulator } from '../inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
 import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } from './mobile-onboarding.js';
+import { createActionSheet } from './mobile-action-sheet.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -32,6 +33,13 @@ renderer.start();
 
 const layout = createMobileLayout(app);
 
+const actionSheet = createActionSheet(app, {
+  onMeal: (carbsG, gastricEmptyingRate) => sim.meal(carbsG, gastricEmptyingRate, renderer.displayedSimTime),
+  onBolus: (units) => sim.bolus(units, undefined, renderer.displayedSimTime),
+  onLongActing: (type, units) => sim.injectLongActingNow(type as any, units),
+});
+layout.fab.addEventListener('click', () => actionSheet.open());
+
 sim.onTick((snap) => {
   renderer.pushTick(snap);
   layout.applyTick(snap);
@@ -57,4 +65,4 @@ if (stored) {
 }
 
 // Expose for debugging while the rest is built (will be removed in a later task)
-(window as any).__mobile = { sim, renderer, layout };
+(window as any).__mobile = { sim, renderer, layout, actionSheet };
