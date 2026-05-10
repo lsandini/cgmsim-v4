@@ -57,3 +57,98 @@ html, body {
   display: block;
   touch-action: none; /* gestures handled in JS */
 }
+
+/* === Overlays (chrome) === */
+.m-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  padding: 0 12px;
+}
+.m-overlay.m-top { top: 12px; gap: 8px; }
+.m-overlay.m-bottom { bottom: 12px; align-items: flex-end; justify-content: space-between; }
+
+.m-overlay > * { pointer-events: auto; }
+
+.m-pill {
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+.m-iob { margin-right: auto; }
+.m-cob { margin-left: auto; }
+
+.m-bgchip {
+  background: rgba(13, 17, 23, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+}
+.m-bgchip.m-zone-low { color: var(--accent-danger); }
+.m-bgchip.m-zone-good { color: #4ec9b0; }
+.m-bgchip.m-zone-high { color: var(--accent-amber); }
+
+.m-icon-btn {
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0;
+}
+.m-hamburger { margin-left: 4px; }
+
+.m-simtime {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.m-speed {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.m-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  font-size: 28px;
+  font-weight: 300;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}

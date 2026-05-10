@@ -1,11 +1,13 @@
 import { InlineSimulator } from '../inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
+import { createMobileLayout } from './mobile-layout.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
 
+const app = document.getElementById('app') as HTMLElement;
 const canvas = document.getElementById('cgm-canvas') as HTMLCanvasElement;
-if (!canvas) throw new Error('mobile: #cgm-canvas not found');
+if (!app || !canvas) throw new Error('mobile: #app or #cgm-canvas not found');
 
 const sim = new InlineSimulator();
 const renderer = new CGMRenderer(canvas);
@@ -27,11 +29,16 @@ renderer.options.showTrueGlucose = false;
 renderer.setZoom(360); // 6h default
 renderer.start();
 
-sim.onTick((snap) => renderer.pushTick(snap));
+const layout = createMobileLayout(app);
+
+sim.onTick((snap) => {
+  renderer.pushTick(snap);
+  layout.applyTick(snap);
+});
 sim.onEvent((evs) => renderer.pushEvents(evs));
 
 sim.setThrottle(360);
 sim.resume();
 
 // Expose for debugging while the rest is built (will be removed in a later task)
-(window as any).__mobile = { sim, renderer };
+(window as any).__mobile = { sim, renderer, layout };
