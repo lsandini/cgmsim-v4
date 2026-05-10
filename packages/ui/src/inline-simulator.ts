@@ -450,11 +450,16 @@ export class InlineSimulator {
    * Intended for mobile companion builds where the user decides when to inject
    * rather than using the morning/evening schedule.
    *
+   * `simTimeMs` overrides the stamp time — see bolus(). Mobile FAB passes
+   * displayedSimTime so the marker lands at the user's visible "now" instead
+   * of the engine's lookahead time.
+   *
    * PK profile (peak, duration) is evaluated against the current patient.weight
    * and dose units, then stamped on the record — the same approach as the
    * scheduled `fireSlotIfDue` path.
    */
-  public injectLongActingNow(type: LongActingType, units: number): void {
+  injectLongActingNow(type: LongActingType, units: number, simTimeMs?: number): void {
+    const t = simTimeMs ?? this.s.simTimeMs;
     const pk = LONG_ACTING_PROFILES[type];
     if (!pk) throw new Error(`Unknown long-acting type: ${type}`);
     const weight = this.s.patient.weight;
@@ -462,8 +467,8 @@ export class InlineSimulator {
     const peak = pk.peak(duration);
 
     this.s.activeLongActing.push({
-      id: `la-manual-${this.s.simTimeMs}`,
-      simTimeMs: this.s.simTimeMs,
+      id: `la-manual-${t}-${Math.random().toString(36).slice(2)}`,
+      simTimeMs: t,
       units,
       type,
       peak,
@@ -472,10 +477,9 @@ export class InlineSimulator {
 
     const ev: SimEvent = {
       kind: 'longActing',
-      simTimeMs: this.s.simTimeMs,
+      simTimeMs: t,
       units,
       insulinType: type,
-      slot: 'manual',
     };
     this.s.events.push(ev);
     for (const h of this.eventHandlers) h([ev]);

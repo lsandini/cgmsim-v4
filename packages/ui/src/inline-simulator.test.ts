@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { InlineSimulator } from './inline-simulator.js';
+import type { SimEvent } from './inline-simulator.js';
 
 describe('InlineSimulator.injectLongActingNow', () => {
   it('appends an ActiveLongActing record stamped with peak/duration from patient weight', () => {
@@ -22,7 +23,7 @@ describe('InlineSimulator.injectLongActingNow', () => {
 
   it('emits a SimEvent of kind longActing synchronously', () => {
     const sim = new InlineSimulator();
-    const capturedEvents: any[] = [];
+    const capturedEvents: SimEvent[] = [];
     sim.onEvent((evs) => { capturedEvents.push(...evs); });
 
     sim.injectLongActingNow('Detemir', 10);
