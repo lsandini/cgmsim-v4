@@ -40,7 +40,7 @@ The goal is to ship a **second** standalone HTML file, optimized for iPhone-land
 |---|---|
 | `packages/simulator/` | Untouched. Full reuse. |
 | `packages/shared/` | Untouched. Full reuse. |
-| `packages/ui/src/canvas-renderer.ts` | Reused as-is. The renderer already adapts to its container's dimensions. Mobile passes a smaller container and a different default zoom. |
+| `packages/ui/src/canvas-renderer.ts` (exports `CGMRenderer`) | Reused as-is. The renderer already adapts to its container's dimensions. Mobile passes a smaller `<canvas>` container, calls `setRendererTheme('dark')`, and uses `setZoom(360)` for the 6h default. |
 | `packages/ui/src/inline-simulator.ts` | Reused as-is. |
 | `packages/ui/src/time24.ts` | Reused as-is. |
 | `packages/ui/src/storage.ts` | Subset reuse — keep `cgmsim.ui-prefs` and `cgmsim.case` helpers; do NOT import the JSON file export/import code paths. |
@@ -152,6 +152,8 @@ Custom in-DOM keypad — explicitly NOT the iOS native keyboard (which would cov
 - Number pad → units (decimal, 0.5 step).
 - Fires immediately as a one-shot. The mobile build does NOT support scheduled morning/evening LA injections — every injection is "now". This trades the dose/time scheduling concept for a simpler "you inject when you decide" model.
 
+**Engine extension required:** the current `InlineSimulator` only schedules long-acting via `setTherapyParam({ longActingMorning, longActingEvening })`. To support one-shot injection without abusing the schedule, add a new method `InlineSimulator.injectLongActingNow(type: LongActingType, units: number): void`. It pushes an `ActiveLongActing` directly into state with peak/duration computed from current `patient.weight` (matching existing stamping semantics from `LONG_ACTING_PROFILES`), and emits a `SimEvent { kind: 'longActing', simTimeMs }`. Existing scheduled-LA paths are untouched — desktop behaviour does not change.
+
 ## Settings sheet (☰ button)
 
 Slides in from the right at ~55% width. Chart remains visible behind it (no scrim, just the panel). Compact rows.
@@ -191,7 +193,7 @@ No therapy-mode picker (always MDI), no prednisone toggle, no third step.
 ## Gestures (canvas)
 
 - **Pinch zoom** → snaps to ladder `3h / 6h / 12h / 24h`. Same constraint as desktop wheel-zoom.
-- **Two-finger drag** → pan back through history. One-finger drag is reserved (does nothing) so accidental swipes don't shift the time window.
+- **Two-finger pan deferred to v2.** Originally listed for v1, but conflicts with the canvas's `touch-action: none` gesture handling and would require either an explicit `setPanOffset` API on `CGMRenderer` or a non-trivial gesture re-architecture. Pinch-zoom + the renderer's auto-follow-live behaviour cover the common navigation needs; revisit after real-device testing.
 - **Single-tap on chart** → toggle pause/play. Acts as a backup for the speed pill.
 - **Tap on or near a marker** (meal / bolus / LA / SMB) → small popover showing the value and timestamp. Hit-testing uses a generous radius (~16px from the marker centre) since markers themselves are 3–20px. Same data the desktop renders on hover. Auto-dismiss after 2s or on next tap. (Novomix and prednisone markers are not in v1 since those scenarios are cut.)
 
@@ -238,6 +240,7 @@ localStorage only. Mobile-specific keys, separate from desktop so the two builds
 - Premix and prednisone scenarios.
 - Session import (teacher-shared scenarios).
 - iPad layout (currently the same code will likely run on iPad in landscape but at oversized proportions — could refine).
+- Two-finger pan on the canvas (see "Gestures" — deferred from v1).
 
 ## Implementation order (sketch — full plan via writing-plans)
 
