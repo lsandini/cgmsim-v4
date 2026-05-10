@@ -4,8 +4,12 @@ import type { InlineSimulator } from '../inline-simulator';
 
 const STORAGE_KEY = 'cgmsim.mobile.case';
 const CASE_ORDER = ['lean-recent', 'average-established', 'larger-resistant'] as const;
-type CaseId = typeof CASE_ORDER[number];
+export type CaseId = typeof CASE_ORDER[number];
 
+// TODO: meta strings (kg · ISF) are hardcoded. Verified accurate against
+// PATIENT_CASES at write-time (60/75/100 kg, ISF 3.0/2.0/1.2 mmol/L). If
+// PATIENT_CASES values change, recompute or replace with dynamic strings:
+//   meta: `${CASES[id].patient.weight} kg · ISF ${(CASES[id].patient.trueISF / 18.0182).toFixed(1)}`
 const CASE_LABELS: Record<CaseId, { title: string; meta: string; size: 'lean' | 'average' | 'larger' }> = {
   'lean-recent':         { title: 'Lean adult',    meta: '60 kg · ISF 3.0', size: 'lean' },
   'average-established': { title: 'Average adult', meta: '75 kg · ISF 2.0', size: 'average' },
@@ -22,6 +26,13 @@ export function setStoredCaseId(id: CaseId): void {
   localStorage.setItem(STORAGE_KEY, id);
 }
 
+/**
+ * Applies a case to the simulator. Assumes a fresh InlineSimulator —
+ * does NOT clear activeBoluses, activeMeals, or activeLongActing. If
+ * called mid-session (e.g. from a Settings → Patient case re-open),
+ * the caller must reset the simulator first (sim.reset(...)) to avoid
+ * carryover from the previous case.
+ */
 export function applyCaseToSim(sim: InlineSimulator, id: CaseId): void {
   const def = PATIENT_CASES[id];
   sim.setPatientParam(def.patient);
@@ -32,7 +43,7 @@ export function applyCaseToSim(sim: InlineSimulator, id: CaseId): void {
  * Mounts the onboarding screen on top of `host`. Calls onPick when the user taps Start.
  * Returns a teardown function that removes the screen from the DOM.
  */
-export function mountOnboarding(host: HTMLElement, initial: CaseId | null, onPick: (id: CaseId) => void): () => void {
+export function mountOnboarding(host: HTMLElement, onPick: (id: CaseId) => void): () => void {
   const wrapper = document.createElement('div');
   wrapper.className = 'm-onboarding';
   wrapper.innerHTML = `
@@ -56,7 +67,7 @@ export function mountOnboarding(host: HTMLElement, initial: CaseId | null, onPic
   `;
   host.appendChild(wrapper);
 
-  let selected: CaseId | null = initial;
+  let selected: CaseId | null = null;
   const startBtn = wrapper.querySelector<HTMLButtonElement>('.m-onb-start')!;
   const cards = Array.from(wrapper.querySelectorAll<HTMLButtonElement>('.m-onb-card'));
 

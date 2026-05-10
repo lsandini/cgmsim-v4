@@ -49,7 +49,7 @@ const stored = getStoredCaseId();
 if (stored) {
   startSim(stored);
 } else {
-  const teardown = mountOnboarding(app, null, (picked) => {
+  const teardown = mountOnboarding(app, (picked) => {
     setStoredCaseId(picked);
     teardown();
     startSim(picked);

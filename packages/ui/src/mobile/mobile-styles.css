@@ -168,7 +168,7 @@ html, body {
   align-items: center;
   padding: 24px 16px 16px;
 }
-.m-onb-header { text-align: center; margin-bottom: auto; }
+.m-onb-header { text-align: center; margin-bottom: 24px; }
 .m-onb-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
 .m-onb-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
@@ -178,7 +178,6 @@ html, body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  margin: auto 0;
 }
 .m-onb-card {
   flex: 1;
