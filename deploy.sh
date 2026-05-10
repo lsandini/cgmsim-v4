@@ -1,5 +1,5 @@
 #!/bin/bash
 
 git add .
-git commit -m "first mobile version"
+git commit -m "fix screen res"
 git push -u origin mobile
