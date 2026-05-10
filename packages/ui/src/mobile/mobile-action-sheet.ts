@@ -6,6 +6,7 @@ export interface ActionSheetCallbacks {
   onLongActing?: (type: string, units: number) => void;
 }
 
+// `cb` is captured in closure for Task 7's per-action panes (meal/bolus/longActing wires).
 export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
   const root = document.createElement('div');
   root.className = 'm-sheet-root m-sheet-hidden';
@@ -13,7 +14,7 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
     <div class="m-sheet-scrim"></div>
     <div class="m-sheet m-sheet-action">
       <div class="m-sheet-grab"></div>
-      <div class="m-sheet-body" id="m-action-body">
+      <div class="m-sheet-body">
         <!-- picker is rendered here; per-action panes replace it via setView() -->
       </div>
     </div>
@@ -21,7 +22,7 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
   host.appendChild(root);
 
   const scrim = root.querySelector<HTMLElement>('.m-sheet-scrim')!;
-  const body  = root.querySelector<HTMLElement>('#m-action-body')!;
+  const body  = root.querySelector<HTMLElement>('.m-sheet-body')!;
 
   function open() {
     root.classList.remove('m-sheet-hidden');

@@ -31,7 +31,7 @@ export function createKeypad(host: HTMLElement, opts: KeypadOptions = {}) {
     if (k === '⌫') {
       value = value.length > 1 ? value.slice(0, -1) : '0';
     } else if (k === '.') {
-      if (!value.includes('.') && value.length < maxLength) value = value + '.';
+      if (!value.includes('.') && value.length < maxLength - 1) value = value + '.';
     } else {
       if (value === '0') value = k;
       else if (value.length < maxLength) value = value + k;

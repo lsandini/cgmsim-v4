@@ -292,4 +292,4 @@ html, body {
   padding: 10px 0;
   cursor: pointer;
 }
-.m-kp-key:active { background: var(--accent-blue); color: white; }
+.m-kp-key:hover, .m-kp-key:active { background: var(--accent-blue); color: white; }
