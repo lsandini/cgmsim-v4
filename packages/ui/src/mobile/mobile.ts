@@ -4,8 +4,8 @@ import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
 import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } from './mobile-onboarding.js';
 import { createActionSheet } from './mobile-action-sheet.js';
-import { createSettingsSheet, loadPrefs, DEFAULT_PREFS } from './mobile-settings-sheet.js';
-import { mountPrescriptionSheet, loadPrescription, savePrescription } from './mobile-prescription-sheet.js';
+import { createSettingsSheet, loadPrefs } from './mobile-settings-sheet.js';
+import { mountPrescriptionSheet, loadPrescription } from './mobile-prescription-sheet.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
