@@ -3,6 +3,7 @@ import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
 import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } from './mobile-onboarding.js';
 import { createActionSheet } from './mobile-action-sheet.js';
+import { createSettingsSheet, loadPrefs, savePrefs, DEFAULT_PREFS } from './mobile-settings-sheet.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -14,7 +15,10 @@ if (!app || !canvas) throw new Error('mobile: #app or #cgm-canvas not found');
 const sim = new InlineSimulator();
 const renderer = new CGMRenderer(canvas);
 
-renderer.options.displayUnit = 'mmoll';
+// Load persisted prefs before applying to renderer
+const prefs = loadPrefs();
+
+renderer.options.displayUnit = prefs.displayUnit;
 renderer.options.therapyMode = 'MDI';
 // Mobile defaults — overlays the renderer SHOULDN'T draw on the canvas because
 // they're presented as top-pill overlays (IOB/COB) instead. The basal strip
@@ -25,13 +29,14 @@ renderer.options.therapyMode = 'MDI';
 renderer.options.showBasal = false; // Mobile drops the basal strip overlay
 renderer.options.showIOB = false;   // IOB shown as a top-pill instead of an overlay
 renderer.options.showCOB = false;   // Same as IOB
-renderer.options.showForecast = true; // AR2 default on
-renderer.options.showTrueGlucose = false;
+renderer.options.showForecast = prefs.ar2;
+renderer.options.showTrueGlucose = prefs.trueGlucose;
 
-renderer.setZoom(360); // 6h default
+renderer.setZoom(prefs.lastZoom ?? DEFAULT_PREFS.lastZoom);
 renderer.start();
 
 const layout = createMobileLayout(app);
+layout.setDisplayUnit(prefs.displayUnit);
 
 const actionSheet = createActionSheet(app, {
   onMeal: (carbsG, gastricEmptyingRate) => sim.meal(carbsG, gastricEmptyingRate, renderer.displayedSimTime),
@@ -53,16 +58,51 @@ function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
   sim.resume();
 }
 
+let teardownOnboarding: (() => void) | null = null;
+
+function openOnboarding() {
+  teardownOnboarding?.();
+  teardownOnboarding = mountOnboarding(app, (picked) => {
+    setStoredCaseId(picked);
+    teardownOnboarding?.();
+    teardownOnboarding = null;
+    sim.pause();
+    applyCaseToSim(sim, picked);
+    sim.resume();
+  });
+}
+
+function restartSim() {
+  const caseId = getStoredCaseId();
+  if (!caseId) { openOnboarding(); return; }
+  sim.pause();
+  applyCaseToSim(sim, caseId);
+  renderer.clearHistory();
+  sim.resume();
+}
+
+const settingsSheet = createSettingsSheet(app, {
+  sim,
+  renderer,
+  prefs,
+  setDisplayUnit: (u) => layout.setDisplayUnit(u),
+  reopenOnboarding: openOnboarding,
+  restartSim,
+});
+
+layout.hamburger.addEventListener('click', () => settingsSheet.open());
+
 const stored = getStoredCaseId();
 if (stored) {
   startSim(stored);
 } else {
-  const teardown = mountOnboarding(app, (picked) => {
+  teardownOnboarding = mountOnboarding(app, (picked) => {
     setStoredCaseId(picked);
-    teardown();
+    teardownOnboarding?.();
+    teardownOnboarding = null;
     startSim(picked);
   });
 }
 
 // Expose for debugging while the rest is built (will be removed in a later task)
-(window as any).__mobile = { sim, renderer, layout, actionSheet };
+(window as any).__mobile = { sim, renderer, layout, actionSheet, settingsSheet };

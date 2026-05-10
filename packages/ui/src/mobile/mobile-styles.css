@@ -361,3 +361,37 @@ html, body {
   margin-top: auto;
   cursor: pointer;
 }
+
+/* === Side sheet (settings) === */
+.m-sheet-side {
+  top: 0;
+  bottom: 0;
+  left: auto;
+  width: 55%;
+  max-width: 480px;
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+  border-top: none;
+  padding: 14px 14px 12px;
+  overflow-y: auto;
+}
+.m-side-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.m-side-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.m-side-close { background: transparent; border: none; color: var(--text-secondary); font-size: 22px; cursor: pointer; line-height: 1; }
+.m-side-body { display: flex; flex-direction: column; }
+
+.m-set-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--bg-elevated);
+  font-size: 12px;
+}
+.m-set-row:last-child { border-bottom: none; }
+.m-set-row-tap { cursor: pointer; }
+.m-set-lbl { color: var(--text-primary); }
+.m-set-val { color: var(--text-secondary); font-size: 11px; }
+.m-set-danger .m-set-lbl { color: var(--accent-danger); }
+
+.m-seg-sm .m-seg-item { padding: 4px 10px; font-size: 10px; }
