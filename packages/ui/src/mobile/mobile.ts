@@ -36,8 +36,7 @@ const layout = createMobileLayout(app);
 const actionSheet = createActionSheet(app, {
   onMeal: (carbsG, gastricEmptyingRate) => sim.meal(carbsG, gastricEmptyingRate, renderer.displayedSimTime),
   onBolus: (units) => sim.bolus(units, undefined, renderer.displayedSimTime),
-  // TODO(T7): once LA pane uses LongActingType for `type`, drop the `as any` cast.
-  onLongActing: (type, units) => sim.injectLongActingNow(type as any, units),
+  onLongActing: (type, units) => sim.injectLongActingNow(type, units),
 });
 layout.fab.addEventListener('click', () => actionSheet.open());
 

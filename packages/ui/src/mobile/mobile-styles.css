@@ -293,3 +293,71 @@ html, body {
   cursor: pointer;
 }
 .m-kp-key:hover, .m-kp-key:active { background: var(--accent-blue); color: white; }
+
+/* === Per-action panes === */
+.m-pane-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.m-pane-back {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.m-pane-title { font-size: 12px; font-weight: 700; }
+
+.m-pane-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+}
+.m-pane-left { display: flex; flex-direction: column; }
+.m-pane-right { display: flex; flex-direction: column; gap: 8px; }
+.m-pane-meta-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.m-pane-meta-value { font-size: 11px; color: var(--text-secondary); }
+
+.m-seg {
+  display: flex;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.m-seg-item {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.m-seg-item.m-seg-active { background: var(--accent-blue); color: white; }
+
+.m-la-types { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.m-la-type {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.m-la-type-active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+
+.m-pane-confirm {
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: auto;
+  cursor: pointer;
+}
