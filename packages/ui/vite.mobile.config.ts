@@ -13,6 +13,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
+    emptyOutDir: false,        // preserve dist/cgmsim-v4-standalone.html if it's there
     minify: 'terser',
     rollupOptions: {
       input: resolve(__dirname, 'index-mobile.html'),
