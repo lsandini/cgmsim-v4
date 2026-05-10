@@ -1,0 +1,47 @@
+/* Dark-only theme variables. No light theme in mobile. */
+:root {
+  --bg-base: #0d1117;
+  --bg-raised: #161b22;
+  --bg-elevated: #21262d;
+  --border: #30363d;
+  --text-primary: #c9d1d9;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --accent-blue: #1f6feb;
+  --accent-green: #238636;
+  --accent-amber: #d29922;
+  --accent-danger: #da3633;
+  --meal-amber: #fbbf24;
+  --bolus-blue: #60a5fa;
+  --la-teal: #14b8a6;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: ui-monospace, monospace;
+  overflow: hidden;
+  /* Honour the iOS safe area on notched devices */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#cgm-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none; /* gestures handled in JS */
+}

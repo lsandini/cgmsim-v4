@@ -6,15 +6,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>CGMSIM v4 — Mobile</title>
-  <style>
-    /* Inline base reset only — full mobile styles will arrive in a later task. */
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; height: 100%; background: #0d1117; color: #c9d1d9; font-family: ui-monospace, monospace; -webkit-tap-highlight-color: transparent; overflow: hidden; }
-    #app { width: 100vw; height: 100vh; }
-  </style>
+  <link rel="stylesheet" href="/src/mobile/mobile-styles.css">
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <canvas id="cgm-canvas"></canvas>
+  </div>
   <script type="module" src="/src/mobile/mobile.ts"></script>
 </body>
 </html>
