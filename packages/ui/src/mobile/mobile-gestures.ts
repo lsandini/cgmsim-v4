@@ -12,6 +12,10 @@
 
 import type { CGMRenderer } from '../canvas-renderer.js';
 
+// NOTE: this module relies on `touch-action: none` being set on the canvas (see
+// mobile-styles.css). Without it, the browser fires touchstart-preventDefault
+// before the pointer events here, breaking pinch + tap detection.
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface MarkerHitResult {
@@ -41,7 +45,11 @@ export function attachCanvasGestures(deps: GestureDeps): void {
   // Suppress tap if the pointer moved significantly (drag).
   let downX = 0;
   let downY = 0;
-  const TAP_MOVE_THRESHOLD = 10; // CSS pixels
+  // Apple HIG: tap movement tolerance
+  const TAP_MOVE_THRESHOLD = 10;
+  // Standard tap-duration ceiling; anything longer is a hold/drag, not a tap.
+  const TAP_MAX_MS = 200;
+  let downAt = 0;
 
   canvas.addEventListener('pointerdown', (e) => {
     activePointers.set(e.pointerId, e);
@@ -49,6 +57,7 @@ export function attachCanvasGestures(deps: GestureDeps): void {
       // First finger down — start tracking for tap.
       downX = e.clientX;
       downY = e.clientY;
+      downAt = performance.now();
       suppressTap = false;
     } else {
       // Multi-finger (pinch) — suppress any tap.
@@ -70,6 +79,7 @@ export function attachCanvasGestures(deps: GestureDeps): void {
 
   function endPointer(e: PointerEvent) {
     activePointers.delete(e.pointerId);
+    if (performance.now() - downAt > TAP_MAX_MS) suppressTap = true;
     if (activePointers.size === 0 && !suppressTap) {
       // Single clean tap — check for marker hit first.
       const hit = renderer.hitTestMarker(e.clientX, e.clientY);

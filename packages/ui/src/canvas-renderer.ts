@@ -773,6 +773,7 @@ export class CGMRenderer {
       this.drawLegend();
     }
 
+    this.eventsForHitTest = [];  // reset every frame; drawEventMarkers populates if showEvents
     if (this.options.showEvents) this.drawEventMarkers(winStartMin);
   }
 
@@ -1442,7 +1443,7 @@ export class CGMRenderer {
     const ctx = this.ctx;
     if (!this.ring.latest()) return;
 
-    this.eventsForHitTest = [];  // rebuild each frame
+    // eventsForHitTest is cleared in draw() before this is called.
 
     ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
