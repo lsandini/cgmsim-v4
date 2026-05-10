@@ -11,7 +11,7 @@ describe('InlineSimulator.injectLongActingNow', () => {
     const state = sim.getCurrentState();
     expect(state.activeLongActing).toHaveLength(1);
 
-    const dose = state.activeLongActing[0];
+    const dose = state.activeLongActing[0]!;
     expect(dose.type).toBe('GlargineU100');
     expect(dose.units).toBe(20);
     // GlargineU100: duration = (22 + 12 * 20 / 70) * 60 ≈ 1525.7 min, peak = duration / 2.5 ≈ 610.3 min
