@@ -38,6 +38,9 @@ export interface SettingsSheetDeps {
   setDisplayUnit: (unit: 'mmoll' | 'mgdl') => void;
   reopenOnboarding: () => void;
   restartSim: () => void;
+  submode: 'LIVE' | 'PRESCRIPTION';
+  setSubmode: (s: 'LIVE' | 'PRESCRIPTION') => void;
+  openPrescriptionSheet: () => void;
 }
 
 export function createSettingsSheet(host: HTMLElement, deps: SettingsSheetDeps) {
@@ -74,6 +77,17 @@ export function createSettingsSheet(host: HTMLElement, deps: SettingsSheetDeps) 
         <span class="m-set-lbl">Patient case</span>
         <span class="m-set-val">›</span>
       </div>
+      <div class="m-set-row" data-act="submode">
+        <span class="m-set-lbl">MDI submode</span>
+        <div class="m-seg m-seg-sm">
+          <button class="m-seg-item ${deps.submode === 'LIVE' ? 'm-seg-active' : ''}" data-v="LIVE">LIVE</button>
+          <button class="m-seg-item ${deps.submode === 'PRESCRIPTION' ? 'm-seg-active' : ''}" data-v="PRESCRIPTION">PRESCR</button>
+        </div>
+      </div>
+      <div class="m-set-row m-set-row-tap ${deps.submode === 'LIVE' ? 'm-set-row-disabled' : ''}" data-act="edit-presc">
+        <span class="m-set-lbl">Edit prescription</span>
+        <span class="m-set-val">${deps.submode === 'LIVE' ? 'disabled in LIVE ›' : '›'}</span>
+      </div>
       <div class="m-set-row" data-act="display-unit">
         <span class="m-set-lbl">Display unit</span>
         <div class="m-seg m-seg-sm">
@@ -104,6 +118,19 @@ export function createSettingsSheet(host: HTMLElement, deps: SettingsSheetDeps) 
     body.querySelector<HTMLElement>('[data-act="case"]')!.addEventListener('click', () => {
       close();
       deps.reopenOnboarding();
+    });
+
+    body.querySelector<HTMLElement>('[data-act="submode"]')!.querySelectorAll<HTMLButtonElement>('.m-seg-item').forEach((b) => {
+      b.addEventListener('click', () => {
+        deps.submode = b.dataset['v'] as 'LIVE' | 'PRESCRIPTION';
+        deps.setSubmode(deps.submode);
+        render();
+      });
+    });
+
+    body.querySelector<HTMLElement>('[data-act="edit-presc"]')!.addEventListener('click', () => {
+      if (deps.submode === 'LIVE') return;
+      deps.openPrescriptionSheet();
     });
 
     body.querySelector<HTMLElement>('[data-act="display-unit"]')!.querySelectorAll<HTMLButtonElement>('.m-seg-item').forEach((b) => {

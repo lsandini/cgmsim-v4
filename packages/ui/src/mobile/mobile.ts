@@ -1,9 +1,11 @@
+import type { Prescription } from '@cgmsim/shared';
 import { InlineSimulator } from '../inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
 import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } from './mobile-onboarding.js';
 import { createActionSheet } from './mobile-action-sheet.js';
 import { createSettingsSheet, loadPrefs, DEFAULT_PREFS } from './mobile-settings-sheet.js';
+import { mountPrescriptionSheet, loadPrescription, savePrescription } from './mobile-prescription-sheet.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -51,9 +53,22 @@ sim.onTick((snap) => {
 });
 sim.onEvent((evs) => renderer.pushEvents(evs));
 
+let submode: 'LIVE' | 'PRESCRIPTION' = (localStorage.getItem('cgmsim.mobile.submode') as any) || 'LIVE';
+const prescription = loadPrescription();
+
+function applySubmode(s: 'LIVE' | 'PRESCRIPTION') {
+  submode = s;
+  localStorage.setItem('cgmsim.mobile.submode', s);
+  sim.setTherapyParam({ mdiSubmode: s, prescription });
+}
+function applyPrescriptionChange(p: Prescription) {
+  sim.setTherapyParam({ prescription: p });
+}
+
 function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
   if (!caseId) return;
   applyCaseToSim(sim, caseId);
+  applySubmode(submode);
   sim.setThrottle(360);
   sim.resume();
 }
@@ -69,6 +84,7 @@ function openOnboarding() {
     teardownOnboarding = null;
     sim.pause();   // double-pause is harmless
     applyCaseToSim(sim, picked);
+    applySubmode(submode);
     sim.resume();
   });
 }
@@ -78,9 +94,14 @@ function restartSim() {
   if (!caseId) { openOnboarding(); return; }
   sim.pause();
   applyCaseToSim(sim, caseId);
+  applySubmode(submode);
   renderer.clearHistory();
   sim.resume();
 }
+
+// Apply submode on boot — runs after any applyCaseToSim calls in startSim/restartSim,
+// but we also call it here for the initial boot path (stored case loaded below).
+applySubmode(submode);
 
 const settingsSheet = createSettingsSheet(app, {
   sim,
@@ -89,6 +110,9 @@ const settingsSheet = createSettingsSheet(app, {
   setDisplayUnit: (u) => layout.setDisplayUnit(u),
   reopenOnboarding: openOnboarding,
   restartSim,
+  submode,
+  setSubmode: applySubmode,
+  openPrescriptionSheet: () => mountPrescriptionSheet(app, prescription, applyPrescriptionChange),
 });
 
 layout.hamburger.addEventListener('click', () => settingsSheet.open());

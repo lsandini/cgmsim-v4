@@ -395,3 +395,64 @@ html, body {
 .m-set-danger .m-set-lbl { color: var(--accent-danger); }
 
 .m-seg-sm .m-seg-item { padding: 4px 10px; font-size: 10px; }
+
+/* === Prescription sub-sheet === */
+.m-sheet-side-wide { width: 62%; max-width: 540px; }
+.m-presc-section { margin-top: 14px; }
+.m-presc-section-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.m-presc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bg-elevated);
+  font-size: 11px;
+}
+.m-presc-time { color: var(--text-secondary); font-family: ui-monospace, monospace; min-width: 50px; }
+.m-presc-grams { color: var(--text-muted); font-size: 10px; flex: 1; }
+
+.m-stepper {
+  display: inline-flex;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.m-stepper .m-step-dec, .m-stepper .m-step-inc {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.m-stepper .m-step-val {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--accent-blue);
+  font-weight: 700;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.m-presc-tiers { display: flex; gap: 4px; }
+.m-presc-tier {
+  flex: 1;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.m-presc-note { font-size: 9px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
+.m-set-row-disabled { opacity: 0.4; pointer-events: none; }
