@@ -1,6 +1,7 @@
 import { InlineSimulator } from '../inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
+import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } from './mobile-onboarding.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -37,8 +38,23 @@ sim.onTick((snap) => {
 });
 sim.onEvent((evs) => renderer.pushEvents(evs));
 
-sim.setThrottle(360);
-sim.resume();
+function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
+  if (!caseId) return;
+  applyCaseToSim(sim, caseId);
+  sim.setThrottle(360);
+  sim.resume();
+}
+
+const stored = getStoredCaseId();
+if (stored) {
+  startSim(stored);
+} else {
+  const teardown = mountOnboarding(app, null, (picked) => {
+    setStoredCaseId(picked);
+    teardown();
+    startSim(picked);
+  });
+}
 
 // Expose for debugging while the rest is built (will be removed in a later task)
 (window as any).__mobile = { sim, renderer, layout };
