@@ -36,7 +36,17 @@ export function setStoredCaseId(id: CaseId): void {
 export function applyCaseToSim(sim: InlineSimulator, id: CaseId): void {
   const def = PATIENT_CASES[id];
   sim.setPatientParam(def.patient);
-  sim.setTherapyParam({ ...buildTherapyForCase(def, 'mdi'), mode: 'MDI', mdiSubmode: 'LIVE' });
+  // Override both scheduled LA slots to null — the mobile build does NOT use
+  // fireSlotIfDue auto-injection. Every long-acting injection is "now" via
+  // injectLongActingNow (the FAB action sheet), so scheduled slots must be
+  // suppressed to avoid phantom daily doses.
+  sim.setTherapyParam({
+    ...buildTherapyForCase(def, 'mdi'),
+    mode: 'MDI',
+    mdiSubmode: 'LIVE',
+    longActingMorning: null,
+    longActingEvening: null,
+  });
 }
 
 /**

@@ -1,4 +1,5 @@
-import type { Prescription } from '@cgmsim/shared';
+import type { Prescription, WorkerState } from '@cgmsim/shared';
+import { DEFAULT_PRESCRIPTION } from '@cgmsim/shared';
 import { InlineSimulator } from '../inline-simulator.js';
 import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
@@ -83,8 +84,34 @@ function applyPrescriptionChange(p: Prescription) {
   sim.setTherapyParam({ prescription: p });
 }
 
+/** Returns a canonical fresh WorkerState for starting or restarting the sim. */
+function freshSimState(): WorkerState {
+  const seed = (Date.now() ^ (Math.random() * 0xFFFF_FFFF) >>> 0) || 1;
+  return {
+    simTimeMs: 6 * 60 * 60_000,   // 06:00 simulated start
+    trueGlucose: 100,
+    lastCGM: 100,
+    patient: { weight: 75, diabetesDuration: 10, trueISF: 40, trueCR: 12,
+               dia: 6, carbsAbsTime: 360, gastricEmptyingRate: 1 },
+    therapy: { mode: 'MDI', basalProfile: [{ timeMinutes: 0, rateUPerHour: 0.8 }],
+               rapidAnalogue: 'Fiasp', rapidDia: 5,
+               longActingMorning: null, longActingEvening: null,
+               glucoseTarget: 100, enableSMB: false,
+               mdiSubmode: 'LIVE',
+               prescription: JSON.parse(JSON.stringify(DEFAULT_PRESCRIPTION)) },
+    g6State: { v: [0, 0], cc: [0, 0], tCalib: 0, rng: { jsr: 123456789 ^ seed, seed } },
+    activeBoluses: [], activeLongActing: [],
+    resolvedMeals: [], pumpMicroBoluses: [], tempBasal: null, events: [],
+    rngState: seed,
+    lastMorningDay: -1, lastEveningDay: -1, prescriptionLastFiredDay: {},
+    pidCGMHistory: [], pidPrevRate: 0.8, pidTicksSinceLastMB: 999,
+    throttle: 360, running: false,
+  };
+}
+
 function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
   if (!caseId) return;
+  sim.reset(freshSimState());
   applyCaseToSim(sim, caseId);
   applySubmode(submode);
   speed.setThrottle(360);
@@ -101,8 +128,10 @@ function openOnboarding() {
     teardownOnboarding?.();
     teardownOnboarding = null;
     speed.setRunning(false);   // double-pause is harmless
+    sim.reset(freshSimState());
     applyCaseToSim(sim, picked);
     applySubmode(submode);
+    renderer.clearHistory();
     speed.setRunning(true);
   });
 }
@@ -111,6 +140,7 @@ function restartSim() {
   const caseId = getStoredCaseId();
   if (!caseId) { openOnboarding(); return; }
   speed.setRunning(false);
+  sim.reset(freshSimState());
   applyCaseToSim(sim, caseId);
   applySubmode(submode);
   renderer.clearHistory();
@@ -150,6 +180,3 @@ app.insertAdjacentHTML('beforeend', `
     <p>Rotate your device to landscape</p>
   </div>
 `);
-
-// Expose for debugging while the rest is built (will be removed in a later task)
-(window as any).__mobile = { sim, renderer, layout, actionSheet, settingsSheet, speed };
