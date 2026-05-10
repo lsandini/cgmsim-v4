@@ -1,6 +1,6 @@
 import type { InlineSimulator } from '../inline-simulator.js';
 
-const LADDER = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3600];
+const LADDER = [1, 2, 5, 10, 20, 50, 100, 200, 360, 500, 1000, 2000, 3600];
 
 export interface SpeedDeps {
   sim: InlineSimulator;
