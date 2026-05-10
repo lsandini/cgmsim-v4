@@ -456,3 +456,9 @@ html, body {
 }
 .m-presc-note { font-size: 9px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
 .m-set-row-disabled { opacity: 0.4; pointer-events: none; }
+
+/* === Speed control === */
+.m-sheet-speed { padding-bottom: 24px; }
+.m-speed-readout { text-align: center; font-size: 18px; color: var(--text-primary); margin-bottom: 8px; }
+.m-speed-slider { width: 100%; }
+.m-speed-ticks { display: flex; justify-content: space-between; font-size: 8px; color: var(--text-muted); margin-top: 4px; }

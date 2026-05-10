@@ -6,6 +6,7 @@ import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } fro
 import { createActionSheet } from './mobile-action-sheet.js';
 import { createSettingsSheet, loadPrefs } from './mobile-settings-sheet.js';
 import { mountPrescriptionSheet, loadPrescription } from './mobile-prescription-sheet.js';
+import { createSpeedControl } from './mobile-speed.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -40,6 +41,13 @@ renderer.start();
 const layout = createMobileLayout(app);
 layout.setDisplayUnit(prefs.displayUnit);
 
+const speed = createSpeedControl({
+  sim,
+  pill: layout.speedPill,
+  host: app,
+  initialThrottle: 360,
+});
+
 const actionSheet = createActionSheet(app, {
   onMeal: (carbsG, gastricEmptyingRate) => sim.meal(carbsG, gastricEmptyingRate, renderer.displayedSimTime),
   onBolus: (units) => sim.bolus(units, undefined, renderer.displayedSimTime),
@@ -70,7 +78,7 @@ function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
   if (!caseId) return;
   applyCaseToSim(sim, caseId);
   applySubmode(submode);
-  sim.setThrottle(360);
+  speed.setThrottle(360);
   sim.resume();
 }
 
@@ -128,4 +136,4 @@ if (stored) {
 }
 
 // Expose for debugging while the rest is built (will be removed in a later task)
-(window as any).__mobile = { sim, renderer, layout, actionSheet, settingsSheet };
+(window as any).__mobile = { sim, renderer, layout, actionSheet, settingsSheet, speed };
