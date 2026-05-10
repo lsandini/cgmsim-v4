@@ -14,6 +14,7 @@
   --meal-amber: #fbbf24;
   --bolus-blue: #60a5fa;
   --la-teal: #14b8a6;
+  --tir-good: #22c55e;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; }
@@ -96,14 +97,13 @@ html, body {
   font-weight: 700;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
-  align-self: center;
   position: absolute;
   left: 50%;
   top: 0;
   transform: translateX(-50%);
 }
 .m-bgchip.m-zone-low { color: var(--accent-danger); }
-.m-bgchip.m-zone-good { color: #4ec9b0; }
+.m-bgchip.m-zone-good { color: var(--tir-good); }
 .m-bgchip.m-zone-high { color: var(--accent-amber); }
 
 .m-icon-btn {
@@ -127,6 +127,10 @@ html, body {
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.05em;
+  background: rgba(13, 17, 23, 0.55);
+  border-radius: 4px;
+  padding: 1px 5px;
+  backdrop-filter: blur(3px);
 }
 
 .m-speed {
