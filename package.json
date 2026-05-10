@@ -9,7 +9,7 @@
     "dev": "npm run dev -w packages/ui",
     "build": "npm run build -w packages/shared && npm run build -w packages/simulator && npm run build -w packages/ui",
     "build:standalone": "npm run build:standalone -w packages/ui",
-    "test": "npm run test -w packages/simulator",
+    "test": "npm run test -w packages/simulator && npm run test -w packages/ui",
     "typecheck": "tsc --build"
   },
   "devDependencies": {

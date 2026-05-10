@@ -243,7 +243,7 @@ export interface PumpBasalBolus {
 export type SimEvent =
   | { kind: 'bolus';      simTimeMs: SimTimeMs; units: number }
   | { kind: 'meal';       simTimeMs: SimTimeMs; carbsG: number }
-  | { kind: 'longActing'; simTimeMs: SimTimeMs; units: number; insulinType: LongActingType; slot: 'morning' | 'evening' }
+  | { kind: 'longActing'; simTimeMs: SimTimeMs; units: number; insulinType: LongActingType; slot?: 'morning' | 'evening' | 'manual' }
   | { kind: 'smb';        simTimeMs: SimTimeMs; units: number };
 
 /** Active temporary basal override (set via setTempBasal). */

@@ -12,6 +12,7 @@ import type {
   TickSnapshot,
   WorkerState,
   RapidAnalogueType,
+  LongActingType,
   VirtualPatient,
   TherapyProfile,
   ActiveBolus,
@@ -443,6 +444,42 @@ export class InlineSimulator {
   setTarget(targetMgdL: number): void { this.s.therapy.glucoseTarget = targetMgdL; }
   setPatientParam(patch: Partial<VirtualPatient>): void { Object.assign(this.s.patient, patch); }
   setTherapyParam(patch: Partial<TherapyProfile>): void { Object.assign(this.s.therapy, patch); }
+
+  /**
+   * One-shot long-acting injection fired immediately at the current sim time.
+   * Intended for mobile companion builds where the user decides when to inject
+   * rather than using the morning/evening schedule.
+   *
+   * PK profile (peak, duration) is evaluated against the current patient.weight
+   * and dose units, then stamped on the record — the same approach as the
+   * scheduled `fireSlotIfDue` path.
+   */
+  public injectLongActingNow(type: LongActingType, units: number): void {
+    const pk = LONG_ACTING_PROFILES[type];
+    if (!pk) throw new Error(`Unknown long-acting type: ${type}`);
+    const weight = this.s.patient.weight;
+    const duration = pk.duration(units, weight);
+    const peak = pk.peak(duration);
+
+    this.s.activeLongActing.push({
+      id: `la-manual-${this.s.simTimeMs}`,
+      simTimeMs: this.s.simTimeMs,
+      units,
+      type,
+      peak,
+      duration,
+    });
+
+    const ev: SimEvent = {
+      kind: 'longActing',
+      simTimeMs: this.s.simTimeMs,
+      units,
+      insulinType: type,
+      slot: 'manual',
+    };
+    this.s.events.push(ev);
+    for (const h of this.eventHandlers) h([ev]);
+  }
 
   /** Build a complete, deeply-cloned snapshot of the current simulator state. */
   getCurrentState(): WorkerState {
