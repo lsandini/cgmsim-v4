@@ -478,3 +478,24 @@ html, body {
   pointer-events: none;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+
+/* === Orientation guard === */
+.m-orientation-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg-base);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+}
+@media (orientation: portrait), (max-width: 479px) {
+  .m-orientation-guard { display: flex; }
+  #app > *:not(.m-orientation-guard) { display: none !important; }
+}
+.m-orientation-guard svg { width: 64px; height: 64px; color: var(--text-secondary); }
+.m-orientation-guard p { font-size: 14px; color: var(--text-secondary); }

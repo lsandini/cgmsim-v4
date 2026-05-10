@@ -144,5 +144,12 @@ if (stored) {
   });
 }
 
+app.insertAdjacentHTML('beforeend', `
+  <div class="m-orientation-guard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+    <p>Rotate your device to landscape</p>
+  </div>
+`);
+
 // Expose for debugging while the rest is built (will be removed in a later task)
 (window as any).__mobile = { sim, renderer, layout, actionSheet, settingsSheet, speed };

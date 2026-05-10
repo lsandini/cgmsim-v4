@@ -10,6 +10,7 @@ npm workspaces monorepo:
 - `packages/ui/` — Vite SPA: Canvas renderer, instructor panel, throttle control, file-based JSON session persistence, localStorage UI prefs. Vanilla TypeScript (no React).
 - `packages/shared/` — TypeScript type definitions only (message types, patient/therapy interfaces, persisted shapes). No runtime code.
 - `packages/ui/dist/cgmsim-v4-standalone.html` — Self-contained single-file build (output of `build:standalone` in packages/ui). This is the primary deliverable for teaching sessions.
+- `packages/ui/dist/cgmsim-v4-mobile.html` — Mobile companion build (output of `build:mobile` in packages/ui). iPhone-landscape, MDI-only, dark-only, no save/load. Reuses simulator engine and `CGMRenderer` untouched.
 - `vendor/cgm-remote-monitor/` — Read-only clone of the Nightscout backend, kept locally as a reference for porting algorithms (e.g., AR2 forecast, future math audits). Gitignored.
 
 ## Commands
@@ -23,17 +24,21 @@ npm run typecheck    # TypeScript strict check across all packages
 
 ```bash
 npm run build:standalone   # Produces the single-file HTML (root shortcut, forwards to packages/ui)
+npm run build:mobile       # Produces dist/cgmsim-v4-mobile.html (root shortcut, forwards to packages/ui)
 ```
 
 The standalone is built by `vite-plugin-singlefile` (configured in `packages/ui/vite.config.ts`), which inlines the JS bundle into `dist/index.html`. The script then renames it to `dist/cgmsim-v4-standalone.html`.
 
 ## After every code change
 
-Always rebuild the standalone file before reporting work as done:
+Always rebuild **both** standalone files before reporting work as done if you touched simulator or shared code. UI-only changes only need the relevant build.
 
 ```bash
-npm run build:standalone
+npm run build:standalone   # desktop
+npm run build:mobile       # mobile companion
 ```
+
+The two builds are independent — building one does not rebuild the other. Run desktop FIRST then mobile, since mobile config has `emptyOutDir: false` to preserve desktop artefacts; running mobile then desktop will wipe the mobile output.
 
 This is the primary deliverable — the `.ts` sources alone are not sufficient.
 
@@ -93,6 +98,41 @@ The prescription (`TherapyProfile.prescription`) holds:
 - `WorkerState.prescriptionLastFiredDay` is a per-slot map persisted in v2 sessions, so save/restore and submode toggles never re-fire an already-delivered slot.
 
 Edited via the **📋 Edit prescription** pill in the top strip (visible only in MDI mode), which opens a modal.
+
+## Mobile companion build
+
+A second standalone HTML target for students playing solo on iPhone-landscape.
+Built independently from the desktop standalone via `npm run build:mobile`,
+producing `packages/ui/dist/cgmsim-v4-mobile.html`. Reuses the simulator
+engine and `CGMRenderer` untouched; mobile UI lives under
+`packages/ui/src/mobile/`.
+
+**Scope (v1, intentionally tight):** MDI-only therapy with both LIVE and
+PRESCRIPTION submodes. No AID/Pump, no Premix/Prednisone scenarios, no
+JSON save/load, no comparison run. Patient physiology is locked to the
+case template — no in-session ISF/CR/DIA/weight editing. Dark theme only.
+
+**Layout:** edge-to-edge canvas with floating overlays (Layout C from
+brainstorming). BG chip centered top, IOB/COB pills top-corners, hamburger
+☰ for settings, speed pill bottom-left (tap = pause, long-press =
+throttle slider), floating + button bottom-right opens the action sheet
+(meal / rapid bolus / long-acting → custom in-DOM keypad → confirm).
+
+**Engine extension:** `InlineSimulator.injectLongActingNow(type, units)`
+adds one-shot long-acting injection without using the morning/evening
+schedule. Stamps peak/duration from current weight. Existing scheduled-LA
+paths unchanged — desktop behaviour does not change.
+
+**Persistence:** localStorage only, with mobile-specific keys
+(`cgmsim.mobile.case`, `cgmsim.mobile.submode`, `cgmsim.mobile.prescription`,
+`cgmsim.mobile.ui-prefs`) so the desktop and mobile builds can't fight over
+schema.
+
+**Build configs:** `packages/ui/vite.config.ts` (desktop, unchanged) +
+`packages/ui/vite.mobile.config.ts` (mobile, parallel). Both produce a
+single self-contained HTML via `vite-plugin-singlefile`.
+
+Spec: `docs/superpowers/specs/2026-05-10-mobile-companion-design.md`.
 
 ## Canvas overlays
 
