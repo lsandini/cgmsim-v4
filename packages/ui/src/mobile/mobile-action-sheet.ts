@@ -9,6 +9,12 @@ export interface ActionSheetCallbacks {
   onLongActing?: (type: LongActingType, units: number) => void;
 }
 
+// Absolute gastric emptying rates used regardless of case.
+// Pedagogic choice: "normal" should produce the same absorption curve across
+// all patient cases so students learn a stable mental model of meal timing,
+// rather than the rate varying invisibly with case.gastricEmptyingRate.
+// Trade-off: ignores per-case physiological variation. Acceptable for v1
+// sandbox; revisit if instructors report it feels artificial.
 const ABSORPTION_RATES = { slow: 0.6, normal: 1.0, fast: 1.4 };
 const LA_TYPES: Array<{ id: LongActingType; label: string }> = [
   { id: 'GlargineU100', label: 'Lantus' },
@@ -71,7 +77,7 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
     if (kind === 'longActing')  renderLA();
   }
 
-  function paneShell(title: string, _accent: string, accentVar: string): { kpHost: HTMLElement; rightHost: HTMLElement; back: HTMLElement; } {
+  function paneShell(title: string, _accent: string, accentVar: string): { kpHost: HTMLElement; rightHost: HTMLElement; } {
     body.innerHTML = `
       <div class="m-pane-head">
         <button class="m-pane-back">‹ Back</button>
@@ -87,13 +93,12 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
     return {
       kpHost: body.querySelector<HTMLElement>('.m-pane-left')!,
       rightHost: body.querySelector<HTMLElement>('.m-pane-right')!,
-      back: body.querySelector<HTMLElement>('.m-pane-back')!,
     };
   }
 
   function renderMeal() {
     const { kpHost, rightHost } = paneShell('🍞 MEAL — grams', 'amber', '--meal-amber');
-    const kp = createKeypad(kpHost, { initial: '0', allowDecimal: false, maxLength: 4 });
+    const kp = createKeypad(kpHost, { initial: '0', allowDecimal: false, maxLength: 4 }); // up to 9999 g
     let absorption: keyof typeof ABSORPTION_RATES = 'normal';
 
     rightHost.innerHTML = `
@@ -111,7 +116,8 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
       b.addEventListener('click', () => {
         rightHost.querySelectorAll('.m-seg-item').forEach((x) => x.classList.remove('m-seg-active'));
         b.classList.add('m-seg-active');
-        absorption = b.dataset.v as keyof typeof ABSORPTION_RATES;
+        const v = b.dataset.v as keyof typeof ABSORPTION_RATES;
+        if (v in ABSORPTION_RATES) absorption = v;
       });
     });
     rightHost.querySelector<HTMLButtonElement>('.m-confirm-meal')!.addEventListener('click', () => {
@@ -124,7 +130,7 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
 
   function renderBolus() {
     const { kpHost, rightHost } = paneShell('💉 RAPID — units', 'blue', '--bolus-blue');
-    const kp = createKeypad(kpHost, { initial: '0', allowDecimal: true, maxLength: 5 });
+    const kp = createKeypad(kpHost, { initial: '0', allowDecimal: true, maxLength: 5 });  // e.g. 99.99 U
     rightHost.innerHTML = `
       <div class="m-pane-meta"><div class="m-pane-meta-label">Analogue</div><div class="m-pane-meta-value">from case</div></div>
       <button class="m-pane-confirm m-confirm-bolus">Inject now</button>
@@ -139,7 +145,7 @@ export function createActionSheet(host: HTMLElement, cb: ActionSheetCallbacks) {
 
   function renderLA() {
     const { kpHost, rightHost } = paneShell('💉 LONG-ACTING', 'teal', '--la-teal');
-    const kp = createKeypad(kpHost, { initial: '0', allowDecimal: true, maxLength: 5 });
+    const kp = createKeypad(kpHost, { initial: '0', allowDecimal: true, maxLength: 5 });  // e.g. 99.99 U
     let type: LongActingType = LA_TYPES[1]!.id; // GlargineU300
 
     rightHost.innerHTML = `
