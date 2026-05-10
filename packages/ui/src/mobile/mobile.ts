@@ -3,7 +3,7 @@ import { CGMRenderer, setRendererTheme } from '../canvas-renderer.js';
 import { createMobileLayout } from './mobile-layout.js';
 import { mountOnboarding, getStoredCaseId, setStoredCaseId, applyCaseToSim } from './mobile-onboarding.js';
 import { createActionSheet } from './mobile-action-sheet.js';
-import { createSettingsSheet, loadPrefs, savePrefs, DEFAULT_PREFS } from './mobile-settings-sheet.js';
+import { createSettingsSheet, loadPrefs, DEFAULT_PREFS } from './mobile-settings-sheet.js';
 import './mobile-styles.css';
 
 setRendererTheme('dark');
@@ -32,7 +32,7 @@ renderer.options.showCOB = false;   // Same as IOB
 renderer.options.showForecast = prefs.ar2;
 renderer.options.showTrueGlucose = prefs.trueGlucose;
 
-renderer.setZoom(prefs.lastZoom ?? DEFAULT_PREFS.lastZoom);
+renderer.setZoom(prefs.lastZoom);
 renderer.start();
 
 const layout = createMobileLayout(app);
@@ -61,12 +61,13 @@ function startSim(caseId: ReturnType<typeof getStoredCaseId>) {
 let teardownOnboarding: (() => void) | null = null;
 
 function openOnboarding() {
+  sim.pause();   // stop ticking while the case picker is open
   teardownOnboarding?.();
   teardownOnboarding = mountOnboarding(app, (picked) => {
     setStoredCaseId(picked);
     teardownOnboarding?.();
     teardownOnboarding = null;
-    sim.pause();
+    sim.pause();   // double-pause is harmless
     applyCaseToSim(sim, picked);
     sim.resume();
   });
