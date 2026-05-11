@@ -315,16 +315,34 @@ export class CGMRenderer {
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    // ResizeObserver fires after layout settles, so getBoundingClientRect()
+    // returns the new dimensions — unlike window 'resize' on mobile rotation,
+    // which can fire before the viewport has finished reflowing and leave the
+    // pixel buffer mismatched against the CSS box (visible as squashed text).
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => this.resize()).observe(this.canvas);
+    } else {
+      window.addEventListener('resize', () => this.resize());
+    }
+    // Mobile Safari sometimes fires orientationchange before layout completes;
+    // re-run after two RAFs as a safety net.
+    window.addEventListener('orientationchange', () => {
+      requestAnimationFrame(() => requestAnimationFrame(() => this.resize()));
+    });
   }
 
   private resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
-    this.cssW = Math.max(rect.width, 400);
-    this.cssH = Math.max(rect.height, 200);
-    this.canvas.width = Math.round(this.cssW * dpr);
-    this.canvas.height = Math.round(this.cssH * dpr);
+    const cssW = Math.max(rect.width, 400);
+    const cssH = Math.max(rect.height, 200);
+    const pxW = Math.round(cssW * dpr);
+    const pxH = Math.round(cssH * dpr);
+    if (this.canvas.width === pxW && this.canvas.height === pxH) return;
+    this.cssW = cssW;
+    this.cssH = cssH;
+    this.canvas.width = pxW;
+    this.canvas.height = pxH;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.dirty = true;
   }
