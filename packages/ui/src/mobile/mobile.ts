@@ -32,8 +32,8 @@ renderer.options.therapyMode = 'MDI';
 // for v1; if mobile chart cropping becomes visible, narrow PAD_BOTTOM via a
 // renderer-side option in a future task.
 renderer.options.showBasal = false; // Mobile drops the basal strip overlay
-renderer.options.showIOB = false;   // IOB shown as a top-pill instead of an overlay
-renderer.options.showCOB = false;   // Same as IOB
+renderer.options.showIOB = true;
+renderer.options.showCOB = true;
 renderer.options.showForecast = prefs.ar2;
 renderer.options.showTrueGlucose = prefs.trueGlucose;
 
@@ -45,6 +45,7 @@ layout.setDisplayUnit(prefs.displayUnit);
 
 const speed = createSpeedControl({
   sim,
+  renderer,
   pill: layout.speedPill,
   host: app,
   initialThrottle: 360,

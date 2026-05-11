@@ -1,9 +1,11 @@
 import type { InlineSimulator } from '../inline-simulator.js';
+import type { CGMRenderer } from '../canvas-renderer.js';
 
 const LADDER = [1, 2, 5, 10, 20, 50, 100, 200, 360, 500, 1000, 2000, 3600];
 
 export interface SpeedDeps {
   sim: InlineSimulator;
+  renderer: CGMRenderer;
   pill: HTMLElement;
   host: HTMLElement;
   initialThrottle: number;
@@ -25,12 +27,14 @@ export function createSpeedControl(deps: SpeedDeps) {
     running = r;
     if (running) deps.sim.resume();
     else deps.sim.pause();
+    deps.renderer.setPlayback(throttle, running);
     paint();
   }
 
   function setThrottle(t: number) {
     throttle = snap(t);
     deps.sim.setThrottle(throttle);
+    deps.renderer.setPlayback(throttle, running);
     paint();
   }
 
@@ -87,6 +91,7 @@ export function createSpeedControl(deps: SpeedDeps) {
   }
 
   deps.sim.setThrottle(throttle);
+  deps.renderer.setPlayback(throttle, running);
   paint();
 
   return { setRunning, setThrottle, getThrottle: () => throttle, isRunning: () => running };
